@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "source": "FlowER flower_new_dataset train.txt",
+    "generated_by": "scripts/build_human_benchmark_evals.py",
+    "tier_policy": {
+      "bands": {
+        "easy": [
+          1,
+          2
+        ],
+        "medium": [
+          3,
+          3
+        ],
+        "hard": [
+          4,
+          99
+        ]
+      },
+      "ordering": "Preserve ranked order from training_data/flower_mechanisms_100.json"
+    }
+  },
+  "summary": {
+    "total_rows": 100,
+    "step_count_distribution": {
+      "1": 100
+    },
+    "tier_summary": {
+      "easy": {
+        "step_range": [
+          1,
+          2
+        ],
+        "count": 100,
+        "first_case_id": "flower_135501",
+        "last_case_id": "flower_213848"
+      },
+      "medium": {
+        "step_range": [
+          3,
+          3
+        ],
+        "count": 0,
+        "first_case_id": null,
+        "last_case_id": null
+      },
+      "hard": {
+        "step_range": [
+          4,
+          99
+        ],
+        "count": 0,
+        "first_case_id": null,
+        "last_case_id": null
+      }
+    }
+  },
+  "issues": [],
+  "suggestions": [
+    "Use training_data/flower_mechanisms_100.json as the upstream source of truth for default eval updates.",
+    "Curriculum ordering is preserved in eval_set.json and tier membership is now full-band rather than fixed 10-case quotas.",
+    "scripts/evolve_harness.py reads training_data/flower_mechanism_index.jsonl directly and no longer depends on eval_tiers.json."
+  ]
+}

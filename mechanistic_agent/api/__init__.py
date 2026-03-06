@@ -1,0 +1,5 @@
+"""FastAPI entrypoints for mechanistic local runtime."""
+
+from .app import app, create_app
+
+__all__ = ["app", "create_app"]

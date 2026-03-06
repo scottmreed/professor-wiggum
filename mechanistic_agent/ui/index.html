@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reaction Mechanism Agent</title>
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <!-- Persistent leaderboard modal — accessible from any workflow state -->
+  <div id="leaderboardModal" class="modal" style="display:none;">
+    <div class="modal-backdrop" id="leaderboardModalBackdrop"></div>
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Eval Leaderboard</h3>
+        <button id="closeLeaderboardModalBtn" type="button">Close</button>
+      </div>
+      <div class="grid two" style="margin-bottom:0.75rem;">
+        <label>
+          Eval set
+          <select id="modalEvalSetSelect"></select>
+        </label>
+        <div style="display:flex;align-items:flex-end;gap:0.5rem;">
+          <button id="modalRefreshLeaderboardBtn" type="button">Refresh</button>
+        </div>
+      </div>
+      <div id="modalLeaderboardList" class="stack"></div>
+    </div>
+  </div>
+
+  <!-- API Keys modal -->
+  <div id="apiKeysModal" class="modal" style="display:none;">
+    <div class="modal-backdrop" id="apiKeysBackdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>API Keys</h3>
+        <button id="closeApiKeysBtn" type="button">Close</button>
+      </div>
+      <p class="muted" style="margin:0 0 10px;">Override environment variables. Keys are only stored in memory for this session.</p>
+      <div class="grid two">
+        <label>
+          OpenAI API Key <a href="https://platform.openai.com/api-keys" target="_blank" class="api-link">(get key)</a>
+          <input id="openaiKeyInput" type="password" placeholder="sk-…" autocomplete="off" />
+        </label>
+        <label>
+          OpenRouter API Key <a href="https://openrouter.ai/keys" target="_blank" class="api-link">(get key)</a>
+          <input id="openrouterKeyInput" type="password" placeholder="or-…" autocomplete="off" />
+        </label>
+        <label>
+          Gemini / Google API Key <a href="https://makersuite.google.com/app/apikey" target="_blank" class="api-link">(get key)</a>
+          <input id="geminiKeyInput" type="password" placeholder="AIza…" autocomplete="off" />
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <main class="app-layout">
+    <!-- ===== LEFT COLUMN: Setup + Controls ===== -->
+    <aside class="setup-column">
+      <div class="panel">
+        <div class="panel-toolbar">
+          <h1>Mechanism Agent</h1>
+          <div class="panel-toolbar-actions">
+            <button id="apiKeysBtn" type="button" class="btn-icon" title="Configure API keys for this session">Keys</button>
+            <button id="openLeaderboardModalBtn" type="button" class="btn-icon" title="View eval leaderboard">Board</button>
+          </div>
+        </div>
+        <div class="grid two">
+          <label>
+            <span>Harness <span class="help-tip" data-tip="Pipeline configuration controlling which modules run and in what order">?</span></span>
+            <select id="harnessSelectionInput">
+              <option value="default">default harness</option>
+              <option value="new_harness">test new harness</option>
+            </select>
+          </label>
+          <label class="inline-wrap">
+            <span>Settings</span>
+            <button id="showHarnessSettingsBtn" type="button" title="View the current harness settings summary">Show</button>
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label>
+            <span>Starting materials <span class="help-tip" data-tip="Comma-separated SMILES strings for reactants">?</span></span>
+            <textarea id="startingInput" rows="2"></textarea>
+          </label>
+          <label>
+            <span>Products <span class="help-tip" data-tip="Comma-separated SMILES strings for expected products">?</span></span>
+            <textarea id="productsInput" rows="2"></textarea>
+          </label>
+        </div>
+
+        <div class="grid two">
+          <label>
+            <span># of steps <span class="help-tip" data-tip="Filter examples by step count. Dimmed options (lighter text) have not yet been validated through eval runs. Options marked ⚠ are beyond the model's current curriculum level.">?</span></span>
+            <select id="exampleStepFilter">
+              <option value="all">any</option>
+            </select>
+            <span id="stepCountWarning" style="display:none;color:#b45309;font-size:0.82em;margin-top:2px;"></span>
+          </label>
+          <label>
+            <span>Example <span class="help-tip" data-tip="Load a pre-configured reaction example with known mechanism">?</span></span>
+            <select id="exampleInput">
+              <option value="">Select example</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="harnessConfigEditable">
+          <div class="grid two">
+            <label>
+              <span>Model family <span class="help-tip" data-tip="AI provider family (OpenAI, Claude, Gemini, etc.)">?</span></span>
+              <select id="modelFamilyInput">
+                <option value="openai">OpenAI</option>
+                <option value="claude">Claude</option>
+                <option value="gemini">Gemini</option>
+                <option value="olmo">OLMo</option>
+                <option value="minimax">Minimax</option>
+              </select>
+            </label>
+            <label>
+              Model
+              <select id="modelNameInput"></select>
+            </label>
+          </div>
+          <div class="grid two">
+            <label id="reasoningRow">
+              <span>Thinking level <span class="help-tip" data-tip="Higher thinking enables chain-of-thought reasoning (model must support it)">?</span></span>
+              <select id="reasoningInput">
+                <option value="">none (default)</option>
+                <option value="low">low</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <details id="advancedInputDetails" class="panel-collapse">
+          <summary>Advanced</summary>
+          <div class="grid two">
+            <label>
+              <span>Temperature (C) <span class="help-tip" data-tip="Reaction temperature in Celsius">?</span></span>
+              <input id="tempInput" type="number" step="0.1" value="25" />
+            </label>
+            <label>
+              <span>pH <span class="help-tip" data-tip="Leave blank for auto-detection based on reactants">?</span></span>
+              <input id="phInput" type="number" step="0.1" min="0" max="14" placeholder="auto" />
+            </label>
+          </div>
+          <div class="grid two">
+            <label>
+              <span>Max steps <span class="help-tip" data-tip="Maximum mechanism steps before the run stops">?</span></span>
+              <input id="maxStepsInput" type="number" min="1" max="20" value="6" />
+            </label>
+            <label>
+              Frontend mode
+              <select id="frontendModeInput">
+                <option value="predict">Predict mechanism</option>
+              </select>
+            </label>
+          </div>
+          <div class="grid two">
+            <label>
+              Import SMIRKS
+              <textarea id="smirksInput" placeholder="CC.O>>CCO" rows="1"></textarea>
+            </label>
+            <label class="inline-wrap">
+              <span>SMIRKS actions</span>
+              <button id="parseSmirksBtn" type="button" title="Parse a SMIRKS string into starting materials and products">Parse SMIRKS</button>
+            </label>
+          </div>
+          <div class="grid two">
+            <label>
+              <span>Orchestration <span class="help-tip" data-tip="Standard = single attempt. RAlph = iterative multi-attempt with budget controls.">?</span></span>
+              <select id="orchestrationModeInput">
+                <option value="standard">standard</option>
+                <option value="ralph">RAlph</option>
+              </select>
+            </label>
+            <label>
+              <span>Coordination topology <span class="help-tip" data-tip="How mechanism step proposals are coordinated: single agent, centralized multi-candidate, independent parallel, or decentralized with peer debate">?</span></span>
+              <select id="coordinationTopologyInput">
+                <option value="centralized_mas">Centralized MAS (default)</option>
+                <option value="sas">Single Agent (SAS)</option>
+                <option value="independent_mas">Independent MAS</option>
+                <option value="decentralized_mas">Decentralized MAS</option>
+              </select>
+            </label>
+            <label>
+              <span>Harness strategy <span class="help-tip" data-tip="How the harness config is selected: latest, portfolio (round-robin), or mutate">?</span></span>
+              <select id="harnessStrategyInput">
+                <option value="latest">latest</option>
+                <option value="portfolio">portfolio</option>
+                <option value="mutate">mutate</option>
+              </select>
+            </label>
+          </div>
+          <div class="grid two">
+            <label>
+              Harness list (portfolio)
+              <input id="harnessListInput" type="text" placeholder="default, no_tools_baseline" />
+            </label>
+          </div>
+
+          <div id="ralphConfigPanel" style="display:none;">
+            <div class="grid two">
+              <label>
+                <span>Max runtime (s) <span class="help-tip" data-tip="Hard runtime cap for the entire Ralph loop. Ralph will stop when this cap is reached.">?</span></span>
+                <input id="ralphMaxRuntimeInput" type="number" min="1" value="900" />
+              </label>
+              <label>
+                <span>Max cost USD <span class="help-tip" data-tip="Cumulative budget cap across all Ralph child attempts. Leave at 0 for no budget cap.">?</span></span>
+                <input id="maxCostUsdInput" type="number" step="0.01" min="0" value="2.0" />
+              </label>
+            </div>
+            <div class="grid two">
+              <label>
+                <span>Repeat fail limit <span class="help-tip" data-tip="Stop Ralph after this many repeated identical failure signatures.">?</span></span>
+                <input id="repeatFailureSignatureLimitInput" type="number" min="1" value="2" />
+              </label>
+              <label>
+                <span>Babysit mode <span class="help-tip" data-tip="advisory enables A/B vote signals from users; off disables vote guidance.">?</span></span>
+                <select id="babysitModeInput">
+                  <option value="off">off</option>
+                  <option value="advisory">advisory</option>
+                </select>
+              </label>
+            </div>
+            <div class="muted">Iterations are unbounded by default. Ralph stops on completion, runtime/cost limits, repeated failure signatures, or manual stop.</div>
+          </div>
+        </details>
+
+        <div class="toggle-row">
+          <label class="checkbox-line" title="Results are deleted after review — no evidence persisted">
+            <input id="dryRunToggle" type="checkbox" />
+            <span>Dry run</span>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="createBtn" title="Create a new run with the current settings">Create Run</button>
+          <button id="startBtn" disabled title="Start the created run">Start</button>
+          <button id="stopBtn" disabled title="Stop the running run">Stop</button>
+          <button id="resumeContinueBtn" disabled title="Try the next best alternative reaction candidate">Try Next Best</button>
+          <button id="resumeStopBtn" disabled title="Cancel a paused run">Cancel Run</button>
+        </div>
+        <div id="pauseNotification" class="pause-notification" style="display:none;"></div>
+        <div id="runStatus" class="status">No run created.</div>
+      </div>
+
+      <!-- Curriculum (collapsed by default, only meaningful for ralph) -->
+      <div id="curriculumPanel" class="panel" style="display:none;">
+        <div class="panel-toolbar">
+          <h2>Curriculum</h2>
+          <div class="panel-toolbar-actions">
+            <div class="view-switcher">
+              <button id="viewCurriculumBtn" type="button" class="view-tab active">Status</button>
+              <button id="viewHistoryBtn" type="button" class="view-tab">History</button>
+            </div>
+            <button id="hideCurriculumBtn" type="button" class="btn-icon" title="Hide curriculum panel">Hide</button>
+          </div>
+        </div>
+        <section id="curriculumDashboardSection">
+          <div class="curriculum-hero-grid">
+            <div class="curriculum-card">
+              <div class="muted">Active trainee</div>
+              <div id="curriculumModelName" class="curriculum-metric">Claude Opus</div>
+              <div id="curriculumModuleLabel" class="muted">Loading module…</div>
+            </div>
+            <div class="curriculum-card">
+              <div class="muted">Next update</div>
+              <div id="curriculumTodayLabel" class="curriculum-metric">No scheduled release</div>
+              <div id="curriculumQueuedStatus" class="muted"></div>
+            </div>
+            <div class="curriculum-card">
+              <div class="muted">Latest leaderboard</div>
+              <div id="curriculumLeaderboardMetric" class="curriculum-metric">n/a</div>
+              <div id="curriculumLeaderboardMeta" class="muted"></div>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="curriculumSubmitBtn" type="button">Submit Run</button>
+            <button id="curriculumPublishBtn" type="button">Publish Due</button>
+            <button id="curriculumRefreshBtn" type="button">Refresh</button>
+          </div>
+          <div id="curriculumStatusMessage" class="status muted">Loading curriculum status…</div>
+          <div class="grid two">
+            <div>
+              <h3>Next 2 Weeks</h3>
+              <div id="curriculumWeekChecklist" class="stack"></div>
+            </div>
+            <div>
+              <h3>Checkpoints</h3>
+              <div id="curriculumCheckpointLinks" class="stack"></div>
+            </div>
+          </div>
+        </section>
+        <section id="historyDashboardSection" style="display:none;">
+          <h3>Curriculum History</h3>
+          <div id="curriculumHistoryList" class="stack"></div>
+        </section>
+      </div>
+    </aside>
+
+    <!-- ===== CENTER COLUMN: Mermaid Diagram (focal point) ===== -->
+    <section class="diagram-column">
+      <div class="panel diagram-panel">
+        <div class="diagram-header">
+          <div class="progress-compact">
+            <strong id="progressPercent">0%</strong>
+            <span id="progressMeta" class="muted">0 / 0 steps</span>
+            <span id="loopCounter" class="muted"></span>
+            <span id="activeStepBadge" class="muted"></span>
+          </div>
+          <div class="diagram-toolbar">
+            <label style="flex-direction:row;align-items:center;gap:6px;font-size:0.8rem;">
+              Prompt ver.
+              <select id="promptVersionSelect" style="width:auto;min-width:80px;"><option value="latest">latest</option></select>
+            </label>
+            <button id="editPipelineBtn" type="button" class="btn-secondary btn-sm" title="Edit the harness pipeline modules">Edit Pipeline</button>
+            <button id="toggleCurriculumBtn" type="button" class="btn-icon btn-sm" title="Show/hide the curriculum panel (RAlph orchestration)">Curriculum</button>
+          </div>
+        </div>
+        <div id="ralphBudgetBar" class="muted" style="display:none;"></div>
+        <div id="ralphAttemptTimeline" class="muted" style="display:none;"></div>
+        <div class="flow-with-detail">
+          <div class="flow-diagram-wrapper">
+            <div id="flowDiagram" class="flow-diagram"></div>
+            <img id="ralphIcon" src="/ui/ralph.png" class="ralph-icon" style="display:none;" alt="RAlph orchestration mode" />
+          </div>
+          <div class="panel" id="nodeDetailPanel" style="display:none;">
+            <h3 id="nodeDetailTitle">Node Detail</h3>
+            <div id="nodeDetailBody" class="muted">Click a flow node to see details.</div>
+            <div class="run-summary-header">Run Step Highlights</div>
+            <div id="runStepSummaries" class="run-step-summaries muted">
+              Start a run to see step-by-step summaries.
+            </div>
+          </div>
+        </div>
+        <div id="flowLegend" class="flow-legend">
+          <span class="legend-item llm-legend">LLM Call</span>
+          <span class="legend-item deterministic-legend">Deterministic</span>
+          <span class="legend-item decision-legend">Decision Gate</span>
+        </div>
+        <div id="modelKey" class="model-key" style="display:none;"></div>
+
+        <!-- Toast area for run notifications -->
+        <div id="toastContainer" class="toast-container"></div>
+      </div>
+    </section>
+
+    <!-- ===== RIGHT COLUMN: Molecules, Benchmark, Terminal ===== -->
+    <aside class="detail-column">
+      <!-- Molecule visualization tile -->
+      <div class="panel tile-panel">
+        <div class="tile-header" data-tile="moleculeTile">
+          <h2>Molecules</h2>
+          <label class="checkbox-line compact" title="Overlay RDKit atom indices on rendered molecule images">
+            <input id="displayAtomNumbersToggle" type="checkbox" />
+            <span>Atom #s</span>
+          </label>
+        </div>
+        <div id="moleculeTile" class="tile-body">
+          <h3 class="muted">Starting Materials</h3>
+          <div id="startingCards" class="molecule-grid"></div>
+          <h3 class="muted">Products</h3>
+          <div id="productCards" class="molecule-grid"></div>
+          <h3 class="muted">Mechanism Steps</h3>
+          <div id="mechanismCards" class="stack"></div>
+        </div>
+      </div>
+
+      <!-- Established mechanism (eval benchmark) -->
+      <div class="panel tile-panel">
+        <div class="tile-header" data-tile="benchmarkTile">
+          <h2>Benchmark</h2>
+        </div>
+        <div id="benchmarkTile" class="tile-body">
+          <pre id="knownMechanismText" class="code">No established benchmark mechanism loaded.</pre>
+          <div class="compare-columns">
+            <div>
+              <div class="muted">Known steps</div>
+              <div id="knownMechanismCards" class="stack"></div>
+            </div>
+            <div>
+              <div class="muted">Predicted steps</div>
+              <pre id="predictedMechanismText" class="code"></pre>
+              <div id="predictedMechanismCards" class="stack"></div>
+            </div>
+          </div>
+          <div class="known-final-product">
+            <div class="muted">Final Product (Eval)</div>
+            <pre id="knownMechanismFinalProduct" class="code"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Terminal: merged Step Outputs + Execution Events + Run Snapshot -->
+      <div class="panel tile-panel">
+        <div class="tile-header" data-tile="terminalTile">
+          <h2>Terminal</h2>
+          <label class="checkbox-line compact" title="Show full JSON snapshot data">
+            <input id="verboseToggle" type="checkbox" />
+            <span>Verbose</span>
+          </label>
+        </div>
+        <div id="terminalTile" class="tile-body terminal-body">
+          <div id="terminalOutput" class="terminal-scroll"></div>
+        </div>
+      </div>
+
+      <!-- Evaluation & Harness (shown after run completes) -->
+      <div class="panel tile-panel" id="evaluationSection" style="display:none;">
+        <div class="tile-header">
+          <h2>Evaluation</h2>
+        </div>
+        <div class="tile-body">
+          <div class="muted" id="fewShotStatus">Few-shot stored candidates: 0</div>
+          <div class="actions">
+            <button id="evaluateBtn" disabled title="Run the evaluation judge on the completed run">Evaluate</button>
+            <button id="saveEvaluationBtn" disabled title="Persist the evaluation to the database">Save</button>
+            <button id="storeFewShotBtn" disabled title="Store the latest mechanism proposal as a few-shot candidate">Store Few-Shot</button>
+            <button id="refreshFewShotBtn" title="Refresh the count of stored few-shot candidates">Refresh</button>
+          </div>
+          <pre id="evaluationOutput" class="code"></pre>
+          <textarea id="harnessRecommendationInput" placeholder="Harness recommendation (optional)" rows="2"></textarea>
+          <div class="actions">
+            <button id="applyHarnessBtn" disabled title="Apply the harness update recommendation locally">Apply</button>
+            <button id="createPrBtn" disabled title="Create a PR with the current harness changes and evidence">Create PR</button>
+          </div>
+          <pre id="harnessOutput" class="code"></pre>
+        </div>
+      </div>
+
+      <!-- Dry run discard panel -->
+      <div class="panel tile-panel dry-run-panel" id="dryRunPanel" style="display:none;">
+        <h2>Dry Run Complete</h2>
+        <p class="muted">Review results above, then discard all evidence.</p>
+        <div class="actions">
+          <button id="dryRunDiscardBtn" class="btn-danger" title="Permanently delete all traces and data from this dry run">Discard All</button>
+        </div>
+        <div id="dryRunDiscardStatus" class="muted"></div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Harness Settings Modal -->
+  <div id="harnessSettingsModal" class="modal" style="display:none;">
+    <div class="modal-backdrop" id="harnessSettingsBackdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Current run settings</h3>
+        <button id="closeHarnessSettingsBtn" type="button">Close</button>
+      </div>
+      <div class="readonly-grid">
+        <div class="readonly-item"><span class="readonly-key">Model family</span><span id="readonlyModelFamily" class="readonly-val">-</span></div>
+        <div class="readonly-item"><span class="readonly-key">Model</span><span id="readonlyModelName" class="readonly-val">-</span></div>
+        <div class="readonly-item"><span class="readonly-key">Thinking</span><span id="readonlyReasoning" class="readonly-val">-</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pipeline Editor Modal -->
+  <div id="pipelineEditorModal" class="modal" style="display:none;">
+    <div class="modal-backdrop" id="pipelineEditorBackdrop"></div>
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h3>Pipeline Editor</h3>
+        <div class="modal-header-actions">
+          <button id="pipelineResetBtn" type="button" class="btn-secondary">Reset</button>
+          <button id="pipelineSaveBtn" type="button" class="btn-primary">Save</button>
+          <button id="closePipelineEditorBtn" type="button">Close</button>
+        </div>
+      </div>
+      <div id="pipelineEditorStatus" class="muted" style="margin-bottom:8px;"></div>
+      <div class="pipeline-sections">
+        <div class="pipeline-section">
+          <h4>Pre-Loop Modules</h4>
+          <div id="preLoopModuleList" class="module-list"></div>
+        </div>
+        <div class="pipeline-section">
+          <h4>Post-Step Modules</h4>
+          <div id="postStepModuleList" class="module-list"></div>
+        </div>
+      </div>
+      <div style="margin-top:12px;text-align:right;">
+        <button id="addModuleBtn" type="button" class="btn-secondary">+ Add Module</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Module Wizard Modal -->
+  <div id="addModuleModal" class="modal" style="display:none;">
+    <div class="modal-backdrop" id="addModuleBackdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Add Custom Module</h3>
+        <button id="closeAddModuleBtn" type="button">Close</button>
+      </div>
+      <div id="wizardStep1" class="wizard-step">
+        <label>Module Name<input id="wizModuleName" type="text" placeholder="e.g. solvent_check" style="width:100%;margin-top:4px;"></label>
+        <label style="margin-top:8px;">Kind
+          <select id="wizModuleKind" style="width:100%;margin-top:4px;">
+            <option value="llm">LLM</option>
+            <option value="deterministic">Deterministic</option>
+          </select>
+        </label>
+        <label style="margin-top:8px;">Phase
+          <select id="wizModulePhase" style="width:100%;margin-top:4px;">
+            <option value="pre_loop">Pre-Loop</option>
+            <option value="post_step">Post-Step</option>
+          </select>
+        </label>
+        <div style="margin-top:12px;text-align:right;">
+          <button id="wizNextStep1" type="button" class="btn-primary">Next</button>
+        </div>
+      </div>
+      <div id="wizardStep2" class="wizard-step" style="display:none;">
+        <h4>Select Inputs</h4>
+        <p class="muted" style="font-size:0.8rem;">Choose upstream module outputs this module receives.</p>
+        <div id="wizInputCheckboxes" class="wizard-checkboxes"></div>
+        <div style="margin-top:12px;text-align:right;">
+          <button id="wizBackStep2" type="button" class="btn-secondary">Back</button>
+          <button id="wizNextStep2" type="button" class="btn-primary">Next</button>
+        </div>
+      </div>
+      <div id="wizardStep3" class="wizard-step" style="display:none;">
+        <h4 id="wizStep3Title">Write Prompt</h4>
+        <textarea id="wizModuleText" rows="10" style="width:100%;font-family:monospace;font-size:0.85rem;" placeholder="Enter your prompt or code here..."></textarea>
+        <div style="margin-top:12px;text-align:right;">
+          <button id="wizBackStep3" type="button" class="btn-secondary">Back</button>
+          <button id="wizFinishBtn" type="button" class="btn-primary">Add Module</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/ui/config.js"></script>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.3/dist/mermaid.esm.min.mjs";
+    window.mermaid = mermaid;
+  </script>
+  <script src="/ui/app.js?v=1772765290533" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "name": "Mechanistic Curriculum",
+  "focus_label": "Trainee Curriculum",
+  "start_date": "2026-03-11",
+  "timezone": "America/Denver",
+  "release_time": {
+    "hour": 17,
+    "minute": 0
+  },
+  "default_harness": "default",
+  "default_eval_set_name": "flower_100_default",
+  "default_group_sizes": {
+    "lesson": 4,
+    "quiz": 6
+  },
+  "quiz_unlock": {
+    "required_pass_count": 4,
+    "required_batch_size": 6,
+    "required_mean_quality": 0.7
+  },
+  "weekdays": {
+    "0": {"kind": "lesson", "label": "Monday lesson"},
+    "1": {"kind": "lesson", "label": "Tuesday lesson"},
+    "2": {"kind": "lesson", "label": "Wednesday lesson"},
+    "3": {"kind": "lesson", "label": "Thursday lesson"},
+    "4": {"kind": "quiz", "label": "Friday quiz"}
+  },
+  "modules": [
+    {"id": "module_01", "number": 1, "label": "1-step reactions", "min_step_count": 1, "max_step_count": 1},
+    {"id": "module_02", "number": 2, "label": "2-step reactions", "min_step_count": 2, "max_step_count": 2},
+    {"id": "module_03", "number": 3, "label": "3-step reactions", "min_step_count": 3, "max_step_count": 3},
+    {"id": "module_04", "number": 4, "label": "4-step reactions", "min_step_count": 4, "max_step_count": 4},
+    {"id": "module_05", "number": 5, "label": "5-6 step reactions", "min_step_count": 5, "max_step_count": 6},
+    {"id": "module_06", "number": 6, "label": "7-8 step reactions", "min_step_count": 7, "max_step_count": 8}
+  ]
+}

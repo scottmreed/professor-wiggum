@@ -1,0 +1,148 @@
+{
+  "calendar": [
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-11",
+      "label": "Wednesday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-11T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Wednesday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-12",
+      "label": "Thursday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-12T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Thursday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-13",
+      "label": "Friday quiz",
+      "queue_id": null,
+      "release_kind": "quiz",
+      "scheduled_publish_at_iso": "2026-03-13T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Friday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-16",
+      "label": "Monday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-16T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Monday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-17",
+      "label": "Tuesday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-17T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Tuesday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-18",
+      "label": "Wednesday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-18T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Wednesday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-19",
+      "label": "Thursday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-19T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Thursday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-20",
+      "label": "Friday quiz",
+      "queue_id": null,
+      "release_kind": "quiz",
+      "scheduled_publish_at_iso": "2026-03-20T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Friday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-23",
+      "label": "Monday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-23T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Monday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-24",
+      "label": "Tuesday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-24T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Tuesday"
+    }
+  ],
+  "checkpoints": [],
+  "course_name": "Mechanistic Curriculum",
+  "current_module": {
+    "id": "module_01",
+    "label": "1-step reactions",
+    "max_step_count": 1,
+    "min_step_count": 1,
+    "number": 1
+  },
+  "curriculum_links": {
+    "calendar": "curriculum/generated/readme_context.json",
+    "checkpoints": "curriculum/checkpoints/",
+    "history": "docs/history_and_reproducibility.md",
+    "leaderboard": "curriculum/generated/leaderboard_anthropic__claude-opus-4.6.json",
+    "operations": "docs/curriculum_operations.md",
+    "upcoming_reactions": "training_data/flower_curriculum_pngs/index.json"
+  },
+  "focus_label": "Trainee Curriculum",
+  "generated_at": "2026-03-06T09:06:40.548076-07:00",
+  "latest_leaderboard_row": null,
+  "model_name": "anthropic/claude-opus-4.6",
+  "next_slot": {
+    "label": "Wednesday lesson",
+    "release_date": "2026-03-11",
+    "release_kind": "lesson",
+    "scheduled_publish_at_iso": "2026-03-11T17:00:00-06:00"
+  },
+  "prompt_asset_links": {
+    "opus_base_override": "skills/mechanistic/base_system/models/anthropic__claude-opus-4.6/SKILL.md",
+    "opus_few_shot_dir": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/",
+    "override_guide": "docs/model_asset_overrides.md",
+    "shared_skills": "skills/mechanistic/"
+  },
+  "registered_trainees": [
+    {
+      "path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/",
+      "slug": "anthropic__claude-opus-4-5"
+    }
+  ],
+  "start_date": "2026-03-11",
+  "student_label": "trainee",
+  "timezone": "America/Denver",
+  "today_slot": null,
+  "trainee_name": "Claude Opus"
+}

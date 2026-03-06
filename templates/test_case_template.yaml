@@ -1,0 +1,48 @@
+# Mechanistic test case template
+# Fill in your cases below and import via POST /api/eval_sets/import_template
+# Starting materials and products accept SMILES, InChI, common names, or MOL blocks.
+# They are auto-converted to canonical SMILES on import.
+
+- id: my_unique_slug
+  name: Human readable reaction name
+  description: Brief description of the reaction and its significance.
+  starting_materials:
+    - SMILES_or_InChI_or_common_name_1
+    - SMILES_or_InChI_or_common_name_2
+  products:
+    - SMILES_or_InChI_or_common_name_3
+  temperature_celsius: 25.0
+  ph: null
+  notes: Optional notes about conditions or literature source.
+
+  # Optional model selection overrides. Remove entire block to use defaults.
+  run_config:
+    model_family: openai       # openai | claude | gemini | olmo
+    model_strategy: cheapest   # cheapest | top | manual
+    reasoning_level: null      # null | lowest | highest
+
+  # Optional. Provide known mechanistic steps for verified-mode comparison.
+  # Remove entire block for unverified testing.
+  verified_mechanism:
+    version: "0.1.0"
+    provisional: true
+    source_refs:
+      - https://example.com/reference
+    steps:
+      - step_index: 1
+        current_state:
+          - SMILES_of_starting_state
+        resulting_state:
+          - SMILES_of_product_state
+        predicted_intermediate: SMILES_of_intermediate_or_null
+        target_products:
+          - SMILES_of_final_product
+        electron_pushes:
+          - kind: "lone_pair"
+            source_atom: "1"
+            target_atom: "2"
+            electrons: 2
+            description: Nucleophilic attack on electrophilic carbon
+        reaction_smirks: "SMILES_reactants>>SMILES_products |mech:v1;lp:1>2|"
+        confidence: 0.9
+        note: Optional note about this step.

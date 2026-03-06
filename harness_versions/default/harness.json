@@ -1,0 +1,386 @@
+{
+  "name": "default",
+  "schema_version": "2.1",
+  "description": "Standard mechanistic reasoning harness. Pre-loop analysis followed by iterative step proposal with deterministic validation.",
+  "tool_calling_mode": "forced",
+  "few_shot_defaults": {
+    "enabled": true,
+    "max_examples": 4,
+    "selection_strategy": "top_score"
+  },
+  "execution_note": "Modules execute in listed order within each phase. pre_loop_modules runs once before the loop; loop_module runs each iteration before post_step_modules; post_step_modules runs after each accepted mechanism step. Array position (step field) is the authoritative execution sequence.",
+  "pre_loop_modules": [
+    {
+      "step": 1,
+      "id": "balance_analysis",
+      "label": "Check Atom Balance",
+      "kind": "deterministic",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "BalanceAgent",
+      "tool_function": "analyse_balance",
+      "step_name": "balance_analysis",
+      "tool_name": "analyse_balance",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": ["balance_analysis"],
+      "movable": false,
+      "removable": false,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "RDKit counts atoms on each side of the reaction. Reports whether starting materials and products are stoichiometrically balanced, and lists any deficit or surplus atoms. Runs once at the start.",
+      "io_schema": {
+        "inputs": ["starting_materials (SMILES[])", "products (SMILES[])"],
+        "outputs": ["balanced (bool)", "deficit (object)", "surplus (object)"]
+      }
+    },
+    {
+      "step": 2,
+      "id": "functional_groups",
+      "label": "Identify Functional Groups",
+      "kind": "deterministic",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "FunctionalGroupsAgent",
+      "tool_function": "fingerprint_functional_groups",
+      "step_name": "functional_groups",
+      "tool_name": "fingerprint_functional_groups",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": ["functional_groups"],
+      "movable": true,
+      "removable": true,
+      "config_gate": "functional_groups_enabled",
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "SMARTS pattern matching identifies reactive functional groups (alcohols, ketones, amines, etc.) and leaving groups across all starting materials and products. Runs once; output informs atom-mapping context.",
+      "io_schema": {
+        "inputs": ["starting_materials (SMILES[])", "products (SMILES[])"],
+        "outputs": ["functional_groups (object: group -> count)", "leaving_groups (string[])"]
+      }
+    },
+    {
+      "step": 3,
+      "id": "ph_recommendation",
+      "label": "Recommend pH",
+      "kind": "deterministic",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "ConditionsAgent",
+      "tool_function": "recommend_ph",
+      "step_name": "ph_recommendation",
+      "tool_name": "recommend_ph",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": ["ph_recommendation"],
+      "movable": false,
+      "removable": false,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": "conditions_pair",
+      "description": "Rule-based pH suggestion. If the user supplies a pH it is returned as-is. Otherwise, uses Dimorphite-DL protonation profiles or a heuristic acid/base scoring of the molecules. Runs once; the recommended pH is passed to the Assess Reaction Conditions LLM call.",
+      "io_schema": {
+        "inputs": ["starting_materials (SMILES[])", "products (SMILES[])", "user_ph (optional)"],
+        "outputs": ["recommended_ph (float)", "source (user/heuristic/dimorphite)"]
+      }
+    },
+    {
+      "step": 4,
+      "id": "initial_conditions",
+      "label": "Assess Reaction Conditions",
+      "kind": "llm",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "ConditionsAgent",
+      "tool_function": "assess_initial_conditions",
+      "step_name": "initial_conditions",
+      "tool_name": "assess_initial_conditions",
+      "validator_skill": null,
+      "inputs": ["ph_recommendation"],
+      "outputs": ["initial_conditions"],
+      "movable": false,
+      "removable": false,
+      "config_gate": null,
+      "prompt_call_name": "assess_initial_conditions",
+      "group_key": "conditions_pair",
+      "description": "LLM call that receives starting materials, products, the pH recommendation, and optional functional group data. Returns environment (acidic/basic/neutral), representative pH, pH range, and either acid candidates (acidic) or base candidates (basic). Its full JSON output is forwarded as conditions_guidance to the Predict Missing Reagents step.",
+      "io_schema": {
+        "inputs": ["starting_materials (SMILES[])", "products (SMILES[])", "ph (from pH recommendation or user)", "functional_groups (if enabled)"],
+        "outputs": ["environment (acidic/basic/neutral)", "representative_ph", "ph_range", "acid_candidates (acidic only)", "base_candidates (basic only)", "warnings"]
+      }
+    },
+    {
+      "step": 5,
+      "id": "missing_reagents",
+      "label": "Predict Missing Reagents",
+      "kind": "llm",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "MissingReagentsAgent",
+      "tool_function": "predict_missing_reagents",
+      "step_name": "missing_reagents",
+      "tool_name": "predict_missing_reagents",
+      "validator_skill": null,
+      "inputs": ["initial_conditions"],
+      "outputs": ["missing_reagents"],
+      "movable": true,
+      "removable": true,
+      "config_gate": "optional_llm_tools:predict_missing_reagents",
+      "prompt_call_name": "predict_missing_reagents",
+      "group_key": null,
+      "description": "LLM call that receives starting materials, products, and the full conditions_guidance JSON from the previous step (including representative pH and acid/base candidates). Returns any missing reactants or products needed to balance the reaction under the recommended conditions.",
+      "io_schema": {
+        "inputs": ["starting_materials (SMILES[])", "products (SMILES[])", "conditions_guidance (full JSON from Assess Reaction Conditions)"],
+        "outputs": ["missing_reactants (SMILES[])", "missing_products (SMILES[])", "verification"]
+      }
+    },
+    {
+      "step": 6,
+      "id": "atom_mapping",
+      "label": "Map Atoms Between Reactants/Products",
+      "kind": "llm",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "MappingAgent",
+      "tool_function": "attempt_atom_mapping",
+      "step_name": "atom_mapping",
+      "tool_name": "attempt_atom_mapping",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": ["atom_mapping"],
+      "movable": true,
+      "removable": true,
+      "config_gate": "optional_llm_tools:attempt_atom_mapping",
+      "prompt_call_name": "attempt_atom_mapping",
+      "group_key": null,
+      "description": "LLM call that receives starting materials and products. Returns a proposed atom-to-atom mapping, unmapped atoms, and confidence score. If functional group analysis is enabled, that context is included.",
+      "io_schema": {
+        "inputs": ["starting_materials (SMILES[])", "products (SMILES[])", "functional_groups (if enabled)"],
+        "outputs": ["mapped_atoms", "unmapped_atoms", "confidence", "reasoning"]
+      }
+    },
+    {
+      "step": 7,
+      "id": "reaction_type_mapping",
+      "label": "Map To Reaction Type",
+      "kind": "llm",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "ReactionTypeAgent",
+      "tool_function": "select_reaction_type",
+      "step_name": "reaction_type_mapping",
+      "tool_name": "select_reaction_type",
+      "validator_skill": null,
+      "inputs": ["balance_analysis", "functional_groups", "ph_recommendation", "initial_conditions", "missing_reagents", "atom_mapping"],
+      "outputs": ["reaction_type_mapping"],
+      "movable": true,
+      "removable": true,
+      "config_gate": "reaction_template_policy:auto",
+      "prompt_call_name": "select_reaction_type",
+      "group_key": null,
+      "description": "LLM call that maps the reaction to one mechanism taxonomy label from training_data/reaction_type_templates.json, with confidence and rationale. Includes explicit 'no_match' when no taxonomy type fits.",
+      "io_schema": {
+        "inputs": ["starting_materials (SMILES[])", "products (SMILES[])", "balance_analysis", "functional_groups", "ph_recommendation", "initial_conditions", "missing_reagents", "atom_mapping"],
+        "outputs": ["selected_label_exact (taxonomy label or no_match)", "selected_type_id", "confidence (0-1)", "rationale", "top_candidates"]
+      }
+    }
+  ],
+  "loop_module": {
+    "id": "mechanism_step_proposal",
+    "label": "Propose Mechanism Step",
+    "kind": "llm",
+    "phase": "loop",
+    "agent_class": "IntermediateAgent",
+    "tool_function": "propose_intermediates",
+    "step_name": "mechanism_step_proposal",
+    "prompt_call_name": "propose_mechanism_step",
+    "max_candidates": 3,
+    "max_retries_per_candidate": 3,
+    "description": "Core LLM call executed each iteration of the mechanism loop. Proposes up to max_candidates ranked elementary step candidates from current_state. Each candidate is evaluated by post_step_modules; failed candidates trigger retry or backtracking.",
+    "io_schema": {
+      "inputs": ["current_state (SMILES[])", "previous_intermediates", "conditions_guidance", "reaction_type", "atom_mapping_context"],
+      "outputs": ["candidates (ranked list of intermediate_smiles, resulting_state, reaction_smirks, electron_pushes, step_label)"]
+    }
+  },
+  "post_step_modules": [
+    {
+      "step": 1,
+      "id": "bond_electron_validation",
+      "label": "Check Bond/Electron Conservation",
+      "kind": "deterministic",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "",
+      "step_name": "bond_electron_validation",
+      "tool_name": "",
+      "validator_skill": "bond_electron_validation",
+      "inputs": [],
+      "outputs": ["bond_electron_validation"],
+      "movable": false,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": "validators",
+      "description": "Parses the DBE metadata tags from the reaction SMIRKS and verifies that bond-order and electron-count changes sum to zero. Part of the mechanism step validation; re-runs on each retry attempt. Ground truth in skills/mechanistic/bond_electron_validation/validator.py.",
+      "io_schema": {
+        "inputs": ["reaction_smirks (with DBE metadata)"],
+        "outputs": ["valid (bool)", "total_delta", "message"]
+      }
+    },
+    {
+      "step": 2,
+      "id": "atom_balance_validation",
+      "label": "Check Step Atom Balance",
+      "kind": "deterministic",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "",
+      "step_name": "atom_balance_validation",
+      "tool_name": "",
+      "validator_skill": "atom_balance_validation",
+      "inputs": [],
+      "outputs": ["atom_balance_validation"],
+      "movable": false,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": "validators",
+      "description": "RDKit verifies that every atom in the current state appears in the resulting state — no atoms created or destroyed. Part of the mechanism step validation; re-runs on each retry attempt. Ground truth in skills/mechanistic/atom_balance_validation/validator.py.",
+      "io_schema": {
+        "inputs": ["current_state (SMILES[])", "resulting_state (SMILES[])"],
+        "outputs": ["balanced (bool)", "deficit", "surplus"]
+      }
+    },
+    {
+      "step": 3,
+      "id": "state_progress_validation",
+      "label": "Check State Changed",
+      "kind": "deterministic",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "",
+      "step_name": "state_progress_validation",
+      "tool_name": "",
+      "validator_skill": "state_progress_validation",
+      "inputs": [],
+      "outputs": ["state_progress_validation"],
+      "movable": false,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": "validators",
+      "description": "Checks that the resulting state differs from the current state and that starting materials are not simply returned unchanged. Part of the mechanism step validation; re-runs on each retry attempt. Ground truth in skills/mechanistic/state_progress_validation/validator.py.",
+      "io_schema": {
+        "inputs": ["current_state (SMILES[])", "resulting_state (SMILES[])"],
+        "outputs": ["resulting_state_changed (bool)", "unchanged_starting_materials_detected (bool)"]
+      }
+    },
+    {
+      "step": 4,
+      "id": "reflection",
+      "label": "Collect Validation Warnings",
+      "kind": "deterministic",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "ReflectionAgent",
+      "tool_function": "",
+      "step_name": "reflection",
+      "tool_name": "reflection_agent",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": ["reflection"],
+      "movable": false,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "Deterministic aggregation of validation warnings from the accepted mechanism step. Runs once per loop iteration after a step passes validation checks. Does not feed back into the current step — it records critique for observability.",
+      "io_schema": {
+        "inputs": ["mechanism_step_output", "validation_result"],
+        "outputs": ["warnings (string[])", "critique_signals"]
+      }
+    },
+    {
+      "step": 5,
+      "id": "step_atom_mapping",
+      "label": "Map Atoms for Step",
+      "kind": "llm",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "MappingAgent",
+      "tool_function": "attempt_atom_mapping_for_step",
+      "step_name": "step_atom_mapping",
+      "tool_name": "attempt_atom_mapping_for_step",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": ["step_atom_mapping"],
+      "movable": true,
+      "removable": true,
+      "config_gate": "step_mapping_enabled",
+      "prompt_call_name": "attempt_atom_mapping",
+      "group_key": null,
+      "description": "LLM atom mapping for the accepted mechanism step. Maps atoms between current_state and resulting_state after each successful step.",
+      "io_schema": {
+        "inputs": ["current_state (SMILES[])", "resulting_state (SMILES[])"],
+        "outputs": ["compact_mapped_atoms", "unmapped_atoms"]
+      }
+    }
+  ],
+  "topology_profiles": {
+    "sas": {
+      "agent_count": 1,
+      "max_candidates_per_agent": 1,
+      "peer_rounds": 0,
+      "aggregation_mode": "none",
+      "description": "Single sequential proposer, top-1 candidate only."
+    },
+    "centralized_mas": {
+      "agent_count": 1,
+      "max_candidates_per_agent": 3,
+      "peer_rounds": 0,
+      "aggregation_mode": "orchestrator_select",
+      "description": "Current default. Orchestrator proposes multi-candidate, validates, selects."
+    },
+    "independent_mas": {
+      "agent_count": 3,
+      "max_candidates_per_agent": 2,
+      "peer_rounds": 0,
+      "aggregation_mode": "synthesis_only",
+      "description": "N independent parallel calls; candidate pools concatenated; no peer sharing."
+    },
+    "decentralized_mas": {
+      "agent_count": 3,
+      "max_candidates_per_agent": 2,
+      "peer_rounds": 2,
+      "aggregation_mode": "consensus",
+      "consensus_key": "reaction_smirks",
+      "consensus_fallback_key": "intermediate_smiles",
+      "description": "N agents x D debate rounds with peer summaries; consensus merge."
+    }
+  },
+  "metadata": {
+    "description": "Default harness encoding the original hardcoded pipeline. Pre-loop: balance -> functional groups -> pH -> conditions -> missing reagents -> atom mapping -> reaction type. Loop: propose mechanism step. Post-step: validators -> reflection -> step mapping.",
+    "created_from": "hardcoded_default",
+    "changelog": [
+      {
+        "version": 1,
+        "date": "2024-01-01",
+        "description": "Initial default harness migrated from hardcoded pipeline in coordinator.py."
+      },
+      {
+        "version": 2,
+        "date": "2026-03-01",
+        "description": "Migrated to schema_version 2.0: added explicit step ordering, loop_module section, validator_skill references, tool_calling_mode, and execution_note for human readability."
+      },
+      {
+        "version": 3,
+        "date": "2026-03-05",
+        "description": "Schema 2.1: added topology_profiles for SAS / centralized MAS / independent MAS / decentralized MAS coordination strategies."
+      }
+    ]
+  }
+}

@@ -1,0 +1,391 @@
+{
+  "gpt-5": {
+    "id": "gpt-5",
+    "family": "openai",
+    "provider": "openai",
+    "supports_tools": true,
+    "label": "GPT-5",
+    "description": "The best OpenAI model for complex reasoning and agentic tasks",
+    "reasoning": {
+      "parameter": "reasoning",
+      "levels": {
+        "lowest": {
+          "effort": "low"
+        },
+        "highest": {
+          "effort": "high"
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 1.25,
+      "cached_input": 0.125,
+      "output": 10.0
+    }
+  },
+  "gpt-5.1": {
+    "id": "gpt-5.1",
+    "family": "openai",
+    "provider": "openai",
+    "supports_tools": true,
+    "label": "GPT-5.1",
+    "description": "GPT-5.1 tuned for long-form reasoning and tool use",
+    "reasoning": {
+      "parameter": "reasoning",
+      "levels": {
+        "lowest": {
+          "effort": "low"
+        },
+        "highest": {
+          "effort": "high"
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 1.25,
+      "cached_input": 0.125,
+      "output": 10.0
+    }
+  },
+  "gpt-5.2": {
+    "id": "gpt-5.2",
+    "family": "openai",
+    "provider": "openai",
+    "supports_tools": true,
+    "label": "GPT-5.2",
+    "description": "GPT-5.2 optimized for agentic planning and complex reasoning",
+    "reasoning": {
+      "parameter": "reasoning",
+      "levels": {
+        "lowest": {
+          "effort": "low"
+        },
+        "highest": {
+          "effort": "high"
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 1.25,
+      "cached_input": 0.125,
+      "output": 10.0
+    }
+  },
+  "gpt-5.4": {
+    "id": "gpt-5.4",
+    "family": "openai",
+    "provider": "openai",
+    "supports_tools": true,
+    "best_in_class": true,
+    "label": "GPT-5.4",
+    "description": "Latest GPT-5.4 model via OpenAI direct",
+    "reasoning": {
+      "parameter": "reasoning",
+      "levels": {
+        "lowest": {
+          "effort": "low"
+        },
+        "highest": {
+          "effort": "high"
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 2.5,
+      "cached_input": 0.25,
+      "output": 15.0
+    }
+  },
+  "openai/gpt-5.4": {
+    "id": "openai/gpt-5.4",
+    "family": "openai",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "label": "GPT-5.4 (OpenRouter)",
+    "description": "GPT-5.4 routed through OpenRouter",
+    "reasoning": {
+      "parameter": "reasoning",
+      "levels": {
+        "lowest": {
+          "effort": "low"
+        },
+        "highest": {
+          "effort": "high"
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 2.5,
+      "cached_input": 0.25,
+      "output": 15.0
+    }
+  },
+  "gpt-5-mini": {
+    "id": "gpt-5-mini",
+    "family": "openai",
+    "provider": "openai",
+    "supports_tools": true,
+    "label": "GPT-5 mini",
+    "description": "Faster, cheaper GPT-5 for well-defined tasks",
+    "pricing_per_million": {
+      "input": 0.25,
+      "cached_input": 0.025,
+      "output": 2.0
+    }
+  },
+  "gpt-5-nano": {
+    "id": "gpt-5-nano",
+    "family": "openai",
+    "provider": "openai",
+    "supports_tools": true,
+    "label": "GPT-5 nano",
+    "description": "Fastest, cheapest GPT-5 for summarization and classification",
+    "pricing_per_million": {
+      "input": 0.05,
+      "cached_input": 0.005,
+      "output": 0.4
+    }
+  },
+  "gpt-4o": {
+    "id": "gpt-4o",
+    "family": "openai",
+    "provider": "openai",
+    "supports_tools": true,
+    "label": "GPT-4o",
+    "description": "Fast and reliable OpenAI model for general tasks",
+    "pricing_per_million": {
+      "input": 2.5,
+      "cached_input": 0.25,
+      "output": 10.0
+    }
+  },
+  "gpt-4": {
+    "id": "gpt-4",
+    "family": "openai",
+    "provider": "openai",
+    "supports_tools": true,
+    "label": "GPT-4",
+    "description": "Reliable OpenAI model for complex reasoning tasks",
+    "pricing_per_million": {
+      "input": 30.0,
+      "cached_input": 3.0,
+      "output": 60.0
+    }
+  },
+  "anthropic/claude-opus-4.6": {
+    "id": "anthropic/claude-opus-4.6",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "best_in_class": true,
+    "label": "Claude Opus 4.6",
+    "description": "Anthropic's strongest Claude model for coding and long-running professional tasks",
+    "reasoning": {
+      "parameter": "thinking",
+      "levels": {
+        "lowest": {
+          "type": "disabled"
+        },
+        "highest": {
+          "type": "enabled",
+          "budget_tokens": 16000
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 5.0,
+      "cached_input": 0.5,
+      "output": 25.0
+    }
+  },
+  "anthropic/claude-3.5-haiku": {
+    "id": "anthropic/claude-3.5-haiku",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "label": "Claude 3.5 Haiku",
+    "description": "Fastest and most affordable Claude model for high-volume tasks",
+    "pricing_per_million": {
+      "input": 0.8,
+      "cached_input": 0.08,
+      "output": 4.0
+    }
+  },
+  "anthropic/claude-haiku-4.5": {
+    "id": "anthropic/claude-haiku-4.5",
+    "family": "claude",
+    "provider": "anthropic",
+    "supports_tools": true,
+    "label": "Claude Haiku 4.5",
+    "description": "Latest Claude Haiku model with improved performance",
+    "pricing_per_million": {
+      "input": 1.0,
+      "cached_input": 0.1,
+      "output": 5.0
+    }
+  },
+  "gemini-2.5-flash": {
+    "id": "gemini-2.5-flash",
+    "family": "gemini",
+    "provider": "gemini",
+    "supports_tools": true,
+    "label": "Gemini 2.5 Flash",
+    "description": "Google Gemini flash model with tool support",
+    "reasoning": {
+      "parameter": "thinking_config",
+      "levels": {
+        "lowest": {
+          "thinking_budget": 0
+        },
+        "highest": {
+          "thinking_budget": 8192
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 0.1,
+      "cached_input": 0.0,
+      "output": 0.4
+    }
+  },
+  "gemini-2.5-flash-lite": {
+    "id": "gemini-2.5-flash-lite",
+    "family": "gemini",
+    "provider": "gemini",
+    "supports_tools": true,
+    "label": "Gemini 2.5 Flash Lite",
+    "description": "Lower-cost Gemini flash-lite model",
+    "reasoning": {
+      "parameter": "thinking_config",
+      "levels": {
+        "lowest": {
+          "thinking_budget": 0
+        },
+        "highest": {
+          "thinking_budget": 4096
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 0.08,
+      "cached_input": 0.0,
+      "output": 0.3
+    }
+  },
+  "gemini-2.5-pro": {
+    "id": "gemini-2.5-pro",
+    "family": "gemini",
+    "provider": "gemini",
+    "supports_tools": true,
+    "label": "Gemini 2.5 Pro",
+    "description": "Higher-capability Gemini model for demanding tasks",
+    "pricing_per_million": {
+      "input": 1.5,
+      "cached_input": 0.4,
+      "output": 6.0
+    }
+  },
+  "gemini-3.1-pro-preview": {
+    "id": "gemini-3.1-pro-preview",
+    "family": "gemini",
+    "provider": "gemini",
+    "supports_tools": true,
+    "best_in_class": true,
+    "label": "Gemini 3.1 Pro Preview",
+    "description": "Latest Gemini 3.1 Pro Preview with enhanced reasoning and tool support",
+    "reasoning": {
+      "parameter": "thinking_config",
+      "levels": {
+        "lowest": {
+          "thinking_budget": 0
+        },
+        "highest": {
+          "thinking_budget": 32768
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 2.0,
+      "cached_input": 0.5,
+      "output": 8.0
+    }
+  },
+  "allenai/olmo-3.1-32b-instruct": {
+    "id": "allenai/olmo-3.1-32b-instruct",
+    "family": "olmo",
+    "provider": "openrouter",
+    "supports_tools": false,
+    "best_in_class": true,
+    "label": "OLMo 3.1 32B Instruct",
+    "description": "Allen AI's fully open-source OLMo 3.1 model via OpenRouter",
+    "pricing_per_million": {
+      "input": 0.5,
+      "cached_input": 0.0,
+      "output": 0.5
+    }
+  },
+  "minimax/minimax-m2.1": {
+    "id": "minimax/minimax-m2.1",
+    "family": "minimax",
+    "provider": "openrouter",
+    "supports_tools": false,
+    "best_in_class": true,
+    "label": "Minimax M2.1",
+    "description": "Minimax M2.1 via OpenRouter",
+    "pricing_per_million": {
+      "input": 0.3,
+      "cached_input": 0.0,
+      "output": 1.2
+    }
+  },
+  "anthropic/claude-sonnet-4.5": {
+    "id": "anthropic/claude-sonnet-4.5",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "label": "Claude Sonnet 4.5",
+    "description": "Balanced Claude model with strong reasoning and speed",
+    "reasoning": {
+      "parameter": "thinking",
+      "levels": {
+        "lowest": {
+          "type": "disabled"
+        },
+        "highest": {
+          "type": "enabled",
+          "budget_tokens": 10000
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 3.0,
+      "cached_input": 0.3,
+      "output": 15.0
+    }
+  },
+  "anthropic/claude-sonnet-4.6": {
+    "id": "anthropic/claude-sonnet-4.6",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "label": "Claude Sonnet 4.6",
+    "description": "Balanced Claude model with strong reasoning and speed",
+    "reasoning": {
+      "parameter": "thinking",
+      "levels": {
+        "lowest": {
+          "type": "disabled"
+        },
+        "highest": {
+          "type": "enabled",
+          "budget_tokens": 10000
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 3.0,
+      "cached_input": 0.3,
+      "output": 15.0
+    }
+  }
+}

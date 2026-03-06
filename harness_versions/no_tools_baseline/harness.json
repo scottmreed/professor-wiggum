@@ -1,0 +1,37 @@
+{
+  "name": "no_tools_baseline",
+  "schema_version": "2.0",
+  "description": "Control experiment harness: no structured tool calls. A single free-form text-completion LLM call produces the complete mechanism in one shot, with no pre-loop analysis and no post-step validators. Used to measure raw LLM performance without harness scaffolding.",
+  "tool_calling_mode": "none",
+  "execution_note": "This harness has no pre_loop_modules and no post_step_modules. The loop_module uses text_completion kind, which means no tool schema is enforced — the LLM responds in free-form text. Results are scored identically to harness runs for direct comparison.",
+  "pre_loop_modules": [],
+  "loop_module": {
+    "id": "mechanism_step_proposal",
+    "label": "Propose Mechanism (Text Completion)",
+    "kind": "text_completion",
+    "phase": "loop",
+    "agent_class": "IntermediateAgent",
+    "tool_function": null,
+    "step_name": "mechanism_step_proposal",
+    "prompt_call_name": "propose_mechanism_step",
+    "max_candidates": 1,
+    "max_retries_per_candidate": 1,
+    "description": "Single free-form text-completion call per step. No tool schema enforced. The LLM receives the same prompt as the standard harness but responds without structured output constraints.",
+    "io_schema": {
+      "inputs": ["current_state (SMILES[])", "previous_intermediates"],
+      "outputs": ["free-form text parsed for SMILES and step description"]
+    }
+  },
+  "post_step_modules": [],
+  "metadata": {
+    "description": "Minimal harness for control experiments. Compare leaderboard scores against 'default' harness to quantify the value of pre-loop analysis and deterministic validation.",
+    "created_from": "control_experiment_design",
+    "changelog": [
+      {
+        "version": 1,
+        "date": "2026-03-01",
+        "description": "Initial no-tools baseline harness for control experiments."
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+name: Prompt Trace Evidence Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  prompt-trace-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate prompt trace evidence
+        run: |
+          PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py \
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --head-ref "${{ github.sha }}"

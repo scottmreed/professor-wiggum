@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mechanistic Agent Harness Configuration</title>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #7f8c8d;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 800px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Mechanistic Agent Harness Configuration</h1>
+        <p class="subtitle">Visual representation of the mechanistic agent harness configuration and execution flow</p>
+        <div class="mermaid">
+flowchart TD
+    Start(["HARNESS EXECUTION START<br/>━━━━━━━━━━━━━━━━<br/>Load reaction inputs<br/>Initialize state"])
+
+    %% Pre-loop phase - executed once
+    Start --> PreLoopStart["PHASE 1: PRE-LOOP ANALYSIS<br/>━━━━━━━━━━━━━━━━<br/>Execute all pre_loop_modules<br/>in step order"]
+
+    PreLoopStart --> BalanceAnalysis["STEP 1: Balance Analysis<br/>━━━━━━━━━━━━━━━━<br/>• Check atom balance<br/>• Report deficits/surplus<br/>• RDKit atom counting"]
+
+    BalanceAnalysis --> FunctionalGroups["STEP 2: Functional Groups<br/>━━━━━━━━━━━━━━━━<br/>• SMARTS pattern matching<br/>• Identify reactive groups<br/>• Leaving groups detection"]
+
+    FunctionalGroups --> PHRecommendation["STEP 3: pH Recommendation<br/>━━━━━━━━━━━━━━━━<br/>• Rule-based pH suggestion<br/>• Dimorphite profiles<br/>• Acid/base scoring"]
+
+    PHRecommendation --> InitialConditions["STEP 4: Assess Conditions<br/>━━━━━━━━━━━━━━━━<br/>• LLM call for environment<br/>• Acid/base candidates<br/>• pH range assessment"]
+
+    InitialConditions --> MissingReagents["STEP 5: Predict Missing Reagents<br/>━━━━━━━━━━━━━━━━<br/>• LLM call for missing reactants<br/>• Balance reaction under conditions<br/>• Optional tool (configurable)"]
+
+    MissingReagents --> AtomMapping["STEP 6: Atom Mapping<br/>━━━━━━━━━━━━━━━━<br/>• LLM call for atom-atom mapping<br/>• Confidence scoring<br/>• Optional tool (configurable)"]
+
+    AtomMapping --> ReactionType["STEP 7: Reaction Type Mapping<br/>━━━━━━━━━━━━━━━━<br/>• Map to taxonomy label<br/>• Confidence + rationale<br/>• No_match option available"]
+
+    %% Loop phase - iterative
+    ReactionType --> LoopStart["PHASE 2: MECHANISM LOOP<br/>━━━━━━━━━━━━━━━━<br/>Execute loop_module iteratively<br/>until target products reached"]
+
+    LoopStart --> MechanismProposal["LOOP: Propose Mechanism Step<br/>━━━━━━━━━━━━━━━━<br/>• LLM call for elementary steps<br/>• Up to 3 candidates<br/>• Forced tool calling<br/>• Topology-aware coordination"]
+
+    MechanismProposal --> PostStepStart["PHASE 3: POST-STEP VALIDATION<br/>━━━━━━━━━━━━━━━━<br/>Execute all post_step_modules<br/>in step order"]
+
+    PostStepStart --> BondElectronValidation["STEP 1: Bond/Electron Validation<br/>━━━━━━━━━━━━━━━━<br/>• Parse DBE metadata<br/>• Check conservation laws<br/>• Ground truth: validator.py"]
+
+    BondElectronValidation --> AtomBalanceValidation["STEP 2: Atom Balance Validation<br/>━━━━━━━━━━━━━━━━<br/>• Verify atom conservation<br/>• No atoms created/destroyed<br/>• Ground truth: validator.py"]
+
+    AtomBalanceValidation --> StateProgressValidation["STEP 3: State Progress Validation<br/>━━━━━━━━━━━━━━━━<br/>• Check meaningful change<br/>• Prevent no-op steps<br/>• Ground truth: validator.py"]
+
+    StateProgressValidation --> Reflection["STEP 4: Collect Validation Warnings<br/>━━━━━━━━━━━━━━━━<br/>• Aggregate warnings<br/>• Record critique signals<br/>• Deterministic aggregation"]
+
+    Reflection --> StepAtomMapping["STEP 5: Step Atom Mapping<br/>━━━━━━━━━━━━━━━━<br/>• Map atoms for this step<br/>• Post-validation mapping<br/>• Optional tool (configurable)"]
+
+    %% Loop decision
+    StepAtomMapping --> TargetCheck{Target Products<br/>Reached?}
+
+    TargetCheck -->|No| LoopBack["BACK TO LOOP<br/>━━━━━━━━━━━━━━━━<br/>• Increment step index<br/>• Update current state<br/>• Retry failed candidates<br/>• Check branch points"]
+    LoopBack --> MechanismProposal
+
+    TargetCheck -->|Yes| Complete(["EXECUTION COMPLETE<br/>━━━━━━━━━━━━━━━━<br/>• Mechanism synthesis done<br/>• All validations passed<br/>• Ready for evaluation"])
+
+    %% Styling
+    style Start fill:#e1f5ff
+    style Complete fill:#d4edda
+    style TargetCheck fill:#f8d7da
+    style PreLoopStart fill:#fff3cd
+    style LoopStart fill:#fff3cd
+    style PostStepStart fill:#fff3cd
+    style BalanceAnalysis fill:#d1ecf1
+    style FunctionalGroups fill:#d1ecf1
+    style PHRecommendation fill:#d1ecf1
+    style InitialConditions fill:#d1ecf1
+    style MissingReagents fill:#d1ecf1
+    style AtomMapping fill:#d1ecf1
+    style ReactionType fill:#d1ecf1
+    style MechanismProposal fill:#cfe2ff
+    style BondElectronValidation fill:#f8d7da
+    style AtomBalanceValidation fill:#f8d7da
+    style StateProgressValidation fill:#f8d7da
+    style Reflection fill:#d1ecf1
+    style StepAtomMapping fill:#d1ecf1
+    style LoopBack fill:#f0f0f0
+        </div>
+    </div>
+</body>
+</html>
