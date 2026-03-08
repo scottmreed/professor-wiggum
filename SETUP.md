@@ -1,5 +1,7 @@
 # Setup
 
+You can contribute without cloning the repo. See [CONTRIBUTING.md](CONTRIBUTING.md) for the no-clone path and the tracks that do require a local checkout.
+
 ## Prerequisites
 
 - Python 3.10+
@@ -73,14 +75,10 @@ Build the train lookup from the committed `.jsonl` index (takes several minutes)
 python main.py curriculum build-lookup
 ```
 
-## Quick Start
+## Large Data Files
 
-Once set up:
+The full FlowER mechanism index (`flower_mechanism_index.jsonl`, ~65 MB) is **not tracked in git** to keep the repo lightweight. A 1,000-line sample is committed at `training_data/flower_mechanism_index_sample.jsonl` for format reference.
 
-```bash
-python main.py serve                          # Start the UI (http://localhost:8000)
-python main.py curriculum submit --model-name anthropic/claude-opus-4-6  # Run a trainee eval
-pytest tests/fast/ -q                         # Run fast tests
-```
+You only need the full index for curriculum operations and evolve harness runs — not for running evals or tests. See [training_data/REGENERATE.md](training_data/REGENERATE.md) for rebuild instructions.
 
-See [README.md](README.md) for the developer workflow and contribution methods.
+See [README.md](README.md) for the developer workflow and curriculum overview.

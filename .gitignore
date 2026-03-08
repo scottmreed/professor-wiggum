@@ -121,18 +121,41 @@ docs/harness_flow.mmd
 # Example images downloaded at build time
 frontend/public/assets/example-*.png
 
+# ── Training data ─────────────────────────────────────────
 training_data/*
+
+# Dev eval set (100 reactions, full mechanisms — development set, NOT leaderboard)
 !training_data/eval_set.json
 !training_data/eval_tiers.json
 !training_data/eval_quality_report.json
+
+# FlowER curated subset (source for dev eval)
 !training_data/flower_mechanisms_100.json
 !training_data/flower_mechanisms_100_report.json
-!training_data/flower_mechanism_index.jsonl
+
+# Full index is 65MB — track sample + report only
+# Regenerate full index: see training_data/REGENERATE.md
+!training_data/flower_mechanism_index_sample.jsonl
 !training_data/flower_mechanism_index_report.json
+!training_data/REGENERATE.md
+
+# Curriculum PNGs — track index only, not images
 !training_data/flower_curriculum_pngs/
 training_data/flower_curriculum_pngs/*.png
 !training_data/flower_curriculum_pngs/index.json
 
+# Practice eval set for contributors (NOT the leaderboard set)
+!training_data/practice_eval/
+!training_data/practice_eval/*.json
+!training_data/practice_eval/README.md
+training_data/practice_eval/*.png
+
+# Sample PNGs (5 examples + regeneration guide)
+!training_data/sample_pngs/
+!training_data/sample_pngs/README.md
+!training_data/sample_pngs/*.png
+
+# Legacy — stays gitignored
 training_data/local_legacy/
 traces/
 plans/

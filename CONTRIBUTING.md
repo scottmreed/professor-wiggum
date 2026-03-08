@@ -4,6 +4,8 @@ Mechanistic Agent only accepts changes that move the leaderboard forward. A cont
 
 Read [SOUL.md](SOUL.md) first. It explains why the project optimizes for auditable, evidence-backed improvement instead of anecdotal wins.
 
+If you are deciding whether to clone the repo first, start with [SETUP.md](SETUP.md). You can contribute without a clone for Track 5, while Tracks 1 through 4 will usually require a local checkout plus tests and eval runs.
+
 ## Core rule
 
 Every mergeable PR must show leaderboard improvement on its required eval gate.
@@ -17,6 +19,12 @@ Every mergeable PR must show leaderboard improvement on its required eval gate.
 | Track 5 | Single reaction submissions, success or failure | No | No merge gate; reviewed as evidence for future changes |
 
 “No regression” is not enough for Tracks 1 through 4. Acceptance requires a measurable improvement against the current leaderboard reference for the same eval scope.
+
+## Clone Expectations
+
+- Track 5 usually does not require a git clone. You can submit a single reaction through the UI or API and provide traces or notes for review.
+- Tracks 1 through 4 will usually require a git clone because they change repo files, run local tests, and need eval evidence suitable for a PR.
+- If you are preparing for Tracks 1 through 4, use [SETUP.md](SETUP.md) for environment setup before making changes.
 
 ## Check Current SOTA
 
@@ -32,7 +40,7 @@ source .venv/bin/activate
 python main.py leaderboard --eval-set-id <eval_set_id> --limit 20 --markdown --output LEADERBOARD.md
 ```
 3. Read [LEADERBOARD.md](LEADERBOARD.md):
-The rank 1 completed row is the current SOTA for that eval scope.
+If completed rows exist, the rank 1 completed row is the current SOTA for that eval scope. If the file is still a placeholder, the first official `anthropic/claude-opus-4.6` row becomes the initial baseline.
 4. Compare your PR results against that row and state the delta in the PR description.
 
 Recommended eval naming:
@@ -89,6 +97,17 @@ LLM-backed changes also require the appropriate eval tier run and, where relevan
 ```bash
 PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py --call <call_name>
 ```
+
+## Practice Eval Set
+
+A 20-reaction practice eval set is provided for local testing. It uses the same format and FlowER source as the official eval set but contains **completely disjoint reactions**.
+
+```bash
+source .venv/bin/activate
+python main.py eval --eval-set training_data/practice_eval/practice_set.json --tier easy
+```
+
+This set is **not** the leaderboard eval set. Use it to verify your changes work end-to-end before running the real eval tier for your PR. See [training_data/practice_eval/README.md](training_data/practice_eval/README.md) for details.
 
 ## Canonical Paths
 

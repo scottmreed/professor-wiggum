@@ -67,3 +67,7 @@ Legacy `{start_atom, end_atom, electrons}` entries are still read as lone-pair a
 New runtime outputs should emit only `|mech:v1;...|`.
 
 Legacy `dbe` strings are no longer the authoring target. They may still exist in historical traces, but current proposal repair and validation flow is centered on the explicit move notation.
+
+## References
+
+- [2512.05722v1.pdf](file:///Users/scottreed/Desktop/Mechanistic/Refs/2512.05722v1.pdf) - This variant uses explicit terms for the sake of the LLMs

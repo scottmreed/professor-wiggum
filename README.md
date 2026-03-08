@@ -4,7 +4,7 @@
 
 ## Setup
 
-See [SETUP.md](SETUP.md) for installation, environment variables, RDKit, and test instructions.
+See [SETUP.md](SETUP.md) for installation, environment variables, RDKit, and test instructions. You can also contribute without cloning the repo; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Orchestration Modes
 
@@ -18,24 +18,14 @@ RAlph mode provides iterative multi-attempt orchestration with budget controls f
 
 **Trainees:** [anthropic__claude-opus-4-5](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/)
 
-Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/flower_curriculum_pngs/index.json) | [Prompt guide](docs/model_asset_overrides.md) | [History](docs/history_and_reproducibility.md)
-
-## Current Two-Week Calendar
-
-- [ ] 2026-03-11 Wednesday: Wednesday lesson (lesson scheduled, release `2026-03-11T17:00:00-06:00`)
-- [ ] 2026-03-12 Thursday: Thursday lesson (lesson scheduled, release `2026-03-12T17:00:00-06:00`)
-- [ ] 2026-03-13 Friday: Friday quiz (quiz scheduled, release `2026-03-13T17:00:00-06:00`)
-- [ ] 2026-03-16 Monday: Monday lesson (lesson scheduled, release `2026-03-16T17:00:00-06:00`)
-- [ ] 2026-03-17 Tuesday: Tuesday lesson (lesson scheduled, release `2026-03-17T17:00:00-06:00`)
-- [ ] 2026-03-18 Wednesday: Wednesday lesson (lesson scheduled, release `2026-03-18T17:00:00-06:00`)
-- [ ] 2026-03-19 Thursday: Thursday lesson (lesson scheduled, release `2026-03-19T17:00:00-06:00`)
-- [ ] 2026-03-20 Friday: Friday quiz (quiz scheduled, release `2026-03-20T17:00:00-06:00`)
-- [ ] 2026-03-23 Monday: Monday lesson (lesson scheduled, release `2026-03-23T17:00:00-06:00`)
-- [ ] 2026-03-24 Tuesday: Tuesday lesson (lesson scheduled, release `2026-03-24T17:00:00-06:00`)
+Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/flower_curriculum_pngs/index.json) | [Practice eval](training_data/practice_eval/README.md) | [Prompt guide](docs/model_asset_overrides.md) | [History](docs/history_and_reproducibility.md)
 
 ## Trainee Progress Snapshot
 
-- [`anthropic__claude-opus-4-5`](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/) — quality: `—` pass-rate: `—` [leaderboard](curriculum/generated/leaderboard_anthropic__claude-opus-4-5.json)
+- [Opus family calendar](curriculum/calendars/opus-4.6.md) — active curriculum for `anthropic/claude-opus-4.6`
+- [Sonnet family calendar](curriculum/calendars/sonnet.md) — placeholder, no calendar yet
+- [GPT family calendar](curriculum/calendars/gpt.md) — placeholder, no calendar yet
+- [Gemini family calendar](curriculum/calendars/gemini.md) — placeholder, no calendar yet
 
 ## Checkpoints
 
@@ -63,23 +53,22 @@ The default mechanistic harness orchestrates pre-loop analysis, an iterative mec
 
 Regenerate the snapshot with `python scripts/capture_harness_mermaid.py`.
 
-### Quick Start
-
-- Start the app: `python main.py serve`
-- Submit today’s trainee run: `python main.py curriculum submit --model-name anthropic/claude-opus-4.6`
-- Publish queued releases: `python main.py curriculum publish-due`
-- Refresh the curriculum dashboard: `python main.py curriculum render-readme`
-
 ### Contribution Methods
 
-- Submit an individual reaction locally through the UI or API and use it as evidence for later tracked changes.
-- Add or revise few-shot examples for a trainee lane under `skills/mechanistic/<call_name>/models/<model-slug>/few_shot.jsonl`.
-- Update prompt instructions in `SKILL.md` for a shared skill or trainee-specific override.
-- Propose harness changes under `harness_versions/` and tie them to eval results.
-- Add another trainee lane by introducing exact-model overrides and documenting its evidence path.
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for the full track definitions, merge gates, and templates.
+- Track 5 single-reaction submissions can be done without cloning the repo and are reviewed as evidence for later tracked changes.
+- Tracks 1 through 4 are the mergeable paths for few-shot updates, subagents, model additions, and harness changes, and will usually require a git clone plus local test/eval runs.
+- If you want attribution in future manuscript notes or acknowledgements, include the optional contact fields requested in the contribution templates.
 
 ### Docs
 
 - Operations: [docs/curriculum_operations.md](docs/curriculum_operations.md)
 - Prompt/few-shot overrides: [docs/model_asset_overrides.md](docs/model_asset_overrides.md)
 - History and reproducibility: [docs/history_and_reproducibility.md](docs/history_and_reproducibility.md)
+- Project philosophy: [SOUL.md](SOUL.md)
+
+## RAlph Mode
+
+<img src="docs/RAlph.png" alt="RAlph mode icon" width="120" />
+
+Use the RAlph mode option when you want the harness to spend more budget on iterative retries and candidate selection instead of taking a single straight-through attempt.
