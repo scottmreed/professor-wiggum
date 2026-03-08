@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "description": "Practice eval tiers (NOT the leaderboard eval set).",
+    "source": "FlowER flower_new_dataset train.txt",
+    "difficulty_criteria": {
+      "easy": "Mechanistic steps 1-2",
+      "medium": "Mechanistic steps 3",
+      "hard": "Mechanistic steps 4+"
+    }
+  },
+  "easy": [
+    "flower_190093",
+    "flower_235115",
+    "flower_132749",
+    "flower_021635",
+    "flower_125437",
+    "flower_080881",
+    "flower_258187",
+    "flower_116788"
+  ],
+  "medium": [
+    "flower_254799",
+    "flower_114737",
+    "flower_161092",
+    "flower_158364"
+  ],
+  "hard": [
+    "flower_257551",
+    "flower_155885",
+    "flower_150270",
+    "flower_170647",
+    "flower_184873",
+    "flower_192490",
+    "flower_236958",
+    "flower_130533"
+  ]
+}

@@ -150,7 +150,7 @@ A system that is evolving well shows these patterns in its git history:
 - The eval set grows as new reaction classes are added.
 - Deprecated models stay in the catalog (for trace replay) but stop appearing in new runs.
 - Prompt base files stay short — few-shot examples carry the task-specific knowledge, not the instruction text.
-- Harness configurations are tested via dry runs and eval tiers before being proposed as PRs. The built-in reference point is `harness_versions/default.json`; changes to the pipeline (adding, removing, or reordering modules, or changing topology profiles) are versioned as saved harness variants in `harness_versions/` and gated on the same eval tiers as other contributions.
+- Harness configurations are tested via dry runs and eval tiers before being proposed as PRs. The built-in reference point is `harness_versions/default/harness.json`; changes to the pipeline (adding, removing, or reordering modules, or changing topology profiles) are versioned as saved harness variants in `harness_versions/` and gated on the same eval tiers as other contributions.
 - Coordination topology experiments (SAS, centralized MAS, independent MAS, decentralized MAS) appear as leaderboard comparisons, not as guesses. If a topology produces better results on the eval tiers, it becomes the new default via the normal harness PR process.
 
 A system that is evolving badly shows these patterns:
@@ -162,24 +162,6 @@ A system that is evolving badly shows these patterns:
 
 If you see the second set of patterns, the right response is not to add more guardrails — it is to ask why the feedback loop is not producing good signal. Usually the answer is that the eval set is too small, or the judge scoring is miscalibrated.
 
----
+## References
 
-## Design Principles
-
-**Trust determinism over confidence.** A step that passes RDKit validation is correct by the definition we have agreed on. A step that the LLM says it is "highly confident" about but fails validation is wrong. The model's confidence score is informative for ranking candidates; it is not a substitute for the chemistry check.
-
-**Evidence is not optional.** Any prompt change without evidence is a hypothesis, not an improvement. Hypotheses are fine to explore locally. They do not belong in main.
-
-**Users are part of the curriculum, not just observers.** Single-reaction submissions, trace review, checkpoint inspection, and contribution PRs are all first-class inputs to the system's learning loop. A user who submits one failure case, reviews one trace, or links one checkpoint in a PR is helping define what the system should improve next. The curriculum should make that contribution path visible and easy to follow.
-
-**Reversibility is a requirement.** Every change must be reversible: prompts can be rolled back (git), models can be deprecated (catalog flag), traces always reference the model and prompt SHA that produced them. If a change breaks the leaderboard, the revert is one `git revert` away.
-
-**The eval set is the memory of what we care about.** The reactions in `training_data/eval_set.json` (100 reactions from PMechDB) and the tiered subset in `training_data/eval_tiers.json` (10 easy + 10 medium + 10 hard) define what "correct chemistry" means for this system. If you want the system to get better at a new reaction class, add that class to the eval set first. Otherwise the leaderboard cannot measure whether you succeeded. PR approval gates on eval tier performance, not individual reaction results.
-
-**Structured outputs come first.** Tool schemas may include optional free-form commentary fields, but validation and leaderboard outcomes are driven by the structured payload and deterministic chemistry checks. Human reviewers can inspect supplemental commentary in traces when it is useful for debugging or prompt iteration.
-
-**Small, composable changes win.** A PR that adds one few-shot example with one evidence trace and shows a 2% leaderboard improvement is more valuable than a PR that rewrites the base prompt and shows a 5% improvement, because the small PR is fully auditable and the large one is not. The system is designed to reward the small, incremental, evidence-backed improvement.
-
-**Coordination topology is a harness-level knob, not a prompt change.** The `coordination_topology` field controls how the proposal step is orchestrated — single agent (SAS), centralized multi-candidate (default), independent parallel agents, or decentralized agents with peer debate. Changing this field changes how many LLM calls are made and how their outputs are merged, but it does not change the prompt content, the few-shot examples, or the validation chain. Topology experiments follow the Track 4 (harness change) contribution path and are gated on eval tiers like any other structural change.
-
-**Contribution paths should stay legible.** A healthy project makes it obvious how someone can help: submit a single reaction, improve a trainee lane, add a few-shot example, patch the harness, or contribute a new model-specific override set. The curriculum, README, and history views should show where the system learned and how a person can extend that learning without needing to reverse-engineer the repo.
+- [2512.08296v2.pdf](file:///Users/scottreed/Desktop/Mechanistic/Refs/2512.08296v2.pdf) - Guide to harness design
