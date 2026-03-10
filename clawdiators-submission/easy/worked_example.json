@@ -1,0 +1,126 @@
+{
+  "_note": "Three fully solved example reactions \u2014 NOT from the eval set. Shows the new submission format with steps and electron_pushes.",
+  "examples": [
+    {
+      "reaction": {
+        "id": "example-sn2",
+        "starting_materials": [
+          "CI",
+          "[OH-]"
+        ],
+        "target_products": [
+          "CO",
+          "[I-]"
+        ],
+        "conditions": "aqueous, basic",
+        "n_steps": 1
+      },
+      "correct_submission": {
+        "final_products": [
+          "CO.[I-]"
+        ],
+        "steps": [
+          {
+            "resulting_state": [
+              "CO",
+              "[I-]"
+            ],
+            "electron_pushes": [
+              "lp:O>C",
+              "sigma:C-I>I"
+            ]
+          }
+        ],
+        "methodology": "SN2 concerted: hydroxide lone pair attacks methyl carbon (backside). C-I bond breaks, iodide leaves. Single concerted step \u2014 no discrete intermediate."
+      },
+      "scoring_notes": {
+        "final_products": "Correct. CO.[I-] matches ground truth (dot-joined or separate accepted).",
+        "pathway_coverage": "Full credit: 1 step submitted, 1 step expected. No intermediates \u2014 correct for concerted SN2.",
+        "electron_push_quality": "Full credit: push types [lp, sigma] match ground truth exactly.",
+        "explanation": "lp:O>C = hydroxide lone pair attacks carbon; sigma:C-I>I = C-I bond electrons flow to iodide."
+      }
+    },
+    {
+      "reaction": {
+        "id": "example-n-oxidation",
+        "starting_materials": [
+          "c1ccncc1",
+          "CC(=O)OO"
+        ],
+        "target_products": [
+          "[O-][n+]1cccc1",
+          "CC(=O)O"
+        ],
+        "conditions": "AcOH, RT",
+        "n_steps": 1
+      },
+      "correct_submission": {
+        "final_products": [
+          "[O-][n+]1cccc1.CC(=O)O"
+        ],
+        "steps": [
+          {
+            "resulting_state": [
+              "[O-][n+]1cccc1",
+              "CC(=O)O"
+            ],
+            "electron_pushes": [
+              "lp:N>O"
+            ]
+          }
+        ],
+        "methodology": "N-oxidation: aromatic nitrogen lone pair attacks electrophilic oxygen of peracetic acid. O-O bond breaks heterolytically. Products: pyridine N-oxide + acetic acid. Concerted, 1 step."
+      },
+      "scoring_notes": {
+        "electron_push_quality": "Full credit: push type [lp] matches ground truth.",
+        "explanation": "lp:N>O = N lone pair flows to electrophilic O of peracid. The O-O bond breaks as electrons move from N to O."
+      }
+    },
+    {
+      "reaction": {
+        "id": "example-epoxide-opening",
+        "starting_materials": [
+          "C1CO1",
+          "CCN"
+        ],
+        "target_products": [
+          "CCNCCO"
+        ],
+        "conditions": "aqueous, RT",
+        "n_steps": 2
+      },
+      "correct_submission": {
+        "final_products": [
+          "CCNCCO"
+        ],
+        "steps": [
+          {
+            "resulting_state": [
+              "CC[NH2+]CC[O-]"
+            ],
+            "electron_pushes": [
+              "lp:N>C",
+              "sigma:C-O_ring>O"
+            ]
+          },
+          {
+            "resulting_state": [
+              "CCNCCO"
+            ],
+            "electron_pushes": [
+              "lp:O>H",
+              "sigma:N-H>N"
+            ]
+          }
+        ],
+        "methodology": "2-step epoxide ring opening: (1) Amine lone pair attacks less hindered epoxide carbon (SN2-like), ring opens to give ammonium alkoxide zwitterion. (2) Proton transfer from N to O gives neutral amino alcohol. Two discrete steps with isolable zwitterionic intermediate."
+      },
+      "scoring_notes": {
+        "final_products": "Correct. CCNCCO = 2-(ethylamino)ethanol.",
+        "pathway_coverage": "Full credit: 2 steps submitted, 2 steps expected. Intermediate CC[NH2+]CC[O-] is the zwitterion.",
+        "electron_push_quality": "Full credit: Step 1 types [lp, sigma] match; Step 2 types [lp, sigma] match.",
+        "partial_credit_example": "If you submitted the correct intermediate but wrote 'lp:O>C' instead of 'lp:N>C' (wrong atom type), you would get partial push credit. Push scoring uses type distribution, so lp+sigma in step 1 would still score if you had 1 lp and 1 sigma."
+      }
+    }
+  ]
+}

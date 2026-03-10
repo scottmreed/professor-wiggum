@@ -29,20 +29,34 @@ def validate_atom_balance(
         SMILES list of all species after the mechanism step.
     """
     from mechanistic_agent.tools import analyse_balance
-    from mechanistic_agent.smiles_utils import sanitize_smiles_list
+    from mechanistic_agent.smiles_utils import canonicalize_capture_error
 
-    # Attempt to sanitize SMILES before validation
-    current_valid, current_invalid = sanitize_smiles_list(current_state)
-    resulting_valid, resulting_invalid = sanitize_smiles_list(resulting_state)
+    # Build per-SMILES error map using error-capturing function
+    invalid_details = {}  # smiles → rdkit_error_string
+    current_valid = []
+    resulting_valid = []
 
-    # If we have invalid SMILES that couldn't be recovered, fail with details
-    invalid_smiles = current_invalid + resulting_invalid
-    if invalid_smiles:
+    for smi in current_state:
+        canon, err = canonicalize_capture_error(smi)
+        if canon is not None:
+            current_valid.append(canon)
+        elif err is not None:
+            invalid_details[smi] = err
+
+    for smi in resulting_state:
+        canon, err = canonicalize_capture_error(smi)
+        if canon is not None:
+            resulting_valid.append(canon)
+        elif err is not None:
+            invalid_details[smi] = err
+
+    if invalid_details:
         return StepValidationCheck(
             name="atom_balance",
             passed=False,
             details={
-                "error": f"Invalid SMILES strings: {invalid_smiles}",
+                "error": f"Invalid SMILES: {list(invalid_details.keys())}",
+                "rdkit_errors": invalid_details,  # NEW: per-SMILES diagnostic
                 "sanitized_current": current_valid,
                 "sanitized_resulting": resulting_valid,
             },

@@ -1,0 +1,140 @@
+{
+  "reactions": [
+    {
+      "id": "mech-easy-SEED-0",
+      "source_id": "flower_024300",
+      "starting_materials": [
+        "ClCC1CO1",
+        "CN(C)C"
+      ],
+      "target_products": [
+        "C[N+](C)(C)CC1CO1",
+        "[Cl-]"
+      ],
+      "conditions": "aqueous acetonitrile, RT",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-easy-SEED-1",
+      "source_id": "flower_130926",
+      "starting_materials": [
+        "CCCBr",
+        "CN1CCCC1"
+      ],
+      "target_products": [
+        "[Br-]",
+        "CCC[N+]1(C)CCCC1"
+      ],
+      "conditions": "acetonitrile, RT",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-easy-SEED-2",
+      "source_id": "flower_222822",
+      "starting_materials": [
+        "CCI",
+        "C1CCC(N2CCCC2)CC1"
+      ],
+      "target_products": [
+        "CC[N+]1(C2CCCCC2)CCCC1",
+        "[I-]"
+      ],
+      "conditions": "acetonitrile, RT",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-easy-SEED-3",
+      "source_id": "flower_120680",
+      "starting_materials": [
+        "Clc1ccc(N)cc1",
+        "CC1CO1"
+      ],
+      "target_products": [
+        "Clc1ccc(NCC(O)C)cc1"
+      ],
+      "conditions": "aqueous, RT",
+      "n_steps": 2
+    },
+    {
+      "id": "mech-easy-SEED-4",
+      "source_id": "flower_053068",
+      "starting_materials": [
+        "CI",
+        "CCOP(OCC)OCC"
+      ],
+      "target_products": [
+        "CP(=O)(OCC)OCC",
+        "CCI"
+      ],
+      "conditions": "neat, 100 degC",
+      "n_steps": 2
+    },
+    {
+      "id": "mech-easy-SEED-5",
+      "source_id": "flower_135501",
+      "starting_materials": [
+        "C=CC#N",
+        "C1=CCC=C1"
+      ],
+      "target_products": [
+        "N#CCCC1C=CC=C1"
+      ],
+      "conditions": "toluene, 150 degC, thermal",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-easy-SEED-6",
+      "source_id": "flower_160718",
+      "starting_materials": [
+        "C=O",
+        "CC(=O)C=C(C)C"
+      ],
+      "target_products": [
+        "C=C(C)C(CO)C(C)=O"
+      ],
+      "conditions": "neat, thermal",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-easy-SEED-7",
+      "source_id": "flower_225090",
+      "starting_materials": [
+        "c1ccc2ncccc2c1",
+        "CC(=O)OO"
+      ],
+      "target_products": [
+        "[O-][n+]1cccc2ccccc21",
+        "CC(=O)O"
+      ],
+      "conditions": "acetic acid, RT",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-easy-SEED-8",
+      "source_id": "flower_105699",
+      "starting_materials": [
+        "CCOC(=O)c1ccc(-c2ccccn2)cc1",
+        "CC(=O)OO"
+      ],
+      "target_products": [
+        "CCOC(=O)c1ccc(-c2cccc[n+]2[O-])cc1",
+        "CC(=O)O"
+      ],
+      "conditions": "acetic acid, RT",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-easy-SEED-9",
+      "source_id": "flower_127589",
+      "starting_materials": [
+        "C=CC(=C)C",
+        "CC(C=O)c1ccccc1"
+      ],
+      "target_products": [
+        "CC1=CCOC(C(C)c2ccccc2)C1"
+      ],
+      "conditions": "toluene, 80 degC, thermal",
+      "n_steps": 1
+    }
+  ]
+}

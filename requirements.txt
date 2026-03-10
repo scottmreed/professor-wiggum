@@ -6,9 +6,8 @@ uvicorn>=0.30
 rich>=13.0.0
 openai>=1.40.0
 google-genai>=1.0.0
-# rdkit has platform-specific install issues; excluded here to avoid failures.
-# Install chemistry extras instead: pip install -e ".[chemistry]"
-# Or via conda: conda install -c conda-forge rdkit
-# Without rdkit, SMILES validation and atom mapping are disabled (3 fast tests will fail).
-#rdkit-pypi>=2022.9.5
+# Chemistry dependencies (required for harness functionality)
+rdkit>=2022.9.5  # Via conda: conda install -c conda-forge rdkit
+                # Via pip: pip install rdkit-pypi
+                # Required for: atom counting, SMILES validation, mechanism validation
 dimorphite-dl>=1.3.1

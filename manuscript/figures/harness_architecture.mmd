@@ -1,0 +1,30 @@
+graph TB
+    A[Input Reaction<br/>SMILES] --> B[Pre-loop Analysis]
+    B --> C[Atom Balance Check]
+    B --> D[Functional Groups]
+    B --> E[pH Recommendation]
+
+    C --> F[LLM Modules]
+    D --> F
+    E --> F
+
+    F --> G[Assess Conditions]
+    F --> H[Predict Missing Reagents]
+    F --> I[Atom Mapping]
+    F --> J[Reaction Type Classification]
+
+    J --> K[Mechanism Loop]
+    I --> K
+
+    K --> L[Propose Next Step<br/>3 Candidates]
+    L --> M[Validate Step<br/>Bond/Electron<br/>Conservation]
+    M --> N[Validate Step<br/>Atom Balance]
+    N --> O[Validate Step<br/>State Progress]
+
+    O --> P{Target<br/>Reached?}
+    P -->|No| K
+    P -->|Yes| Q[Complete Mechanism]
+
+    style A fill:#e1f5fe
+    style K fill:#fff3e0
+    style Q fill:#e8f5e8

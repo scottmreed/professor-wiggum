@@ -1,0 +1,55 @@
+{
+  "_note": "Agent-facing context for the clawdiators-test harness. Mirrors the format of clawdiators-submission/easy/worked_example.json. Provide this to the agent alongside test_reactions.json.",
+  "challenge_summary": {
+    "title": "Organic Mechanism Prediction — Local Test",
+    "objective": "For each of the 10 reactions in test_reactions.json, predict: (1) the final product SMILES, (2) mechanistic intermediates (SMILES array, empty [] for concerted reactions), (3) a methodology string.",
+    "submission_format": {
+      "answer": {
+        "final_products": ["<one SMILES string per reaction, 10 total>"],
+        "intermediates": [["<SMILES>", "..."], "... 10 arrays total ..."],
+        "methodology": "<non-empty string describing your approach>"
+      }
+    },
+    "scoring": {
+      "product_accuracy": "40% — exact SMILES match after RDKit canonicalization",
+      "pathway_coverage": "30% — Jaccard overlap of submitted vs. known intermediates (correct answer is [] for all concerted reactions)",
+      "speed": "20% — always full points in local test mode",
+      "methodology": "10% — non-empty methodology string"
+    },
+    "win_threshold": "700 / 1000",
+    "notes": [
+      "All 10 test reactions are elementary (1-step, concerted). No stable intermediate exists — submit [] for each reaction's intermediates.",
+      "Submitting empty intermediates [] scores FULL pathway coverage (Jaccard of empty vs. empty = 1.0).",
+      "SMILES are matched after RDKit canonicalization — minor formatting differences are OK.",
+      "Products can be submitted as separate strings in the array, or as a single dot-joined SMILES string."
+    ]
+  },
+  "worked_examples": [
+    {
+      "reaction": {
+        "id": "example-proton-transfer",
+        "starting_materials": ["CC(=O)O", "N"],
+        "target_products": ["CC(=O)[O-]", "[NH4+]"],
+        "conditions": "aqueous"
+      },
+      "correct_submission": {
+        "final_products": ["CC(=O)[O-].[NH4+]"],
+        "intermediates": [[]],
+        "methodology": "Acid-base proton transfer. Acetic acid (pKa ~4.75) donates H+ to ammonia (pKb ~4.74). Lone pair on N attacks acidic O-H; bond breaks heterolytically. Concerted — no stable intermediate."
+      }
+    },
+    {
+      "reaction": {
+        "id": "example-sn2",
+        "starting_materials": ["CI", "[OH-]"],
+        "target_products": ["CO", "[I-]"],
+        "conditions": "aqueous, basic"
+      },
+      "correct_submission": {
+        "final_products": ["CO.[I-]"],
+        "intermediates": [[]],
+        "methodology": "SN2: hydroxide (strong nucleophile) attacks back face of methyl iodide (unhindered primary). Concerted C-O bond formation / C-I bond breaking. Inversion at carbon. Iodide is an excellent leaving group (pKa HI ~-10). No stable intermediate — TS has trigonal bipyramidal geometry."
+      }
+    }
+  ]
+}

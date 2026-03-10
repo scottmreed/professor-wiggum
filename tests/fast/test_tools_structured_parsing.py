@@ -334,6 +334,51 @@ def test_propose_intermediates_repairs_candidates_with_invalid_mech_block(monkey
     assert payload["rejected_candidates"][0]["reason"] == "reaction_smirks_invalid_mech_block"
 
 
+def test_propose_intermediates_marks_non_executable_candidates_unvalidated(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StubResponse:
+        usage = None
+
+        def __init__(self) -> None:
+            payload = {
+                "classification": "intermediate_step",
+                "analysis": "analysis",
+                "candidates": [
+                    {
+                        "rank": 1,
+                        "intermediate_smiles": "CCCl",
+                        "reaction_description": "missing mechanism fields",
+                        "reaction_smirks": "",
+                        "electron_pushes": [],
+                    }
+                ],
+            }
+            self.tool_calls = [{"arguments": json.dumps(payload)}]
+
+    class _StubLLM:
+        def invoke(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+            return _StubResponse()
+
+    monkeypatch.setattr("mechanistic_agent.tools.adapter_supports_forced_tools", lambda _model: True)
+    monkeypatch.setattr("mechanistic_agent.tools.get_model_api_key", lambda *_args, **_kwargs: "test-key")
+    monkeypatch.setattr("mechanistic_agent.tools.get_chat_model", lambda *_args, **_kwargs: _StubLLM())
+
+    raw = propose_intermediates(
+        starting_materials=["CCBr", "[Cl-]"],
+        products=["CCCl", "[Br-]"],
+        current_state=["CCBr", "[Cl-]"],
+    )
+    payload = json.loads(raw)
+    assert payload["validation_status"] == "unvalidated"
+    assert payload["has_executable_candidates"] is False
+    assert payload["executable_candidate_count"] == 0
+    assert payload["proposed_intermediates"] == []
+    assert payload["rejected_candidates"][0]["reason"] in {
+        "missing_reaction_smirks",
+        "reaction_smirks_missing",
+        "reaction_smirks_invalid",
+    }
+
+
 def test_candidate_rescue_dedupes_drops_existing_and_caps(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "mechanistic_agent.tools.predict_missing_reagents",

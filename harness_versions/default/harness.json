@@ -330,6 +330,33 @@
       }
     }
   ],
+  "post_loop_modules": [
+    {
+      "step": 1,
+      "id": "past_failure_reevaluation",
+      "label": "Re-evaluate Soft-Advanced Steps",
+      "kind": "deterministic",
+      "phase": "post_loop",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "",
+      "step_name": "past_failure_reevaluation",
+      "tool_name": "past_failure_reevaluation",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": ["past_failure_reevaluation"],
+      "movable": true,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "After the mechanism loop ends, re-evaluates any steps that were soft-accepted (proceed_on_validation_failure) by attempting deterministic validation fixes in light of later successful steps. Corrected steps are recorded as 'reevaluated' in step_outputs. Has no effect when no soft-accepted steps exist."
+    }
+  ],
+  "run_config_defaults": {
+    "proceed_on_validation_failure": true,
+    "proceed_only_on_arrow_push_failure": false
+  },
   "topology_profiles": {
     "sas": {
       "agent_count": 1,
@@ -380,6 +407,11 @@
         "version": 3,
         "date": "2026-03-05",
         "description": "Schema 2.1: added topology_profiles for SAS / centralized MAS / independent MAS / decentralized MAS coordination strategies."
+      },
+      {
+        "version": 4,
+        "date": "2026-03-10",
+        "description": "Added post_loop_modules (past_failure_reevaluation), run_config_defaults (proceed_on_validation_failure, proceed_only_on_arrow_push_failure). ModulePhase extended with 'post_loop'."
       }
     ]
   }

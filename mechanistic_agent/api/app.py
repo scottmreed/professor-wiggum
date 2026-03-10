@@ -9,6 +9,7 @@ import json
 import re
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -41,6 +42,7 @@ from mechanistic_agent.core import (
     select_step_models,
 )
 from mechanistic_agent.core.job_executor import ThreadJobExecutor
+from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
 from mechanistic_agent.core.storage_interfaces import (
     LocalArtifactStore,
     RunStateStore,
@@ -61,8 +63,15 @@ from mechanistic_agent.model_registry import (
     get_default_model,
     get_model_family,
     get_model_options,
+    resolve_model_key,
     to_internal_reasoning_level,
     to_public_reasoning_level,
+)
+from mechanistic_agent.eval_set_resolution import (
+    EvalSetResolutionError,
+    case_ids_hash,
+    resolve_eval_set,
+    select_eval_cases,
 )
 from mechanistic_agent.core.model_selection import preview_step_models
 from mechanistic_agent.prompt_assets import (
@@ -107,6 +116,7 @@ from .schemas import (
     TraceToFewShotRequest,
     VerifyStepRequest,
     RalphVoteRequest,
+    OvernightRalphStartRequest,
 )
 
 
@@ -1289,6 +1299,10 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
     coordinator = RunCoordinator(store)
     manager = RunManager(coordinator)
     eval_executor = ThreadJobExecutor()
+    overnight_executor = ThreadJobExecutor()
+    overnight_orchestrator = OvernightRalphOrchestrator(base_dir=base, store=store)
+    overnight_job = {"job_id": "", "status": "idle"}
+    overnight_lock = threading.Lock()
 
     app = FastAPI(title="Mechanistic Local Runtime", version="0.2.0")
 
@@ -1313,8 +1327,12 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
     def _resolve_model_name(*candidates: Any) -> str:
         for candidate in candidates:
             if isinstance(candidate, str) and candidate.strip():
-                return candidate.strip()
-        return get_default_model()
+                text = candidate.strip()
+                try:
+                    return resolve_model_key(text)
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=f"Unsupported model '{text}'") from exc
+        return resolve_model_key(get_default_model())
 
     def _resolve_public_thinking_level(*candidates: Any) -> str | None:
         for candidate in candidates:
@@ -1350,6 +1368,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         candidate_rescue_enabled: bool,
         step_mapping_enabled: bool,
         arrow_push_annotation_enabled: bool,
+        adaptive_harness_mode: str,
         dbe_policy: str,
         reaction_template_policy: str,
         reaction_template_confidence_threshold: float,
@@ -1375,6 +1394,9 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         selected_primary_model = model_plan.step_models.get("mechanism_synthesis") or model_name
 
         ralph = dict(ralph or {})
+        resolved_adaptive_mode = str(adaptive_harness_mode or "off")
+        if str(harness_name or "default").strip() == "adaptive_default" and resolved_adaptive_mode == "off":
+            resolved_adaptive_mode = "conservative"
         hashes = registry.bundle_hashes(model_name=selected_primary_model)
         run_id = store.create_run(
             mode=mode,
@@ -1409,6 +1431,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 "candidate_rescue_enabled": candidate_rescue_enabled,
                 "step_mapping_enabled": step_mapping_enabled,
                 "arrow_push_annotation_enabled": arrow_push_annotation_enabled,
+                "adaptive_harness_mode": resolved_adaptive_mode,
                 "dbe_policy": dbe_policy,
                 "reaction_template_policy": reaction_template_policy,
                 "reaction_template_confidence_threshold": reaction_template_confidence_threshold,
@@ -1430,6 +1453,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 ),
                 "babysit_mode": str(ralph.get("babysit_mode") or "off"),
                 "allow_validator_mutation": bool(ralph.get("allow_validator_mutation", False)),
+                "mutation_lane": ralph.get("mutation_lane"),
                 "example_id": example_id,
                 "dry_run": dry_run,
             },
@@ -1564,33 +1588,45 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
 
     def _execute_eval_runset(eval_run_id: str, payload: EvalRunSetRequest) -> None:
         try:
-            cases = store.list_eval_set_cases(payload.eval_set_id)
+            resolved_eval_set = resolve_eval_set(
+                store=store,
+                requested_eval_set_id=payload.eval_set_id,
+            )
+            cases = list(resolved_eval_set.cases)
             max_cases = max(1, int(payload.max_cases))
-            by_case_id = {str(case.get("case_id") or ""): case for case in cases}
-
             if payload.case_ids:
-                selected_cases = [
-                    by_case_id[case_id]
-                    for case_id in [str(item) for item in payload.case_ids]
-                    if case_id in by_case_id
-                ]
+                requested_case_ids = [str(item) for item in payload.case_ids]
+                selected_cases = select_eval_cases(
+                    cases=cases,
+                    case_ids=requested_case_ids,
+                    max_cases=max_cases,
+                )
             elif payload.step_count is not None:
                 requested_steps = int(payload.step_count)
-                selected_cases = [
+                step_filtered = [
                     case
                     for case in cases
                     if int(_eval_case_step_count(case) or 0) == requested_steps
                 ]
+                selected_cases = select_eval_cases(cases=step_filtered, max_cases=max_cases)
             elif payload.tier_name:
                 tiers = _load_eval_tier_ids(base)
                 tier_ids = tiers.get(payload.tier_name, [])
-                selected_cases = [by_case_id[case_id] for case_id in tier_ids if case_id in by_case_id]
+                selected_cases = select_eval_cases(
+                    cases=cases,
+                    tier_case_ids=tier_ids,
+                    max_cases=max_cases,
+                )
             else:
-                selected_cases = cases[:max_cases]
+                selected_cases = select_eval_cases(cases=cases, max_cases=max_cases)
 
             if not selected_cases:
                 store.set_eval_run_status(eval_run_id, "failed")
                 return
+            selected_case_ids = [
+                str(item.get("case_id") or "") for item in selected_cases if str(item.get("case_id") or "")
+            ]
+            selected_case_ids_digest = case_ids_hash(selected_case_ids)
 
             for case in selected_cases:
                 case_id = str(case.get("case_id") or "")
@@ -1647,6 +1683,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                     candidate_rescue_enabled=True,
                     step_mapping_enabled=True,
                     arrow_push_annotation_enabled=True,
+                    adaptive_harness_mode="off",
                     dbe_policy="soft",
                     reaction_template_policy="auto",
                     reaction_template_confidence_threshold=0.65,
@@ -1696,6 +1733,15 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                         "selected_step_models": step_models,
                         "known_answer_comparison": known_answer_comparison,
                         "scoring_breakdown": graded.get("scoring_breakdown", {}),
+                        "run_metadata": {
+                            "eval_set_id": resolved_eval_set.eval_set_id,
+                            "eval_set_purpose": resolved_eval_set.purpose,
+                            "eval_case_ids_hash": selected_case_ids_digest,
+                            "case_id": case_id,
+                            "model": case_model_name,
+                            "thinking_level": case_thinking,
+                            "prompt_bundle_hash": snapshot.get("prompt_bundle_hash"),
+                        },
                         "subagent_scores": subagent_scores,
                     },
                 )
@@ -1750,6 +1796,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             candidate_rescue_enabled=payload.candidate_rescue_enabled,
             step_mapping_enabled=payload.step_mapping_enabled,
             arrow_push_annotation_enabled=payload.arrow_push_annotation_enabled,
+            adaptive_harness_mode=payload.adaptive_harness_mode,
             dbe_policy=payload.dbe_policy,
             reaction_template_policy=payload.reaction_template_policy,
             reaction_template_confidence_threshold=payload.reaction_template_confidence_threshold,
@@ -2077,6 +2124,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 "candidate_rescue_enabled": compact_config.get("candidate_rescue_enabled"),
                 "step_mapping_enabled": compact_config.get("step_mapping_enabled"),
                 "arrow_push_annotation_enabled": compact_config.get("arrow_push_annotation_enabled"),
+                "adaptive_harness_mode": compact_config.get("adaptive_harness_mode", "off"),
                 "dbe_policy": compact_config.get("dbe_policy"),
                 "reaction_template_policy": compact_config.get("reaction_template_policy"),
                 "reaction_template_confidence_threshold": compact_config.get("reaction_template_confidence_threshold"),
@@ -2984,6 +3032,8 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             sort_keys=True,
         )
         example_key = payload.example_key or f"{selected.get('id')}"
+        source_run_id = str(selected.get("run_id") or "").strip() or None
+        run_quality = store.get_run_quality(source_run_id) if source_run_id else "failed"
         example_id = store.add_few_shot_example(
             step_name=step_name,
             example_key=example_key,
@@ -2998,6 +3048,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             call_name,
             input_text=input_text,
             output_text=output_text,
+            source_run_quality=run_quality,
             base_dir=base,
         )
         return {
@@ -3010,10 +3061,14 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
 
     @app.post("/api/evals/runset")
     def run_eval_set(payload: EvalRunSetRequest) -> Dict[str, Any]:
-        eval_set = store.get_eval_set(payload.eval_set_id)
-        if eval_set is None:
-            raise HTTPException(status_code=404, detail="Eval set not found")
-        if _is_leaderboard_holdout_eval_set(eval_set):
+        try:
+            resolved = resolve_eval_set(
+                store=store,
+                requested_eval_set_id=payload.eval_set_id,
+            )
+        except EvalSetResolutionError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if resolved.purpose == "leaderboard_holdout":
             raise HTTPException(
                 status_code=403,
                 detail="leaderboard_holdout eval sets are restricted to /api/evals/official-runset",
@@ -3022,7 +3077,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         model_name = _resolve_model_name(payload.model_name, payload.model)
         thinking_level = _resolve_public_thinking_level(payload.thinking_level, payload.reasoning_level)
         eval_run_id = store.create_eval_run(
-            eval_set_id=payload.eval_set_id,
+            eval_set_id=str(resolved.eval_set_id),
             run_group_name=payload.run_group_name,
             model=model_name,
             model_name=model_name,
@@ -3039,26 +3094,36 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         row = store.get_eval_run(eval_run_id) or {}
         return {"eval_run_id": eval_run_id, "status": row.get("status", "unknown"), "async_mode": False}
 
-    def _resolve_official_holdout_eval_set_id(requested_eval_set_id: Optional[str]) -> str:
-        if requested_eval_set_id:
-            row = store.get_eval_set(requested_eval_set_id)
-            if row is None:
-                raise HTTPException(status_code=404, detail="Eval set not found")
-            if not _is_leaderboard_holdout_eval_set(row):
-                raise HTTPException(status_code=403, detail="Eval set is not a leaderboard_holdout suite")
-            return str(row.get("id") or "")
-
-        holdouts = store.list_eval_sets(purpose="leaderboard_holdout")
-        if not holdouts:
-            raise HTTPException(status_code=404, detail="No leaderboard_holdout eval set found")
-        return str(holdouts[0].get("id") or "")
+    def _resolve_official_holdout_eval_set_id(
+        requested_eval_set_id: Optional[str],
+        *,
+        allow_non_holdout: bool = False,
+    ) -> str:
+        try:
+            resolved = resolve_eval_set(
+                store=store,
+                requested_eval_set_id=requested_eval_set_id,
+                require_purpose=(None if allow_non_holdout else "leaderboard_holdout"),
+                default_purpose=("leaderboard_holdout" if not requested_eval_set_id else None),
+            )
+        except EvalSetResolutionError as exc:
+            detail = str(exc)
+            if "not found" in detail:
+                raise HTTPException(status_code=404, detail=detail) from exc
+            raise HTTPException(status_code=403, detail=detail) from exc
+        return str(resolved.eval_set_id or "")
 
     @app.post("/api/evals/official-runset")
     def run_official_eval_set(payload: OfficialEvalRunSetRequest) -> Dict[str, Any]:
-        eval_set_id = _resolve_official_holdout_eval_set_id(payload.eval_set_id)
+        eval_set_id = _resolve_official_holdout_eval_set_id(
+            payload.eval_set_id,
+            allow_non_holdout=bool(payload.allow_non_holdout),
+        )
         translated = EvalRunSetRequest(
             eval_set_id=eval_set_id,
-            run_group_name=payload.run_group_name or "official_holdout_harness",
+            run_group_name=payload.run_group_name or (
+                "official_holdout_harness" if not payload.allow_non_holdout else "official_compare_harness"
+            ),
             case_ids=list(payload.case_ids or []),
             model_name=payload.model_name,
             model=payload.model,
@@ -3130,6 +3195,89 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         exports = store.list_curation_exports(export_type="phase6_bundle", limit=20)
         return {"eval_set_id": eval_set_id, "items": items, "evidence_exports": exports}
 
+    def _build_overnight_run_config(payload: OvernightRalphStartRequest) -> Dict[str, Any]:
+        model_name = _resolve_model_name(payload.model_name, payload.model)
+        plan = select_step_models(model_name=model_name)
+        return {
+            "model": model_name,
+            "model_name": model_name,
+            "model_family": get_model_family(model_name),
+            "thinking_level": None,
+            "reasoning_level": None,
+            "step_models": plan.step_models,
+            "step_reasoning": plan.step_reasoning,
+            "optional_llm_tools": ["attempt_atom_mapping", "predict_missing_reagents"],
+            "functional_groups_enabled": True,
+            "intermediate_prediction_enabled": True,
+            "max_steps": 6,
+            "max_runtime_seconds": 180.0,
+            "orchestration_mode": "standard",
+            "harness_name": payload.harness_name or "default",
+        }
+
+    def _execute_overnight_ralph(job_id: str, payload: OvernightRalphStartRequest) -> None:
+        try:
+            program_path = Path(payload.program)
+            if not program_path.is_absolute():
+                program_path = (base / program_path).resolve()
+            config = load_overnight_program(program_path)
+            if payload.eval_slice_id:
+                config.eval_slice_id = payload.eval_slice_id
+            if payload.lanes:
+                config.allowed_lanes = list(payload.lanes)  # type: ignore[assignment]
+            if payload.max_experiments is not None:
+                config.max_experiments = max(1, int(payload.max_experiments))
+            if payload.max_cost_usd is not None:
+                config.max_cost_usd = float(payload.max_cost_usd)
+            if payload.acceptance_threshold is not None:
+                config.acceptance_threshold_pct = max(0.0, float(payload.acceptance_threshold))
+
+            run_config = _build_overnight_run_config(payload)
+            summary = overnight_orchestrator.run(config=config, run_config=run_config)
+            with overnight_lock:
+                overnight_job["status"] = str(summary.get("status") or "completed")
+        except Exception as exc:
+            with overnight_lock:
+                overnight_job["status"] = "failed"
+                overnight_job["error"] = str(exc)
+
+    @app.post("/api/overnight-ralph/start")
+    def start_overnight_ralph(payload: OvernightRalphStartRequest) -> Dict[str, Any]:
+        with overnight_lock:
+            running = overnight_job.get("job_id") and overnight_executor.is_running(str(overnight_job.get("job_id")))
+            if running:
+                raise HTTPException(status_code=409, detail="Overnight Ralph job is already running")
+            job_id = uuid.uuid4().hex
+            overnight_job.clear()
+            overnight_job.update({"job_id": job_id, "status": "running", "started_at": time.time()})
+        overnight_executor.start(job_id, _execute_overnight_ralph, job_id, payload)
+        return {"job_id": job_id, "status": "running"}
+
+    @app.get("/api/overnight-ralph/status")
+    def overnight_ralph_status() -> Dict[str, Any]:
+        with overnight_lock:
+            running = bool(overnight_job.get("job_id")) and overnight_executor.is_running(
+                str(overnight_job.get("job_id"))
+            )
+            if running:
+                overnight_job["status"] = "running"
+        status_payload = overnight_orchestrator.status.as_dict()
+        status_payload["ledger_tail"] = overnight_orchestrator.ledger.tail(limit=20)
+        return status_payload
+
+    @app.get("/api/overnight-ralph/ledger")
+    def overnight_ralph_ledger(limit: int = 200, eval_slice_id: Optional[str] = None) -> Dict[str, Any]:
+        rows = overnight_orchestrator.ledger.list(eval_slice_id=eval_slice_id)
+        return {"items": rows[: max(1, min(limit, 2000))]}
+
+    @app.post("/api/overnight-ralph/stop")
+    def stop_overnight_ralph() -> Dict[str, Any]:
+        overnight_orchestrator.request_stop()
+        with overnight_lock:
+            job_id = str(overnight_job.get("job_id") or "")
+            running = bool(job_id) and overnight_executor.is_running(job_id)
+        return {"job_id": job_id or None, "running": running, "stop_requested": True}
+
     # ---- Baseline (harness-free) evaluation ----
 
     def _run_baseline_eval_set(payload: BaselineEvalRunSetRequest) -> Dict[str, Any]:
@@ -3140,10 +3288,14 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             score_baseline_result,
         )
 
-        eval_set = store.get_eval_set(payload.eval_set_id)
-        if eval_set is None:
-            raise HTTPException(status_code=404, detail="Eval set not found")
-        if _is_leaderboard_holdout_eval_set(eval_set):
+        try:
+            resolved_eval_set = resolve_eval_set(
+                store=store,
+                requested_eval_set_id=payload.eval_set_id,
+            )
+        except EvalSetResolutionError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if resolved_eval_set.purpose == "leaderboard_holdout":
             raise HTTPException(
                 status_code=403,
                 detail="leaderboard_holdout eval sets are restricted to /api/evals/official-runset",
@@ -3156,7 +3308,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
 
         harness_bundle_hash = registry.bundle_hashes().get("prompt_bundle_hash", "")
         eval_run_id = store.create_eval_run(
-            eval_set_id=payload.eval_set_id,
+            eval_set_id=str(resolved_eval_set.eval_set_id),
             run_group_name=run_group,
             model=model,
             model_name=model,
@@ -3166,18 +3318,23 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             status="running",
         )
 
-        cases = store.list_eval_set_cases(payload.eval_set_id)
-        if payload.case_ids:
-            cases = [c for c in cases if str(c.get("case_id") or "") in set(payload.case_ids)]
-        if payload.step_count is not None and not payload.case_ids:
-            requested_steps = int(payload.step_count)
-            cases = [c for c in cases if int(_eval_case_step_count(c) or 0) == requested_steps]
+        tier_ids: Optional[List[str]] = None
         if payload.tier_name and not payload.case_ids and payload.step_count is None:
             tier_ids = _load_eval_tier_ids(base).get(payload.tier_name, [])
-            if tier_ids:
-                cases = [c for c in cases if str(c.get("case_id") or "") in set(tier_ids)]
-        if len(cases) > payload.max_cases:
-            cases = cases[: payload.max_cases]
+        candidate_cases = list(resolved_eval_set.cases)
+        if payload.step_count is not None and not payload.case_ids:
+            requested_steps = int(payload.step_count)
+            candidate_cases = [
+                c for c in candidate_cases if int(_eval_case_step_count(c) or 0) == requested_steps
+            ]
+        cases = select_eval_cases(
+            cases=candidate_cases,
+            case_ids=payload.case_ids or None,
+            tier_case_ids=tier_ids,
+            max_cases=payload.max_cases,
+        )
+        selected_case_ids = [str(item.get("case_id") or "") for item in cases if str(item.get("case_id") or "")]
+        selected_case_ids_digest = case_ids_hash(selected_case_ids)
 
         runner = BaselineRunner()
         completed = 0
@@ -3203,6 +3360,9 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                     model=model,
                     thinking_level=thinking_level,
                     timeout=payload.timeout_seconds,
+                    llm_seed=payload.llm_seed,
+                    llm_temperature=(payload.llm_temperature if payload.sampling_policy == "fixed" else None),
+                    sampling_policy=payload.sampling_policy,
                 )
                 graded = score_baseline_result(result, expected if expected else None)
                 score = float(graded["score"])
@@ -3217,6 +3377,20 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                     "scoring_breakdown": graded.get("scoring_breakdown", {}),
                     "error": graded.get("error"),
                     "eval_mode": "baseline",
+                    "run_metadata": {
+                        "eval_set_id": resolved_eval_set.eval_set_id,
+                        "eval_set_purpose": resolved_eval_set.purpose,
+                        "eval_case_ids_hash": selected_case_ids_digest,
+                        "case_id": case_id,
+                        "model": model,
+                        "thinking_level": thinking_level,
+                        "llm_seed": payload.llm_seed,
+                        "llm_temperature": (payload.llm_temperature if payload.sampling_policy == "fixed" else None),
+                        "sampling_policy": payload.sampling_policy,
+                        "prompt_hash": result.get("prompt_hash"),
+                        "prompt_system_hash": result.get("prompt_system_hash"),
+                        "prompt_user_hash": result.get("prompt_user_hash"),
+                    },
                     # Baseline has no per-subagent breakdown; expose single entry.
                     "subagent_scores": {
                         "full_mechanism_baseline": {
@@ -3256,6 +3430,8 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "status": "completed",
             "completed": completed,
             "failed": failed,
+            "eval_set_id": resolved_eval_set.eval_set_id,
+            "eval_case_ids_hash": selected_case_ids_digest,
         }
 
     @app.post("/api/evals/baseline-runset")
@@ -3265,10 +3441,14 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         Results are stored and visible on the leaderboard alongside harness runs,
         clearly labelled as baseline.
         """
-        eval_set = store.get_eval_set(payload.eval_set_id)
-        if eval_set is None:
-            raise HTTPException(status_code=404, detail="Eval set not found")
-        if _is_leaderboard_holdout_eval_set(eval_set):
+        try:
+            resolved = resolve_eval_set(
+                store=store,
+                requested_eval_set_id=payload.eval_set_id,
+            )
+        except EvalSetResolutionError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if resolved.purpose == "leaderboard_holdout":
             raise HTTPException(
                 status_code=403,
                 detail="leaderboard_holdout eval sets are restricted to /api/evals/official-runset",
@@ -3408,6 +3588,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 candidate_rescue_enabled=True,
                 step_mapping_enabled=True,
                 arrow_push_annotation_enabled=True,
+                adaptive_harness_mode="off",
                 dbe_policy="soft",
                 reaction_template_policy="auto",
                 reaction_template_confidence_threshold=0.65,

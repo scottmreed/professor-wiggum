@@ -73,19 +73,22 @@ _FAMILY_DEFAULT_PRIORITY: Dict[str, List[str]] = {
 
 def get_model_family(model_id: str) -> str:
     """Return the family name for a model ID."""
-    spec = _MODEL_CATALOG.get(model_id, {})
+    resolved = _resolve_catalog_key(model_id)
+    spec = _MODEL_CATALOG.get(resolved or "", {})
     return str(spec.get("family", "openai"))
 
 
 def get_model_provider(model_id: str) -> str:
     """Return the provider name for a model ID."""
-    spec = _MODEL_CATALOG.get(model_id, {})
+    resolved = _resolve_catalog_key(model_id)
+    spec = _MODEL_CATALOG.get(resolved or "", {})
     return str(spec.get("provider", "openai"))
 
 
 def model_supports_tools(model_id: str) -> bool:
     """Return True when the model natively supports tool/function calling."""
-    spec = _MODEL_CATALOG.get(model_id, {})
+    resolved = _resolve_catalog_key(model_id)
+    spec = _MODEL_CATALOG.get(resolved or "", {})
     return bool(spec.get("supports_tools", True))
 
 
@@ -202,8 +205,14 @@ def _resolve_catalog_key(model_name: str) -> Optional[str]:
     alias_map = {
         "anthropic/claude-opus-4-5": "anthropic/claude-opus-4.6",
         "anthropic/claude-opus-4-6": "anthropic/claude-opus-4.6",
+        "claude-opus-4-5": "anthropic/claude-opus-4.6",
+        "claude-opus-4-6": "anthropic/claude-opus-4.6",
+        "claude-opus-4.6": "anthropic/claude-opus-4.6",
         "anthropic/claude-sonnet-4-5": "anthropic/claude-sonnet-4.5",
         "anthropic/claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+        "claude-sonnet-4-5": "anthropic/claude-sonnet-4.5",
+        "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+        "claude-sonnet-4.6": "anthropic/claude-sonnet-4.6",
         "gpt-5-4": "gpt-5.4",
         "openai/gpt-5-4": "openai/gpt-5.4",
     }

@@ -85,8 +85,20 @@
         "lowest": {
           "effort": "low"
         },
+        "low": {
+          "effort": "low"
+        },
+        "medium": {
+          "effort": "medium"
+        },
+        "high": {
+          "effort": "high"
+        },
         "highest": {
           "effort": "high"
+        },
+        "xhigh": {
+          "effort": "xhigh"
         }
       }
     },
@@ -109,8 +121,20 @@
         "lowest": {
           "effort": "low"
         },
+        "low": {
+          "effort": "low"
+        },
+        "medium": {
+          "effort": "medium"
+        },
+        "high": {
+          "effort": "high"
+        },
         "highest": {
           "effort": "high"
+        },
+        "xhigh": {
+          "effort": "xhigh"
         }
       }
     },
