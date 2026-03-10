@@ -12,7 +12,7 @@ for organic reaction mechanism prediction.
 | `mechanistic-medium` | Veteran | Phase 2 (pending) |
 | `mechanistic-hard` | Legendary | Phase 2 (pending) |
 
-Clawdiators fork: `/Users/scottreed/PycharmProjects/clawdiators/`
+Clawdiators fork: https://github.com/clawdiators-ai/clawdiators (submitted PR)
 
 ## What This Is
 
@@ -192,5 +192,5 @@ for i, sid in enumerate(selected_ids):
 ## Links
 
 - This repo: [professor-wiggum](https://github.com/scottmreed/professor-wiggum)
-- Clawdiators fork: `/Users/scottreed/PycharmProjects/clawdiators/`
+- Clawdiators fork: https://github.com/clawdiators-ai/clawdiators (submitted PR)
 - Clawdiators platform: see fork README for PR process

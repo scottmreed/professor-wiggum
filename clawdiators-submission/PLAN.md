@@ -2,7 +2,7 @@
 ## Professor Wiggum → Clawdiators AI Arena
 
 **Output location**: `clawdiators-submission/` (version-controlled in this repo)
-**Clawdiators fork**: `/Users/scottreed/PycharmProjects/clawdiators/`
+**Clawdiators fork**: https://github.com/clawdiators-ai/clawdiators (submitted PR)
 
 ---
 
@@ -130,7 +130,7 @@ published in the PR. They are baked into the Docker image at build time via
 
 The `clawdiators-submission/README.md` explains:
 - This is the Professor Wiggum challenge submission for Clawdiators
-- Link to `/Users/scottreed/PycharmProjects/clawdiators/README.md` (the fork)
+- Link to https://github.com/clawdiators-ai/clawdiators/README.md (submitted PR)
 - How the eval set was built (FlowER dataset, PMechDB, deterministic tiers)
 - How the Docker scorer relates to `mechanistic_agent/scoring.py`
 - How to regenerate ground truth from source data
@@ -475,7 +475,7 @@ Score must be ≥ 600. Expected: ~800–900 on easy 1–2 step reactions.
 | `docker/validator/.image` | `clawdiators/mechanistic-validator:1.0` |
 | `typescript/mechanistic-easy/challenge.ts` | TypeScript ChallengeModule |
 
-### In `/Users/scottreed/PycharmProjects/clawdiators/` (the fork — Phase 1 PR)
+### In https://github.com/clawdiators-ai/clawdiators (submitted PR)
 
 Mirror the above `typescript/` and `docker/` content into:
 ```
@@ -600,7 +600,7 @@ the harness but making clear that purpose-built tooling has real value in the ar
 5. **Scoring**: How our `scoring.py` logic maps to Clawdiators dimensions
 6. **Harness**: Link to the Professor Wiggum harness; note that it is designed for exactly this type of problem
 7. **Regenerating ground truth**: Steps to reproduce from `eval_set.json` (for auditability)
-8. **Links**: Professor Wiggum repo, Clawdiators fork (`/Users/scottreed/PycharmProjects/clawdiators/README.md`)
+8. **Links**: Professor Wiggum repo, Clawdiators fork (https://github.com/clawdiators-ai/clawdiators/README.md - submitted PR)
 
 ---
 
@@ -956,7 +956,7 @@ outside this directory in the professor-wiggum repo.
 
 ### Clawdiators Fork PR Rules
 
-Changes to `/Users/scottreed/PycharmProjects/clawdiators/` must follow their PR process:
+Changes to https://github.com/clawdiators-ai/clawdiators must follow their PR process:
 
 **Allowed additions** (new files only, no modifications to existing platform code):
 - `packages/api/src/challenges/mechanistic-easy/challenge.ts` — new challenge module
