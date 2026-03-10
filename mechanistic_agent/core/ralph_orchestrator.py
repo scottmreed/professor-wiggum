@@ -83,6 +83,7 @@ class RalphOrchestrator:
                     harness=harness,
                     latest_snapshot=latest_snapshot,
                     allow_validator_mutation=config.allow_validator_mutation,
+                    mutation_lane=config.mutation_lane,
                     votes=previous_votes,
                 )
                 if not mutation_actions:
@@ -258,6 +259,7 @@ class RalphOrchestrator:
             harness_list=list(run_config.harness_list or []),
             babysit_mode=run_config.babysit_mode,
             allow_validator_mutation=bool(run_config.allow_validator_mutation),
+            mutation_lane=getattr(run_config, "mutation_lane", None),
         )
 
     @staticmethod
@@ -457,12 +459,16 @@ class RalphOrchestrator:
         harness: HarnessConfig,
         latest_snapshot: Dict[str, Any],
         allow_validator_mutation: bool,
+        mutation_lane: Optional[str] = None,
         votes: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[HarnessConfig, List[Dict[str, Any]], Dict[str, Any]]:
         mutated = copy.deepcopy(harness)
         actions: List[Dict[str, Any]] = []
+        lane = str(mutation_lane or "").strip().lower() or None
+        allow_topology = lane in {None, "topology"}
+        allow_harness = lane in {None, "harness"}
 
-        if self._contains_failure_reason(latest_snapshot, "invalid_smiles", "invalid_valence"):
+        if allow_topology and self._contains_failure_reason(latest_snapshot, "invalid_smiles", "invalid_valence"):
             loop_module = dict(mutated.loop_module or {})
             old_candidates = int(loop_module.get("max_candidates") or 3)
             old_retries = int(loop_module.get("max_retries_per_candidate") or 3)
@@ -491,7 +497,7 @@ class RalphOrchestrator:
             mutated.loop_module = loop_module
 
         vote_rows = list(votes or [])
-        if vote_rows:
+        if allow_topology and vote_rows:
             vote_a = 0
             vote_b = 0
             for row in vote_rows:
@@ -518,7 +524,7 @@ class RalphOrchestrator:
                         }
                     )
 
-        if self._contains_failure_reason(latest_snapshot, "all_candidates_rejected", "incomplete"):
+        if allow_harness and self._contains_failure_reason(latest_snapshot, "all_candidates_rejected", "incomplete"):
             for module_id in ("missing_reagents", "atom_mapping"):
                 module = self._module_by_id(mutated, module_id)
                 if module is not None and not module.enabled:
@@ -531,7 +537,7 @@ class RalphOrchestrator:
                         }
                     )
 
-        if allow_validator_mutation:
+        if allow_harness and allow_validator_mutation:
             failed = self._failed_validator_counts(latest_snapshot)
             if failed:
                 candidate = max(failed.items(), key=lambda item: item[1])[0]
@@ -548,7 +554,7 @@ class RalphOrchestrator:
                         }
                     )
 
-        if not actions:
+        if allow_topology and not actions:
             current = str(mutated.tool_calling_mode or "forced").strip().lower() or "forced"
             new_mode = "auto" if current == "forced" else "forced"
             mutated.tool_calling_mode = new_mode

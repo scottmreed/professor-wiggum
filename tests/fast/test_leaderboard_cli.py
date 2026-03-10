@@ -37,7 +37,6 @@ def test_render_leaderboard_markdown_includes_sota_and_table() -> None:
     assert "# Mechanistic Agent Leaderboard" in markdown
     assert "Current SOTA" in markdown
     assert "`gpt-5`" in markdown
-    assert "81.23" not in markdown
-    assert "0.812" in markdown
+    assert "804/1000" in markdown
     assert "66.0%" in markdown
-    assert "| Rank | Model | Thinking | Type | Quality | Pass | Cases | Group |" in markdown
+    assert "| Rank | Model | Thinking | Type | Score | Outcome | Pass | Cases | Group |" in markdown

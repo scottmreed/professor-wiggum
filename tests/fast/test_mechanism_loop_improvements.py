@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from mechanistic_agent.core.coordinator import RunCoordinator
+from mechanistic_agent.core.baseline_runner import BaselineRunner
 from mechanistic_agent.core.types import (
     BranchCandidate,
     RunConfig,
@@ -14,6 +15,7 @@ from mechanistic_agent.core.types import (
     StepResult,
     TemplateGuidanceState,
 )
+from mechanistic_agent.smiles_utils import sanitize_smiles_list
 from mechanistic_agent.core.validators import validate_mechanism_step_output
 from mechanistic_agent.tools import predict_mechanistic_step
 
@@ -731,3 +733,373 @@ def test_reaction_type_small_confidence_gap_uses_weak_guidance() -> None:
 
     assert state.template_guidance_state is not None
     assert state.template_guidance_state.mode == "weak"
+
+
+def test_sanitize_smiles_list_normalizes_common_aliases() -> None:
+    valid, invalid = sanitize_smiles_list(["CO2", "H2O", "CCO"])
+    assert "O=C=O" in valid
+    assert "O" in valid
+    assert "CCO" in valid
+    assert invalid == []
+
+
+def test_candidate_rescue_invalid_species_is_best_effort() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=0.05)
+    mechanism_result = StepResult(
+        step_name="mechanism_synthesis",
+        tool_name="predict_mechanistic_step",
+        output={
+            "current_state": ["CCO", "CO2"],
+            "resulting_state": ["C1CC[N+:5]12[C"],
+        },
+        source="llm",
+    )
+
+    rescue = coordinator._attempt_candidate_rescue(
+        state,
+        mechanism_result=mechanism_result,
+        failed_checks=["atom_balance"],
+        candidate_rank=1,
+    )
+
+    assert rescue is not None
+    assert rescue.output["error"] == "candidate_rescue_invalid_species"
+    event_types = [ev["event_type"] for ev in store.events]
+    assert "invalid_species_in_rescue_input" in event_types
+    assert "rescue_skipped_due_to_invalid_species" in event_types
+
+
+def test_candidate_rescue_exception_is_observable() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=0.05)
+
+    class _MockRescueAgent:
+        def rescue_candidate(
+            self,
+            _state: RunState,
+            *,
+            current_state: List[str],
+            resulting_state: List[str],
+            failed_checks: List[str],
+            validation_details: Dict[str, Any],
+        ) -> StepResult:
+            return StepResult(
+                step_name="candidate_rescue",
+                tool_name="predict_missing_reagents_for_candidate",
+                output={
+                    "status": "failed",
+                    "error": "candidate_rescue_exception",
+                    "add_reactants": [],
+                    "add_products": [],
+                },
+                source="llm",
+            )
+
+    coordinator.missing_reagents_agent = _MockRescueAgent()  # type: ignore[assignment]
+
+    mechanism_result = StepResult(
+        step_name="mechanism_synthesis",
+        tool_name="predict_mechanistic_step",
+        output={
+            "current_state": ["CCO"],
+            "resulting_state": ["CC=O"],
+        },
+        source="llm",
+    )
+
+    rescue_attempted = False
+    rescue_outcome = "none"
+
+    rescue = coordinator._attempt_candidate_rescue(
+        state,
+        mechanism_result=mechanism_result,
+        failed_checks=["atom_balance"],
+        candidate_rank=1,
+    )
+
+    assert rescue is not None
+    assert rescue.output["error"] == "candidate_rescue_exception"
+
+    if rescue is not None:
+        rescue_attempted = True
+        rescue_output = rescue.output or {}
+        add_reactants = [str(x) for x in rescue_output.get("add_reactants") or []]
+        add_products = [str(x) for x in rescue_output.get("add_products") or []]
+        error_code = str(rescue_output.get("error") or "")
+        if error_code == "candidate_rescue_invalid_species":
+            rescue_outcome = "invalid_species"
+        elif error_code == "candidate_rescue_exception":
+            rescue_outcome = "exception"
+        if add_reactants or add_products:
+            rescue_outcome = "applied"
+
+    assert rescue_attempted is True
+    assert rescue_outcome == "exception"
+
+
+def test_proposal_empty_activates_low_risk_mode() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=0.2)
+    state.run_config.adaptive_harness_mode = "conservative"
+
+    class _AdaptiveIntermediateAgent:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def run(self, _state: RunState, template_guidance: Optional[Dict[str, Any]] = None) -> StepResult:
+            self.calls += 1
+            if self.calls == 1:
+                return StepResult(
+                    step_name="mechanism_step_proposal",
+                    tool_name="propose_mechanism_step",
+                    output={
+                        "status": "fallback",
+                        "error": "LLM call failed: LLM did not return a valid intermediate SMILES string",
+                        "non_executable_fallback": True,
+                        "candidates": [],
+                    },
+                    source="llm",
+                )
+            assert template_guidance is not None
+            assert template_guidance.get("low_risk_mode") is True
+            return StepResult(
+                step_name="mechanism_step_proposal",
+                tool_name="propose_mechanism_step",
+                output={
+                    "classification": "intermediate_step",
+                    "analysis": "Recovered in low-risk mode",
+                    "candidates": [
+                        {
+                            "rank": 1,
+                            "intermediate_smiles": "CCCl",
+                            "reaction_description": "SN2",
+                            "reaction_smirks": "[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3] |dbe:2-3:-2;2-4:+2;3-3:+2;4-4:-2|",
+                            "electron_pushes": [{"start_atom": "2", "end_atom": "4", "electrons": 2}],
+                            "resulting_state": ["CCCl", "[Br-]"],
+                        }
+                    ],
+                },
+                source="llm",
+            )
+
+    coordinator.intermediate_agent = _AdaptiveIntermediateAgent()  # type: ignore[assignment]
+
+    def _validated(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        output = {
+            "contains_target_product": True,
+            "current_state": ["CCBr", "[Cl-]"],
+            "resulting_state": ["CCCl", "[Br-]"],
+            "predicted_intermediate": "CCCl",
+        }
+        return {
+            "status": "validated",
+            "branch_candidate": BranchCandidate(
+                rank=1,
+                intermediate_smiles="CCCl",
+                intermediate_output={"rank": 1, "intermediate_smiles": "CCCl"},
+                mechanism_output=output,
+                resulting_state=output["resulting_state"],
+            ),
+            "last_validation": {"passed": True, "checks": []},
+            "reason": "",
+        }
+
+    coordinator._try_candidate_with_retries = _validated  # type: ignore[method-assign]
+    coordinator._run_mechanism_loop(state, threading.Event())
+
+    assert state.run_config.coordination_topology == "sas"
+    assert state.run_config.candidate_rescue_enabled is False
+    assert state.run_config.step_mapping_enabled is False
+    assert state.adaptive_runtime_state["mode"] == "low_risk"
+    changed_events = [ev for ev in store.events if ev["event_type"] == "adaptive_harness_mode_changed"]
+    assert changed_events
+    assert changed_events[-1]["payload"]["reason"] == "proposal_empty"
+
+
+def test_remaining_mechanism_fallback_candidate_is_reingested() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=0.2)
+    state.run_config.adaptive_harness_mode = "conservative"
+    coordinator._activate_low_risk_mode(state, reason="test")
+
+    class _EmptyIntermediateAgent:
+        def run(self, _state: RunState, template_guidance: Optional[Dict[str, Any]] = None) -> StepResult:
+            return StepResult(
+                step_name="mechanism_step_proposal",
+                tool_name="propose_mechanism_step",
+                output={
+                    "status": "fallback",
+                    "error": "LLM call failed: LLM did not return a valid intermediate SMILES string",
+                    "non_executable_fallback": True,
+                    "candidates": [],
+                },
+                source="llm",
+            )
+
+    coordinator.intermediate_agent = _EmptyIntermediateAgent()  # type: ignore[assignment]
+    original_run_case = BaselineRunner.run_case
+
+    def _fake_run_case(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return {
+            "snapshot": {},
+            "raw_steps": [
+                {
+                    "step_index": 1,
+                    "step_label": "fallback step",
+                    "current_state": ["CCBr", "[Cl-]"],
+                    "resulting_state": ["CCCl", "[Br-]"],
+                    "predicted_intermediate": "CCCl",
+                    "reaction_smirks": "[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3] |dbe:2-3:-2;2-4:+2;3-3:+2;4-4:-2|",
+                    "electron_pushes": [{"start_atom": 2, "end_atom": 4, "electrons": 2}],
+                }
+            ],
+            "mechanism_type": "SN2",
+            "llm_text": "",
+            "token_usage": None,
+            "latency_ms": 1.0,
+            "error": None,
+        }
+
+    BaselineRunner.run_case = _fake_run_case  # type: ignore[method-assign]
+
+    def _validated(_state: RunState, candidate: Dict[str, Any], *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        output = {
+            "contains_target_product": True,
+            "current_state": ["CCBr", "[Cl-]"],
+            "resulting_state": ["CCCl", "[Br-]"],
+            "predicted_intermediate": candidate["intermediate_smiles"],
+        }
+        return {
+            "status": "validated",
+            "branch_candidate": BranchCandidate(
+                rank=1,
+                intermediate_smiles=candidate["intermediate_smiles"],
+                intermediate_output=candidate,
+                mechanism_output=output,
+                resulting_state=output["resulting_state"],
+            ),
+            "last_validation": {"passed": True, "checks": []},
+            "reason": "",
+        }
+
+    coordinator._try_candidate_with_retries = _validated  # type: ignore[method-assign]
+    try:
+        coordinator._run_mechanism_loop(state, threading.Event())
+    finally:
+        BaselineRunner.run_case = original_run_case  # type: ignore[method-assign]
+
+    event_types = [ev["event_type"] for ev in store.events]
+    assert "remaining_mechanism_fallback_generated" in event_types
+
+
+def test_repeated_atom_balance_dead_end_activates_low_risk_mode() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=0.2)
+    state.run_config.adaptive_harness_mode = "conservative"
+
+    class _IntermediateAgent:
+        def run(self, _state: RunState, template_guidance: Optional[Dict[str, Any]] = None) -> StepResult:
+            return StepResult(
+                step_name="mechanism_step_proposal",
+                tool_name="propose_mechanism_step",
+                output={
+                    "classification": "intermediate_step",
+                    "analysis": "Same atom-balance failure until low-risk mode activates.",
+                    "candidates": [
+                        {
+                            "rank": 1,
+                            "intermediate_smiles": "CCCl",
+                            "reaction_description": "SN2",
+                            "reaction_smirks": "[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3] |dbe:2-3:-2;2-4:+2;3-3:+2;4-4:-2|",
+                            "electron_pushes": [{"start_atom": "2", "end_atom": "4", "electrons": 2}],
+                            "resulting_state": ["CCCl", "[Br-]"],
+                        }
+                    ],
+                },
+                source="llm",
+            )
+
+    coordinator.intermediate_agent = _IntermediateAgent()  # type: ignore[assignment]
+    call_counter = {"n": 0}
+
+    def _fail_then_validate(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        call_counter["n"] += 1
+        if call_counter["n"] < 3:
+            return {
+                "status": "failed",
+                "last_validation": {
+                    "passed": False,
+                    "checks": [
+                        {"name": "atom_balance", "passed": False, "details": {"balanced": False, "deficit": {"O": 1}}},
+                        {"name": "dbe_metadata", "passed": True, "details": {"valid": True}},
+                    ],
+                },
+                "failed_checks": ["atom_balance"],
+                "validation_signature": f"atom-balance-{call_counter['n']}",
+                "candidate_rank": 1,
+                "rescue_attempted": True,
+                "rescue_outcome": "no_changes",
+            }
+        output = {
+            "contains_target_product": True,
+            "current_state": ["CCBr", "[Cl-]"],
+            "resulting_state": ["CCCl", "[Br-]"],
+            "predicted_intermediate": "CCCl",
+        }
+        return {
+            "status": "validated",
+            "branch_candidate": BranchCandidate(
+                rank=1,
+                intermediate_smiles="CCCl",
+                intermediate_output={"rank": 1, "intermediate_smiles": "CCCl"},
+                mechanism_output=output,
+                resulting_state=output["resulting_state"],
+            ),
+            "last_validation": {"passed": True, "checks": []},
+            "reason": "",
+        }
+
+    coordinator._try_candidate_with_retries = _fail_then_validate  # type: ignore[method-assign]
+    coordinator._run_mechanism_loop(state, threading.Event())
+
+    changed_events = [ev for ev in store.events if ev["event_type"] == "adaptive_harness_mode_changed"]
+    assert changed_events
+    assert changed_events[-1]["payload"]["reason"] == "atom_balance_dead_end"
+
+
+def test_candidate_execution_exception_is_structured_failure() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=0.02)
+    state.run_config.retry_same_candidate_max = 1
+    state.run_config.candidate_rescue_enabled = False
+
+    class _ExplodingMechanismAgent:
+        def run(self, *_args: Any, **_kwargs: Any) -> StepResult:  # noqa: ANN401
+            raise RuntimeError("boom")
+
+    coordinator.mechanism_agent = _ExplodingMechanismAgent()  # type: ignore[assignment]
+
+    candidate = {
+        "rank": 1,
+        "intermediate_smiles": "CCCl",
+        "reaction_smirks": "[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3] |dbe:2-3:-2;2-4:+2;3-3:+2;4-4:-2|",
+        "electron_pushes": [{"start_atom": "2", "end_atom": "4", "electrons": 2}],
+        "resulting_state": ["CCCl", "[Br-]"],
+    }
+    result = coordinator._try_candidate_with_retries(
+        state,
+        candidate,
+        {"selected_candidate": candidate},
+        enabled_validators={"atom_balance_validation"},
+    )
+
+    assert result["status"] == "failed"
+    assert result["reason"] == "candidate_execution_exception"
+    assert any(ev["event_type"] == "mechanism_candidate_execution_exception" for ev in store.events)

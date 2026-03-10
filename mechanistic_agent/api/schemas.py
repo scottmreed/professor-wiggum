@@ -15,10 +15,11 @@ class RalphRunConfig(BaseModel):
     harness_list: List[str] = Field(default_factory=list)
     babysit_mode: Literal["off", "advisory"] = "off"
     allow_validator_mutation: bool = False
+    mutation_lane: Optional[Literal["topology", "harness", "prompt", "few_shot"]] = None
 
 
 class CreateRunRequest(BaseModel):
-    mode: Literal["unverified"] = "unverified"
+    mode: Literal["verified", "unverified"] = "unverified"
     orchestration_mode: Literal["standard", "ralph"] = "standard"
     starting_materials: List[str] = Field(default_factory=list)
     products: List[str] = Field(default_factory=list)
@@ -41,6 +42,7 @@ class CreateRunRequest(BaseModel):
     candidate_rescue_enabled: bool = True
     step_mapping_enabled: bool = True
     arrow_push_annotation_enabled: bool = True
+    adaptive_harness_mode: Literal["off", "conservative"] = "off"
     dbe_policy: Literal["strict", "soft"] = "soft"
     reaction_template_policy: Literal["off", "auto"] = "auto"
     reaction_template_confidence_threshold: float = 0.65
@@ -229,6 +231,9 @@ class BaselineEvalRunSetRequest(BaseModel):
     model_name: Optional[str] = None
     model: Optional[str] = None
     thinking_level: Optional[Literal["low", "high"]] = None
+    llm_seed: Optional[int] = 42
+    llm_temperature: Optional[float] = 0.0
+    sampling_policy: Literal["fixed", "provider_default"] = "fixed"
     max_cases: int = 25
     timeout_seconds: float = 180.0
     async_mode: bool = True
@@ -241,6 +246,7 @@ class OfficialEvalRunSetRequest(BaseModel):
     """
 
     eval_set_id: Optional[str] = None
+    allow_non_holdout: bool = False
     run_group_name: Optional[str] = None
     case_ids: List[str] = Field(default_factory=list)
     model_name: Optional[str] = None
@@ -273,3 +279,28 @@ class CurriculumSubmitRequest(BaseModel):
 
 class CurriculumPublishRequest(BaseModel):
     force: bool = False
+
+
+class OvernightRalphStartRequest(BaseModel):
+    eval_slice_id: Optional[str] = None
+    lanes: List[Literal["topology", "harness", "prompt", "few_shot"]] = Field(default_factory=list)
+    max_experiments: Optional[int] = None
+    max_cost_usd: Optional[float] = None
+    acceptance_threshold: Optional[float] = None
+    program: str = "ralph_program.md"
+    model_name: Optional[str] = None
+    model: Optional[str] = None
+    harness_name: str = "default"
+
+
+class OvernightRalphStatusResponse(BaseModel):
+    running: bool
+    stop_requested: bool
+    started_at: float
+    finished_at: Optional[float] = None
+    current_experiment: int
+    max_experiments: int
+    eval_slice_id: str
+    baseline: Optional[Dict[str, Any]] = None
+    summary: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None

@@ -381,6 +381,27 @@ class RunStore:
                 CREATE INDEX IF NOT EXISTS idx_ralph_votes_run_attempt
                     ON ralph_votes(run_id, attempt_index, step_index);
 
+                CREATE TABLE IF NOT EXISTS ralph_experiments (
+                    id TEXT PRIMARY KEY,
+                    parent_sha TEXT NOT NULL,
+                    mutation_lane TEXT NOT NULL,
+                    mutation_summary TEXT NOT NULL,
+                    mutated_asset_path TEXT NOT NULL,
+                    eval_slice_id TEXT NOT NULL,
+                    completion_pct REAL,
+                    validator_pass_pct REAL,
+                    avg_retries REAL,
+                    avg_backtracks REAL,
+                    token_cost_usd REAL,
+                    keep INTEGER NOT NULL,
+                    revert_reason TEXT,
+                    created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ralph_experiments_created
+                    ON ralph_experiments(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_ralph_experiments_slice
+                    ON ralph_experiments(eval_slice_id, created_at DESC);
+
                 CREATE TABLE IF NOT EXISTS curation_exports (
                     id TEXT PRIMARY KEY,
                     export_type TEXT NOT NULL,
@@ -728,6 +749,41 @@ class RunStore:
             )
             conn.commit()
         return row_id
+
+    def upsert_step_output(
+        self,
+        *,
+        run_id: str,
+        step_name: str,
+        attempt: int,
+        retry_index: int = 0,
+        output: Dict[str, Any],
+        validation: Optional[Dict[str, Any]],
+        source: str = "deterministic",
+    ) -> None:
+        """Update the output and validation JSON for an existing step_output row.
+
+        Matches on (run_id, step_name, attempt, retry_index). If no row is
+        found, this is a no-op (the soft-advance step may not have been
+        persisted yet — that is handled separately by ``_record_step``).
+        """
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE step_outputs
+                SET output_json = ?, validation_json = ?
+                WHERE run_id = ? AND step_name = ? AND attempt = ? AND retry_index = ?
+                """,
+                (
+                    self._json_dumps(output),
+                    self._json_dumps(validation) if validation is not None else None,
+                    run_id,
+                    step_name,
+                    attempt,
+                    retry_index,
+                ),
+            )
+            conn.commit()
 
     def list_step_outputs(self, run_id: str) -> List[Dict[str, Any]]:
         with self._connect() as conn:
@@ -1726,6 +1782,79 @@ class RunStore:
             output.append(item)
         return output
 
+    def create_ralph_experiment(
+        self,
+        *,
+        parent_sha: str,
+        mutation_lane: str,
+        mutation_summary: str,
+        mutated_asset_path: str,
+        eval_slice_id: str,
+        completion_pct: float,
+        validator_pass_pct: float,
+        avg_retries: float,
+        avg_backtracks: float,
+        token_cost_usd: float,
+        keep: bool,
+        revert_reason: Optional[str],
+    ) -> str:
+        row_id = uuid.uuid4().hex
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO ralph_experiments(
+                    id, parent_sha, mutation_lane, mutation_summary, mutated_asset_path,
+                    eval_slice_id, completion_pct, validator_pass_pct, avg_retries,
+                    avg_backtracks, token_cost_usd, keep, revert_reason, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row_id,
+                    parent_sha,
+                    mutation_lane,
+                    mutation_summary,
+                    mutated_asset_path,
+                    eval_slice_id,
+                    float(completion_pct),
+                    float(validator_pass_pct),
+                    float(avg_retries),
+                    float(avg_backtracks),
+                    float(token_cost_usd),
+                    int(bool(keep)),
+                    revert_reason,
+                    time.time(),
+                ),
+            )
+            conn.commit()
+        return row_id
+
+    def list_ralph_experiments(self, eval_slice_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            if eval_slice_id:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM ralph_experiments
+                    WHERE eval_slice_id = ?
+                    ORDER BY created_at DESC
+                    """,
+                    (eval_slice_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM ralph_experiments
+                    ORDER BY created_at DESC
+                    """
+                ).fetchall()
+        output: List[Dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["keep"] = bool(item.get("keep"))
+            output.append(item)
+        return output
+
     def record_curation_export(
         self,
         *,
@@ -2413,6 +2542,13 @@ class RunStore:
                     if isinstance(value, (int, float)):
                         total_cost += float(value)
 
+            latencies = [
+                float(item["latency_ms"])
+                for item in results
+                if isinstance(item.get("latency_ms"), (int, float)) and float(item["latency_ms"]) > 0
+            ]
+            avg_latency_ms = round(sum(latencies) / len(latencies), 1) if latencies else 0.0
+
             # Aggregate per-subagent scores across all cases for this eval run.
             subagent_quality: Dict[str, List[float]] = {}
             subagent_pass: Dict[str, List[float]] = {}
@@ -2456,6 +2592,7 @@ class RunStore:
                     "mean_quality_score": sum(scores) / len(scores),
                     "deterministic_pass_rate": pass_rate,
                     "total_cost": total_cost,
+                    "avg_latency_ms": avg_latency_ms,
                     "case_count": len(results),
                     "per_subagent_scores": per_subagent_agg,
                     "is_baseline": is_baseline,
@@ -2763,6 +2900,34 @@ class RunStore:
                 deleted += 1
 
         return {"deleted_eval_run_count": deleted}
+
+    def get_run_quality(self, run_id: str) -> str:
+        """Return a FewShotRunQuality label ('clean', 'soft', 'failed') for a run.
+
+        'clean'  — run completed with no soft-advance steps.
+        'soft'   — run completed but at least one step was soft-advanced
+                   (e.g. atom_balance failure that was allowed to proceed).
+        'failed' — run did not complete successfully.
+        """
+        with self._connect() as conn:
+            status_row = conn.execute(
+                "SELECT status FROM runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        status = (status_row["status"] if status_row else None) or ""
+        if status not in {"completed", "success"}:
+            return "failed"
+        with self._connect() as conn:
+            soft_row = conn.execute(
+                """
+                SELECT COUNT(*) AS cnt FROM step_outputs
+                WHERE run_id = ?
+                  AND step_name = 'mechanism_synthesis'
+                  AND json_extract(output_json, '$.soft_advance') = 1
+                """,
+                (run_id,),
+            ).fetchone()
+        soft_count = soft_row["cnt"] if soft_row else 0
+        return "soft" if soft_count > 0 else "clean"
 
     def add_few_shot_example(
         self,

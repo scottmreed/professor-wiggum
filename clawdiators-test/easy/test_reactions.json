@@ -1,0 +1,162 @@
+{
+  "_note": "Test reactions for local clawdiators-style evaluation. NOT the official eval set. 10 new elementary reactions mirroring the type distribution of clawdiators-submission/easy. SEED placeholder is replaced at runtime.",
+  "reactions": [
+    {
+      "id": "mech-test-SEED-0",
+      "source_id": "test_001",
+      "starting_materials": [
+        "CI",
+        "CN(C)C"
+      ],
+      "target_products": [
+        "C[N+](C)(C)C",
+        "[I-]"
+      ],
+      "conditions": "acetonitrile, RT",
+      "mechanism_type": "SN2",
+      "hint": "Consider which atom is the nucleophile and which carbon is the electrophilic center.",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-1",
+      "source_id": "test_002",
+      "starting_materials": [
+        "CCCBr",
+        "CN(C)C"
+      ],
+      "target_products": [
+        "CCC[N+](C)(C)C",
+        "[Br-]"
+      ],
+      "conditions": "acetonitrile, RT",
+      "mechanism_type": "SN2",
+      "hint": "Menshutkin-type quaternization of a tertiary amine.",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-2",
+      "source_id": "test_003",
+      "starting_materials": [
+        "C=CCBr",
+        "CN(C)c1ccccc1"
+      ],
+      "target_products": [
+        "C=CC[N+](C)(C)c1ccccc1",
+        "[Br-]"
+      ],
+      "conditions": "acetonitrile, RT",
+      "mechanism_type": "SN2",
+      "hint": "N,N-dimethylaniline acts as nucleophile; allyl bromide is the electrophile.",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-3",
+      "source_id": "test_004",
+      "starting_materials": [
+        "BrCc1ccccc1",
+        "c1ccncc1"
+      ],
+      "target_products": [
+        "[n+]1(Cc2ccccc2)ccccc1",
+        "[Br-]"
+      ],
+      "conditions": "acetonitrile, RT",
+      "mechanism_type": "SN2",
+      "hint": "Pyridine nitrogen lone pair attacks benzylic carbon.",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-4",
+      "source_id": "test_005",
+      "starting_materials": [
+        "CCI",
+        "CCCCP(CCCC)CCCC"
+      ],
+      "target_products": [
+        "CC[P+](CCCC)(CCCC)CCCC",
+        "[I-]"
+      ],
+      "conditions": "acetonitrile, RT",
+      "mechanism_type": "SN2",
+      "hint": "SN2 at carbon; phosphorus lone pair is the nucleophile.",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-5",
+      "source_id": "test_006",
+      "starting_materials": [
+        "C=C",
+        "C=CC=C"
+      ],
+      "target_products": [
+        "C1=CCCCC1"
+      ],
+      "conditions": "neat, 200 degC, thermal",
+      "mechanism_type": "Diels-Alder",
+      "hint": "Concerted [4+2] cycloaddition. Identify diene (4 pi electrons) and dienophile (2 pi electrons).",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-6",
+      "source_id": "test_007",
+      "starting_materials": [
+        "C=O",
+        "CC=C"
+      ],
+      "target_products": [
+        "C=CCCO"
+      ],
+      "conditions": "neat, thermal",
+      "mechanism_type": "Ene reaction",
+      "hint": "Thermal ene reaction. The allylic C-H transfers to the enophile oxygen; a new C-C bond forms at the terminus.",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-7",
+      "source_id": "test_008",
+      "starting_materials": [
+        "c1ccncc1",
+        "CC(=O)OO"
+      ],
+      "target_products": [
+        "[O-][n+]1ccccc1",
+        "CC(=O)O"
+      ],
+      "conditions": "acetic acid, RT",
+      "mechanism_type": "N-oxidation",
+      "hint": "Nitrogen lone pair attacks electrophilic oxygen of peracid; O-O bond cleaves.",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-8",
+      "source_id": "test_009",
+      "starting_materials": [
+        "Cc1ccncc1",
+        "CC(=O)OO"
+      ],
+      "target_products": [
+        "Cc1cc[n+]([O-])cc1",
+        "CC(=O)O"
+      ],
+      "conditions": "acetic acid, RT",
+      "mechanism_type": "N-oxidation",
+      "hint": "4-Methylpyridine N-oxidation by peracetic acid; concerted lone-pair transfer.",
+      "n_steps": 1
+    },
+    {
+      "id": "mech-test-SEED-9",
+      "source_id": "test_010",
+      "starting_materials": [
+        "O=Cc1ccccc1",
+        "C=CC=C"
+      ],
+      "target_products": [
+        "O1C(c2ccccc2)CC=CC1"
+      ],
+      "conditions": "toluene, 80 degC, thermal",
+      "mechanism_type": "Hetero Diels-Alder",
+      "hint": "Hetero [4+2]: C=O of benzaldehyde acts as the 2-atom dienophile; butadiene is the 4-atom diene.",
+      "n_steps": 1
+    }
+  ]
+}

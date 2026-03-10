@@ -49,6 +49,7 @@ get_all_families = _module.get_all_families
 get_model_family = _module.get_model_family
 get_model_provider = _module.get_model_provider
 get_model_spec = _module.get_model_spec
+model_supports_tools = _module.model_supports_tools
 resolve_model_key = _module.resolve_model_key
 
 
@@ -109,3 +110,20 @@ def test_sonnet_dot_and_dash_variants_resolve_to_dot_canonical_key():
 def test_sonnet_46_model_is_available():
     spec = get_model_spec("anthropic/claude-sonnet-4.6")
     assert spec["id"] == "anthropic/claude-sonnet-4.6"
+
+
+def test_bare_claude_aliases_resolve_to_canonical_catalog_ids():
+    assert resolve_model_key("claude-opus-4-6") == "anthropic/claude-opus-4.6"
+    assert resolve_model_key("claude-opus-4.6") == "anthropic/claude-opus-4.6"
+    assert resolve_model_key("claude-sonnet-4-6") == "anthropic/claude-sonnet-4.6"
+    assert resolve_model_key("claude-sonnet-4.6") == "anthropic/claude-sonnet-4.6"
+
+
+def test_alias_helpers_use_canonical_model_metadata():
+    assert get_model_family("claude-opus-4-6") == "claude"
+    assert get_model_provider("claude-opus-4-6") == "openrouter"
+    assert model_supports_tools("claude-opus-4-6") is True
+
+    assert get_model_family("claude-sonnet-4.6") == "claude"
+    assert get_model_provider("claude-sonnet-4.6") == "openrouter"
+    assert model_supports_tools("claude-sonnet-4.6") is True

@@ -10,9 +10,11 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from mechanistic_agent.model_registry import get_default_model
+from mechanistic_agent.smiles_utils import sanitize_smiles_list
 
 from . import model_context
 from .arrow_push import predict_arrow_push_annotation
+from .baseline_runner import BaselineRunner
 from .db import RunStore
 from .mechanism_moves import normalize_electron_pushes, repair_candidate_reaction_smirks
 from .reaction_type_templates import (
@@ -243,6 +245,16 @@ class RunCoordinator:
                 1,
                 self._coerce_int(config.get("repeat_failure_signature_limit", 2), 2),
             ),
+            adaptive_harness_mode=self._coerce_literal(
+                config.get("adaptive_harness_mode")
+                or (
+                    "conservative"
+                    if str(config.get("harness_name") or "default").strip() == "adaptive_default"
+                    else "off"
+                ),
+                {"off", "conservative"},
+                "off",
+            ),  # type: ignore[arg-type]
             babysit_mode=self._coerce_literal(
                 config.get("babysit_mode"),
                 {"off", "advisory"},
@@ -252,10 +264,24 @@ class RunCoordinator:
                 config.get("allow_validator_mutation", False),
                 False,
             ),
+            mutation_lane=(
+                str(config.get("mutation_lane")).strip().lower()
+                if str(config.get("mutation_lane") or "").strip().lower()
+                in {"topology", "harness", "prompt", "few_shot"}
+                else None
+            ),
             ralph_parent_run_id=(
                 str(config.get("ralph_parent_run_id"))
                 if config.get("ralph_parent_run_id")
                 else None
+            ),
+            proceed_on_validation_failure=self._coerce_bool(
+                config.get("proceed_on_validation_failure", False),
+                False,
+            ),
+            proceed_only_on_arrow_push_failure=self._coerce_bool(
+                config.get("proceed_only_on_arrow_push_failure", True),
+                True,
             ),
         )
         mode: RunMode = str(run_row.get("mode") or "unverified")  # type: ignore[assignment]
@@ -1221,6 +1247,7 @@ class RunCoordinator:
     def _retry_feedback_for_validation(validation_payload: Dict[str, Any]) -> Dict[str, Any]:
         failed_checks: List[str] = []
         guidance_parts: List[str] = []
+        validator_hints: Dict[str, str] = {}
         checks = validation_payload.get("checks")
         if isinstance(checks, list):
             for check in checks:
@@ -1241,9 +1268,25 @@ class RunCoordinator:
                             guidance_parts.append(f"{name}: Atom balance analysis failed - check that all SMILES strings are properly formatted and represent valid chemical structures.")
                         else:
                             guidance_parts.append(f"{name}: {error_text.strip()}")
+                if name == "atom_balance":
+                    validator_hints[name] = (
+                        "Ensure current_state and resulting_state conserve atom counts; include expected "
+                        "counterions/byproducts and proton transfer species when required."
+                    )
+                elif name == "dbe_metadata":
+                    validator_hints[name] = (
+                        "Ensure reaction_smirks contains parseable |mech:v1;...| metadata and that "
+                        "bond/electron deltas are consistent with electron_pushes."
+                    )
+                elif name == "state_progress":
+                    validator_hints[name] = (
+                        "Ensure resulting_state is not identical to current_state and reflects forward "
+                        "mechanistic progress toward target products."
+                    )
         return {
             "failed_checks": failed_checks,
             "guidance": "; ".join(guidance_parts) if guidance_parts else "",
+            "validator_hints": validator_hints,
         }
 
     @staticmethod
@@ -1286,6 +1329,44 @@ class RunCoordinator:
         resulting_state = [str(x) for x in output.get("resulting_state") or []]
         if not current_state or not resulting_state:
             return None
+        sanitized_current, invalid_current = sanitize_smiles_list(current_state)
+        sanitized_resulting, invalid_resulting = sanitize_smiles_list(resulting_state)
+        invalid_species = list(invalid_current) + list(invalid_resulting)
+        if invalid_species or not sanitized_current or not sanitized_resulting:
+            self.store.append_event(
+                state.run_id,
+                "invalid_species_in_rescue_input",
+                {
+                    "attempt": state.step_index + 1,
+                    "candidate_rank": candidate_rank,
+                    "invalid_species": invalid_species,
+                    "current_state_size": len(current_state),
+                    "resulting_state_size": len(resulting_state),
+                },
+                step_name="candidate_rescue",
+            )
+            self.store.append_event(
+                state.run_id,
+                "rescue_skipped_due_to_invalid_species",
+                {
+                    "attempt": state.step_index + 1,
+                    "candidate_rank": candidate_rank,
+                    "invalid_species": invalid_species,
+                },
+                step_name="candidate_rescue",
+            )
+            return StepResult(
+                step_name="candidate_rescue",
+                tool_name="predict_missing_reagents_for_candidate",
+                output={
+                    "status": "failed",
+                    "error": "candidate_rescue_invalid_species",
+                    "invalid_species": invalid_species,
+                    "add_reactants": [],
+                    "add_products": [],
+                },
+                source="deterministic",
+            )
         self.store.append_event(
             state.run_id,
             "candidate_rescue_started",
@@ -1304,8 +1385,8 @@ class RunCoordinator:
         )
         rescue_result = self.missing_reagents_agent.rescue_candidate(
             state,
-            current_state=current_state,
-            resulting_state=resulting_state,
+            current_state=sanitized_current,
+            resulting_state=sanitized_resulting,
             failed_checks=failed_checks,
             validation_details=mechanism_result.validation.as_dict() if mechanism_result.validation else {},
         )
@@ -1414,6 +1495,122 @@ class RunCoordinator:
         except Exception:
             # Annotation is best-effort and must not affect mechanism execution.
             return
+
+    # ── Proceed-on-failure helpers ────────────────────────────────────────
+
+    @staticmethod
+    def _is_arrow_push_only_failure(
+        failed_checks: List[str],
+        last_validation: Dict[str, Any],
+        incomplete_reasons: List[str],
+    ) -> bool:
+        """Return True when the only failures are arrow-push / DBE related.
+
+        Arrow-push failures come from ``bond_electron_validation`` (dbe_metadata check)
+        or from the incomplete-candidate path where ``reaction_smirks`` or
+        ``electron_pushes`` are missing/invalid.
+        """
+        arrow_incomplete_reasons = {
+            "missing_reaction_smirks",
+            "missing_electron_pushes",
+            "reaction_smirks_invalid_mech_block",
+            "reaction_smirks_missing_mech_block",
+            "invalid_electron_pushes",
+        }
+        if any(r in arrow_incomplete_reasons for r in (incomplete_reasons or [])):
+            # Even if there are non-arrow reasons, arrow-push-only means we only
+            # have arrow-push reasons.
+            non_arrow_reasons = [r for r in (incomplete_reasons or []) if r not in arrow_incomplete_reasons]
+            if not non_arrow_reasons:
+                return True
+
+        if failed_checks:
+            non_arrow_checks = [c for c in failed_checks if c not in {"dbe_metadata", "bond_electron_validation"}]
+            if not non_arrow_checks:
+                # Only DBE/bond_electron checks failed.
+                return True
+        return False
+
+    def _best_soft_candidate(
+        self,
+        candidates: List[Dict[str, Any]],
+        candidate_attempts: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+        proposal_output: Dict[str, Any],
+    ) -> Optional[BranchCandidate]:
+        """Pick the best available candidate for a soft-advance step.
+
+        Priority: candidate that has a valid intermediate_smiles with passing
+        atom_balance/state_progress, regardless of bond_electron / reaction_smirks.
+        Falls back to the rank-1 candidate from the proposal.
+        """
+        from .validators import VALIDATOR_ATOM_BALANCE, VALIDATOR_STATE_PROGRESS
+
+        best_smiles: Optional[str] = None
+        best_resulting: Optional[List[str]] = None
+        best_output: Optional[Dict[str, Any]] = None
+
+        for candidate_data, attempt_result in candidate_attempts:
+            smiles = str(candidate_data.get("intermediate_smiles") or "").strip()
+            if not smiles:
+                continue
+            last_validation = attempt_result.get("last_validation") or {}
+            if not last_validation:
+                continue
+            checks = last_validation.get("checks") or []
+            # Accept if atom_balance and state_progress pass (even if dbe fails).
+            atom_ok = any(
+                c.get("name") == "atom_balance_validation" and c.get("passed")
+                for c in checks
+                if isinstance(c, dict)
+            )
+            state_ok = any(
+                c.get("name") == "state_progress_validation" and c.get("passed")
+                for c in checks
+                if isinstance(c, dict)
+            )
+            if atom_ok and state_ok and best_smiles is None:
+                # Find the corresponding mechanism_output for this candidate.
+                step_outputs = attempt_result.get("mechanism_output") or {}
+                if not isinstance(step_outputs, dict):
+                    step_outputs = {}
+                resulting = step_outputs.get("resulting_state") or []
+                if resulting:
+                    best_smiles = smiles
+                    best_resulting = list(resulting)
+                    best_output = dict(step_outputs)
+
+        # Fallback: use rank-1 candidate from proposal output as soft step.
+        if best_smiles is None:
+            for candidate_data, _ in candidate_attempts:
+                smiles = str(candidate_data.get("intermediate_smiles") or "").strip()
+                if smiles:
+                    best_smiles = smiles
+                    best_resulting = list(candidate_data.get("resulting_state") or [])
+                    break
+
+        if not best_smiles:
+            return None
+
+        if best_output is None:
+            best_output = {}
+
+        return BranchCandidate(
+            rank=99,
+            intermediate_smiles=best_smiles,
+            intermediate_output={},
+            mechanism_output={
+                **(best_output or {}),
+                "soft_advance": True,
+                "soft_advance_reason": "proceed_on_validation_failure",
+                "contains_target_product": False,
+            },
+            resulting_state=best_resulting or [],
+            validation_summary={
+                "passed": False,
+                "soft_advance": True,
+                "checks": [],
+            },
+        )
 
     def _pause_for_retry_exhaustion(
         self,
@@ -1588,6 +1785,7 @@ class RunCoordinator:
             "rejected_candidate_count": int(rejected_candidate_count),
             "incomplete_candidate_count": 0,
             "failed_candidate_count": 0,
+            "execution_exception_count": 0,
             "invalid_smiles_count": 0,
             "rdkit_parse_error_count": 0,
             "rdkit_valence_error_count": 0,
@@ -1607,6 +1805,10 @@ class RunCoordinator:
                     summary["first_invalid_detail"] = reason
                 continue
             summary["failed_candidate_count"] += 1
+            if reason in {"candidate_execution_exception", "mechanism_validation_exception"}:
+                summary["execution_exception_count"] += 1
+                if summary["first_invalid_detail"] is None:
+                    summary["first_invalid_detail"] = reason
             validation_payload = attempt_result.get("last_validation")
             if not isinstance(validation_payload, dict):
                 validation_payload = {}
@@ -1626,6 +1828,8 @@ class RunCoordinator:
                 summary["rdkit_valence_error_count"] += 1
             if summary["first_invalid_detail"] is None and texts:
                 summary["first_invalid_detail"] = texts[0]
+            elif summary["first_invalid_detail"] is None and reason:
+                summary["first_invalid_detail"] = reason
 
         total = len(candidates)
         summary["all_candidates_incomplete"] = total > 0 and summary["incomplete_candidate_count"] == total
@@ -1731,18 +1935,68 @@ class RunCoordinator:
                 retry_index=retry_index,
             )
 
-            mechanism_result = self.mechanism_agent.run(
-                state,
-                scoped_output,
-                retry_feedback=retry_feedback,
-            )
+            try:
+                mechanism_result = self.mechanism_agent.run(
+                    state,
+                    scoped_output,
+                    retry_feedback=retry_feedback,
+                )
+            except Exception as exc:
+                self.store.append_event(
+                    state.run_id,
+                    "mechanism_candidate_execution_exception",
+                    {
+                        "attempt": state.step_index + 1,
+                        "retry_index": retry_index,
+                        "candidate_rank": candidate.get("rank"),
+                        "candidate_smiles": smiles,
+                        "error": str(exc),
+                    },
+                    step_name="mechanism_synthesis",
+                )
+                return {
+                    "status": "failed",
+                    "branch_candidate": None,
+                    "last_validation": {},
+                    "reason": "candidate_execution_exception",
+                    "failed_checks": [],
+                    "validation_signature": "",
+                    "candidate_rank": int(candidate.get("rank") or 0),
+                    "rescue_attempted": rescue_attempted,
+                    "rescue_outcome": rescue_outcome,
+                }
             mechanism_result.attempt = state.step_index + 1
             mechanism_result.retry_index = retry_index
-            mechanism_result.validation = validate_mechanism_step_output(
-                mechanism_result.output,
-                dbe_policy=state.run_config.dbe_policy,
-                enabled_validators=enabled_validators,
-            )
+            try:
+                mechanism_result.validation = validate_mechanism_step_output(
+                    mechanism_result.output,
+                    dbe_policy=state.run_config.dbe_policy,
+                    enabled_validators=enabled_validators,
+                )
+            except Exception as exc:
+                self.store.append_event(
+                    state.run_id,
+                    "mechanism_validation_exception",
+                    {
+                        "attempt": state.step_index + 1,
+                        "retry_index": retry_index,
+                        "candidate_rank": candidate.get("rank"),
+                        "candidate_smiles": smiles,
+                        "error": str(exc),
+                    },
+                    step_name="mechanism_synthesis",
+                )
+                return {
+                    "status": "failed",
+                    "branch_candidate": None,
+                    "last_validation": {},
+                    "reason": "mechanism_validation_exception",
+                    "failed_checks": [],
+                    "validation_signature": "",
+                    "candidate_rank": int(candidate.get("rank") or 0),
+                    "rescue_attempted": rescue_attempted,
+                    "rescue_outcome": rescue_outcome,
+                }
             self._record_step(state, mechanism_result)
             self._record_validation_checks(state, mechanism_result=mechanism_result)
 
@@ -1752,6 +2006,23 @@ class RunCoordinator:
             last_failed_checks = list(retry_feedback.get("failed_checks", []))
             last_signature = self._validation_signature(validation_payload)
             repeated_signatures[last_signature] = repeated_signatures.get(last_signature, 0) + 1
+            invalid_species_errors = [
+                text
+                for text in self._validation_error_strings(validation_payload)
+                if "Invalid SMILES" in text or "Invalid SMILES strings" in text
+            ]
+            if invalid_species_errors:
+                self.store.append_event(
+                    state.run_id,
+                    "invalid_species_in_candidate",
+                    {
+                        "attempt": state.step_index + 1,
+                        "candidate_rank": candidate.get("rank"),
+                        "candidate_smiles": smiles,
+                        "errors": invalid_species_errors,
+                    },
+                    step_name="mechanism_synthesis",
+                )
 
             if validation_payload.get("passed"):
                 self._record_arrow_push_annotation(
@@ -1792,6 +2063,11 @@ class RunCoordinator:
                 rescue_output = rescue_result.output or {}
                 add_reactants = [str(x) for x in rescue_output.get("add_reactants") or []]
                 add_products = [str(x) for x in rescue_output.get("add_products") or []]
+                error_code = str(rescue_output.get("error") or "")
+                if error_code == "candidate_rescue_invalid_species":
+                    rescue_outcome = "invalid_species"
+                elif error_code == "candidate_rescue_exception":
+                    rescue_outcome = "exception"
                 if add_reactants or add_products:
                     rescue_outcome = "applied"
                     maybe_output = dict(mechanism_result.output or {})
@@ -1881,7 +2157,7 @@ class RunCoordinator:
                             "rescue_outcome": rescue_outcome,
                         }
                 else:
-                    rescue_outcome = "no_changes"
+                    rescue_outcome = rescue_outcome if rescue_outcome == "invalid_species" else "no_changes"
 
             self.store.append_event(
                 state.run_id,
@@ -1892,6 +2168,7 @@ class RunCoordinator:
                     "candidate_rank": candidate.get("rank"),
                     "candidate_smiles": smiles,
                     "failed_checks": last_failed_checks,
+                    "validator_hints": dict(retry_feedback.get("validator_hints", {})),
                     "validation_signature": last_signature,
                     "rescue_attempted": rescue_attempted,
                     "rescue_outcome": rescue_outcome,
@@ -1933,6 +2210,7 @@ class RunCoordinator:
                         "retry_index": retry_index + 1,
                         "candidate_rank": candidate.get("rank"),
                         "retry_guidance": retry_feedback.get("guidance", ""),
+                        "validator_hints": dict(retry_feedback.get("validator_hints", {})),
                     },
                     step_name="mechanism_synthesis",
                 )
@@ -2590,6 +2868,182 @@ class RunCoordinator:
 
         return merged
 
+    @staticmethod
+    def _adaptive_enabled(state: RunState) -> bool:
+        return str(state.run_config.adaptive_harness_mode or "off") == "conservative"
+
+    @staticmethod
+    def _adaptive_state(state: RunState) -> Dict[str, Any]:
+        runtime = state.adaptive_runtime_state
+        if not runtime:
+            runtime.update(
+                {
+                    "mode": "standard",
+                    "reason": None,
+                    "activated_step": None,
+                    "fallback_attempted_steps": [],
+                    "failure_counts": {},
+                }
+            )
+        return runtime
+
+    def _activate_low_risk_mode(
+        self,
+        state: RunState,
+        *,
+        reason: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        runtime = self._adaptive_state(state)
+        if runtime.get("mode") == "low_risk":
+            return
+        runtime["mode"] = "low_risk"
+        runtime["reason"] = reason
+        runtime["activated_step"] = state.step_index + 1
+        state.run_config.coordination_topology = "sas"
+        state.run_config.candidate_rescue_enabled = False
+        state.run_config.step_mapping_enabled = False
+        state.latest_step_mapping = None
+        if state.template_guidance_state is not None:
+            state.template_guidance_state = TemplateGuidanceState(
+                mode="disabled",
+                disable_reason=f"adaptive_low_risk:{reason}",
+            )
+            self._emit_template_guidance_state(state)
+        self.store.append_event(
+            state.run_id,
+            "adaptive_harness_mode_changed",
+            {
+                "mode": "low_risk",
+                "reason": reason,
+                "activated_step": state.step_index + 1,
+                "coordination_topology": "sas",
+                "candidate_rescue_enabled": False,
+                "step_mapping_enabled": False,
+                "details": dict(details or {}),
+            },
+        )
+
+    def _classify_failure_for_adaptation(
+        self,
+        *,
+        state: RunState,
+        proposal_output: Dict[str, Any],
+        proposal_quality_summary: Dict[str, Any],
+        all_candidates_rejected: bool,
+        had_repeat_signature_failure: bool,
+        last_failed_checks: List[str],
+        last_rescue_outcome: str,
+    ) -> Optional[str]:
+        runtime = self._adaptive_state(state)
+        failure_counts = runtime.setdefault("failure_counts", {})
+        step_key = str(state.step_index + 1)
+        per_step = failure_counts.setdefault(step_key, {})
+
+        classification: Optional[str] = None
+        if last_rescue_outcome == "invalid_species":
+            classification = "rescue_invalid_species"
+        elif had_repeat_signature_failure:
+            classification = "repeat_signature_loop"
+        elif proposal_quality_summary.get("candidate_count", 0) == 0 or bool(proposal_output.get("non_executable_fallback")):
+            classification = "proposal_empty"
+        elif proposal_quality_summary.get("all_candidates_invalid_smiles") or proposal_quality_summary.get("all_candidates_unassessable"):
+            classification = "proposal_invalid_smiles"
+        elif proposal_quality_summary.get("execution_exception_count", 0) > 0:
+            classification = "candidate_execution_exception"
+        elif (
+            proposal_quality_summary.get("failed_candidate_count", 0) > 0
+            and not proposal_quality_summary.get("invalid_smiles_count")
+            and not proposal_quality_summary.get("incomplete_candidate_count")
+            and not all_candidates_rejected
+            and last_failed_checks
+            and set(last_failed_checks) == {"atom_balance"}
+        ):
+            classification = "atom_balance_dead_end"
+
+        if classification:
+            per_step[classification] = int(per_step.get(classification, 0)) + 1
+            self.store.append_event(
+                state.run_id,
+                "failure_classified",
+                {
+                    "step_index": state.step_index + 1,
+                    "failure_class": classification,
+                    "count_for_step": per_step[classification],
+                },
+                step_name="mechanism_step_proposal",
+            )
+        return classification
+
+    def _fallback_candidate_from_remaining_mechanism(
+        self,
+        state: RunState,
+        *,
+        timeout: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
+        runner = BaselineRunner()
+        result = runner.run_case(
+            list(state.run_input.starting_materials),
+            list(state.run_input.products),
+            state.run_config.model,
+            thinking_level=state.run_config.thinking_level,
+            api_keys=state.run_config.api_keys,
+            temperature_celsius=state.run_input.temperature_celsius,
+            ph=state.run_input.ph,
+            timeout=float(timeout or 90.0),
+            current_state=list(state.current_state),
+            accepted_path_summary=list(state.previous_intermediates),
+        )
+        if result.get("error"):
+            self.store.append_event(
+                state.run_id,
+                "remaining_mechanism_fallback_failed",
+                {
+                    "step_index": state.step_index + 1,
+                    "error": str(result.get("error") or ""),
+                },
+                step_name="mechanism_step_proposal",
+            )
+            return None
+        raw_steps = list(result.get("raw_steps") or [])
+        if not raw_steps:
+            self.store.append_event(
+                state.run_id,
+                "remaining_mechanism_fallback_failed",
+                {
+                    "step_index": state.step_index + 1,
+                    "error": "no_remaining_steps_returned",
+                },
+                step_name="mechanism_step_proposal",
+            )
+            return None
+        first_step = dict(raw_steps[0] or {})
+        resulting_state = [str(item) for item in first_step.get("resulting_state") or [] if str(item).strip()]
+        predicted = str(first_step.get("predicted_intermediate") or "").strip()
+        if not predicted and resulting_state:
+            predicted = resulting_state[0]
+        candidate = {
+            "rank": 1,
+            "intermediate_smiles": predicted,
+            "reaction_description": str(first_step.get("step_label") or "remaining_mechanism_fallback"),
+            "reaction_smirks": str(first_step.get("reaction_smirks") or ""),
+            "electron_pushes": list(first_step.get("electron_pushes") or []),
+            "resulting_state": resulting_state,
+            "note": "Generated by remaining mechanism fallback.",
+            "source": "remaining_mechanism_fallback",
+        }
+        self.store.append_event(
+            state.run_id,
+            "remaining_mechanism_fallback_generated",
+            {
+                "step_index": state.step_index + 1,
+                "candidate_smiles": predicted,
+                "resulting_state_size": len(resulting_state),
+            },
+            step_name="mechanism_step_proposal",
+        )
+        return candidate
+
     def _run_mechanism_loop(
         self,
         state: RunState,
@@ -2641,11 +3095,45 @@ class RunCoordinator:
                 self._apply_candidate(state, chosen)
             else:
                 # --- Step A: Propose mechanism step candidates (topology-aware) ---
-                proposal_output, candidates = self._propose_for_topology(
-                    state,
-                    harness,
-                    proposal_hints=reproposal_hints.get(state.step_index + 1),
-                )
+                proposal_hints = dict(reproposal_hints.get(state.step_index + 1) or {})
+                if self._adaptive_enabled(state) and self._adaptive_state(state).get("mode") == "low_risk":
+                    proposal_hints.update(
+                        {
+                            "low_risk_mode": True,
+                            "require_explicit_resulting_state": True,
+                            "require_balance_consistency": True,
+                            "max_candidates": 1,
+                        }
+                    )
+                try:
+                    proposal_output, candidates = self._propose_for_topology(
+                        state,
+                        harness,
+                        proposal_hints=proposal_hints or None,
+                    )
+                except Exception as exc:
+                    self.store.append_event(
+                        state.run_id,
+                        "proposal_dispatch_exception",
+                        {
+                            "step_index": state.step_index + 1,
+                            "coordination_topology": state.run_config.coordination_topology,
+                            "error": str(exc),
+                        },
+                        step_name="mechanism_step_proposal",
+                    )
+                    self.store.set_run_status(state.run_id, "failed")
+                    self.store.append_event(
+                        state.run_id,
+                        "run_failed",
+                        {
+                            "reason": "proposal_dispatch_exception",
+                            "step_index": state.step_index + 1,
+                            "coordination_topology": state.run_config.coordination_topology,
+                            "error": str(exc),
+                        },
+                    )
+                    return
                 rejected_candidates = proposal_output.get("rejected_candidates")
                 rejected_candidate_count = (
                     len(rejected_candidates)
@@ -2673,9 +3161,33 @@ class RunCoordinator:
                 candidate_attempts: List[Tuple[Dict[str, Any], Dict[str, Any]]] = []
                 for candidate in candidates:
                     _ev = self._enabled_validators(harness) if harness else None
-                    attempt_result = self._try_candidate_with_retries(
-                        state, candidate, proposal_output, enabled_validators=_ev,
-                    )
+                    try:
+                        attempt_result = self._try_candidate_with_retries(
+                            state, candidate, proposal_output, enabled_validators=_ev,
+                        )
+                    except Exception as exc:
+                        attempt_result = {
+                            "status": "failed",
+                            "branch_candidate": None,
+                            "last_validation": {},
+                            "reason": "candidate_execution_exception",
+                            "failed_checks": [],
+                            "validation_signature": "",
+                            "candidate_rank": int(candidate.get("rank") or 0),
+                            "rescue_attempted": False,
+                            "rescue_outcome": "none",
+                        }
+                        self.store.append_event(
+                            state.run_id,
+                            "mechanism_candidate_uncaught_exception",
+                            {
+                                "attempt": state.step_index + 1,
+                                "candidate_rank": candidate.get("rank"),
+                                "candidate_smiles": candidate.get("intermediate_smiles"),
+                                "error": str(exc),
+                            },
+                            step_name="mechanism_synthesis",
+                        )
                     candidate_attempts.append((dict(candidate), dict(attempt_result)))
                     status = str(attempt_result.get("status") or "")
                     if status == "validated":
@@ -2717,6 +3229,139 @@ class RunCoordinator:
                     step_name="mechanism_step_proposal",
                 )
 
+                step_number = state.step_index + 1
+                proposal_hint_payload = reproposal_hints.get(step_number, {}) or {}
+
+                # Extract SMILES error context from validation failures for reproposal
+                smiles_error_context = None
+                if isinstance(proposal_quality_summary, dict):
+                    first_invalid_detail = proposal_quality_summary.get("first_invalid_detail")
+                    if first_invalid_detail and "rdkit_errors" in str(first_invalid_detail):
+                        # Extract RDKit error messages from the validation details
+                        import json
+                        try:
+                            if isinstance(first_invalid_detail, dict) and "rdkit_errors" in first_invalid_detail:
+                                rdkit_errors = first_invalid_detail["rdkit_errors"]
+                                if isinstance(rdkit_errors, dict) and rdkit_errors:
+                                    error_lines = []
+                                    for smiles, error in rdkit_errors.items():
+                                        error_lines.append(f"{smiles}: {error}")
+                                    smiles_error_context = "\n".join(error_lines)
+                        except (json.JSONDecodeError, KeyError, TypeError):
+                            pass  # Fall back to no error context if parsing fails
+
+                failure_class: Optional[str] = None
+                if not validated and self._adaptive_enabled(state):
+                    runtime = self._adaptive_state(state)
+                    failure_class = self._classify_failure_for_adaptation(
+                        state=state,
+                        proposal_output=proposal_output,
+                        proposal_quality_summary=proposal_quality_summary,
+                        all_candidates_rejected=all_candidates_rejected,
+                        had_repeat_signature_failure=had_repeat_signature_failure,
+                        last_failed_checks=last_failed_checks,
+                        last_rescue_outcome=last_rescue_outcome,
+                    )
+                    should_activate_low_risk = False
+                    if failure_class in {
+                        "proposal_empty",
+                        "proposal_invalid_smiles",
+                        "repeat_signature_loop",
+                        "rescue_invalid_species",
+                        "candidate_execution_exception",
+                    }:
+                        should_activate_low_risk = True
+                    elif failure_class == "atom_balance_dead_end":
+                        per_step_failures = (
+                            runtime.get("failure_counts", {})
+                            .get(str(step_number), {})
+                        )
+                        atom_balance_failures = int(per_step_failures.get("atom_balance_dead_end", 0))
+                        should_activate_low_risk = atom_balance_failures >= 2
+                        if atom_balance_failures < 2 and runtime.get("mode") != "low_risk":
+                            reproposal_hints[step_number] = {
+                                **proposal_hint_payload,
+                                "prior_failure_class": failure_class,
+                                "require_explicit_resulting_state": True,
+                                "require_balance_consistency": True,
+                                "avoid_failed_checks": list(last_failed_checks),
+                                "smiles_error_context": smiles_error_context,
+                            }
+                            self.store.append_event(
+                                state.run_id,
+                                "mechanism_reproposal_requested",
+                                {
+                                    "attempt": step_number,
+                                    "reason": "atom_balance_dead_end",
+                                    "reproposal_count": int(atom_balance_failures),
+                                    "failed_checks": list(last_failed_checks),
+                                },
+                                step_name="mechanism_step_proposal",
+                            )
+                            continue
+
+                    if should_activate_low_risk and runtime.get("mode") != "low_risk":
+                        self._activate_low_risk_mode(
+                            state,
+                            reason=str(failure_class or "adaptive_low_risk"),
+                            details={
+                                "proposal_quality_summary": proposal_quality_summary,
+                                "failed_checks": list(last_failed_checks),
+                            },
+                        )
+                        reproposal_hints[step_number] = {
+                            **proposal_hint_payload,
+                            "low_risk_mode": True,
+                            "prior_failure_class": failure_class,
+                            "require_explicit_resulting_state": True,
+                            "require_balance_consistency": True,
+                            "max_candidates": 1,
+                        }
+                        continue
+
+                    if runtime.get("mode") == "low_risk":
+                        fallback_steps = runtime.setdefault("fallback_attempted_steps", [])
+                        if step_number not in fallback_steps and failure_class:
+                            fallback_steps.append(step_number)
+                            fallback_candidate = self._fallback_candidate_from_remaining_mechanism(
+                                state,
+                                timeout=min(
+                                    90.0,
+                                    max(15.0, state.run_config.max_runtime_seconds / 3.0),
+                                ),
+                            )
+                            if fallback_candidate is not None:
+                                _ev = self._enabled_validators(harness) if harness else None
+                                fallback_attempt = self._try_candidate_with_retries(
+                                    state,
+                                    fallback_candidate,
+                                    {
+                                        "classification": "intermediate_step",
+                                        "analysis": "remaining_mechanism_fallback",
+                                        "selected_candidate": fallback_candidate,
+                                    },
+                                    enabled_validators=_ev,
+                                )
+                                candidate_attempts.append((dict(fallback_candidate), dict(fallback_attempt)))
+                                if str(fallback_attempt.get("status") or "") == "validated":
+                                    branch_candidate = fallback_attempt.get("branch_candidate")
+                                    if isinstance(branch_candidate, BranchCandidate):
+                                        validated.append(branch_candidate)
+                                        reproposal_hints.pop(step_number, None)
+                                else:
+                                    maybe_validation = fallback_attempt.get("last_validation")
+                                    if isinstance(maybe_validation, dict) and maybe_validation:
+                                        last_failed_validation = maybe_validation
+                                    last_failed_checks = list(fallback_attempt.get("failed_checks") or last_failed_checks)
+                                    last_validation_signature = str(
+                                        fallback_attempt.get("validation_signature") or last_validation_signature
+                                    )
+                                    last_candidate_rank = 1
+                                    last_rescue_attempted = bool(fallback_attempt.get("rescue_attempted"))
+                                    last_rescue_outcome = str(
+                                        fallback_attempt.get("rescue_outcome") or last_rescue_outcome
+                                    )
+
                 # --- Step C: Handle validation results ---
                 if not validated:
                     if proposal_quality_summary.get("all_candidates_unassessable"):
@@ -2745,6 +3390,7 @@ class RunCoordinator:
                         reproposal_hints[step_key] = {
                             "avoid_signatures": [last_validation_signature] if last_validation_signature else [],
                             "avoid_failed_checks": list(last_failed_checks),
+                            "smiles_error_context": smiles_error_context,
                         }
                         self.store.append_event(
                             state.run_id,
@@ -2945,6 +3591,7 @@ class RunCoordinator:
                             "incomplete_payload_reasons": list(incomplete_reasons),
                             "require_reaction_smirks": True,
                             "require_electron_pushes": True,
+                            "smiles_error_context": smiles_error_context,
                         }
                         self.store.append_event(
                             state.run_id,
@@ -2988,28 +3635,100 @@ class RunCoordinator:
                             )
                             return
                         continue
-                    # No candidate passed — pause for user decision.
-                    # If a branch point with an alternative exists, offer it as last chance.
-                    alt_result = self._peek_next_alternative(state)
-                    if alt_result is not None:
-                        alt_bp, alt_candidate = alt_result
-                        self._pause_for_last_chance(
+                    # ── Proceed-on-failure: soft-advance when configured ──────────
+                    # When proceed_on_validation_failure is enabled, instead of
+                    # pausing/failing we accept the best available candidate as a
+                    # "soft" step (validation_passed = False, marked for post-loop
+                    # re-evaluation) and continue the harness.
+                    if state.run_config.proceed_on_validation_failure:
+                        can_proceed = True
+                        if state.run_config.proceed_only_on_arrow_push_failure:
+                            can_proceed = self._is_arrow_push_only_failure(
+                                failed_checks=last_failed_checks,
+                                last_validation=last_failed_validation,
+                                incomplete_reasons=incomplete_reasons,
+                            )
+                        if can_proceed:
+                            soft_candidate = self._best_soft_candidate(
+                                candidates=candidates,
+                                candidate_attempts=candidate_attempts,
+                                proposal_output=proposal_output,
+                            )
+                            if soft_candidate is not None:
+                                self.store.append_event(
+                                    state.run_id,
+                                    "mechanism_step_soft_advance",
+                                    {
+                                        "step_index": state.step_index + 1,
+                                        "reason": "proceed_on_validation_failure",
+                                        "only_arrow_push": state.run_config.proceed_only_on_arrow_push_failure,
+                                        "failed_checks": last_failed_checks,
+                                        "incomplete_reasons": list(incomplete_reasons),
+                                        "soft_intermediate_smiles": soft_candidate.intermediate_smiles,
+                                        "soft_resulting_state": list(soft_candidate.resulting_state),
+                                    },
+                                    step_name="mechanism_synthesis",
+                                )
+                                # Persist a step_output row for this soft step so
+                                # it appears in step_outputs and the post-loop
+                                # re-evaluation phase can find it.
+                                soft_validation = StepValidationResult(
+                                    checks=[
+                                        StepValidationCheck(
+                                            name="soft_advance",
+                                            passed=False,
+                                            details={
+                                                "reason": "proceed_on_validation_failure",
+                                                "failed_checks": list(last_failed_checks),
+                                                "incomplete_reasons": list(incomplete_reasons),
+                                            },
+                                        )
+                                    ]
+                                )
+                                soft_step = StepResult(
+                                    step_name="mechanism_synthesis",
+                                    tool_name="predict_mechanistic_step",
+                                    output={
+                                        **(soft_candidate.mechanism_output or {}),
+                                        "soft_advance": True,
+                                        "soft_advance_reason": "proceed_on_validation_failure",
+                                        "failed_checks": list(last_failed_checks),
+                                        "incomplete_reasons": list(incomplete_reasons),
+                                    },
+                                    attempt=state.step_index + 1,
+                                    retry_index=0,
+                                    source="deterministic",
+                                    validation=soft_validation,
+                                )
+                                self._record_step(state, soft_step)
+                                chosen = soft_candidate
+                                validated = [chosen]
+                                # Fall through to Steps D-G with soft candidate.
+                                # The post-loop re-evaluation phase will attempt to
+                                # fix these steps after the run completes.
+                    if not validated:
+                        # No candidate passed — pause for user decision.
+                        # If a branch point with an alternative exists, offer it as last chance.
+                        alt_result = self._peek_next_alternative(state)
+                        if alt_result is not None:
+                            alt_bp, alt_candidate = alt_result
+                            self._pause_for_last_chance(
+                                state,
+                                alt_bp,
+                                alt_candidate,
+                                attempt=state.step_index + 1,
+                            )
+                        # No alternatives remain — dead end.
+                        self._pause_for_retry_exhaustion(
                             state,
-                            alt_bp,
-                            alt_candidate,
                             attempt=state.step_index + 1,
+                            last_validation=last_failed_validation,
+                            failed_checks=last_failed_checks,
+                            validation_signature=last_validation_signature,
+                            candidate_rank=last_candidate_rank,
+                            rescue_attempted=last_rescue_attempted,
+                            rescue_outcome=last_rescue_outcome,
                         )
-                    # No alternatives remain — dead end.
-                    self._pause_for_retry_exhaustion(
-                        state,
-                        attempt=state.step_index + 1,
-                        last_validation=last_failed_validation,
-                        failed_checks=last_failed_checks,
-                        validation_signature=last_validation_signature,
-                        candidate_rank=last_candidate_rank,
-                        rescue_attempted=last_rescue_attempted,
-                        rescue_outcome=last_rescue_outcome,
-                    )
 
                 # Sort by rank and pick the top-ranked validated candidate
                 validated.sort(key=lambda bc: bc.rank)
@@ -3080,6 +3799,192 @@ class RunCoordinator:
                 "loop_iteration_completed",
                 {"step_index": state.step_index},
             )
+
+    # ── Post-loop phase ──────────────────────────────────────────────────
+
+    def _run_post_loop_phase(
+        self,
+        state: RunState,
+        harness: Optional[HarnessConfig] = None,
+    ) -> None:
+        """Execute post_loop modules after the mechanism loop finishes.
+
+        Currently dispatches the ``past_failure_reevaluation`` module, which
+        attempts to validate/fix soft-accepted (proceed-on-failure) steps using
+        the context of later successful steps.
+        """
+        if harness is None:
+            return
+        enabled_post_loop = harness.enabled_post_loop()
+        if not enabled_post_loop:
+            return
+
+        self.store.append_event(
+            state.run_id,
+            "post_loop_phase_started",
+            {"module_count": len(enabled_post_loop)},
+        )
+
+        for module in enabled_post_loop:
+            if module.id == "past_failure_reevaluation":
+                self._run_past_failure_reevaluation(state)
+            elif module.custom:
+                context: Dict[str, Any] = {}
+                result = self._run_custom_module(state, module, context)
+                result.attempt = 0
+                self._record_step(state, result)
+
+        self.store.append_event(
+            state.run_id,
+            "post_loop_phase_completed",
+            {"module_count": len(enabled_post_loop)},
+        )
+
+    def _run_past_failure_reevaluation(self, state: RunState) -> None:
+        """Re-evaluate soft-accepted mechanism steps after the loop completes.
+
+        For each step_output row where ``output.soft_advance == True``, this
+        method attempts to re-run the deterministic validators (atom_balance,
+        state_progress) with any corrections that can be inferred from the
+        subsequent accepted steps. If the step now passes validation it is
+        marked with ``reevaluated_passed = True`` in its output so the
+        completion logic can count it.
+
+        Algorithm
+        ---------
+        1. Collect all soft-advance rows from step_outputs in attempt order.
+        2. For each soft row, build a corrected ``resulting_state`` from the
+           *next* validated step's ``current_state`` snapshot (i.e. what the
+           harness had when the following step started).  If the atom balance
+           passes with that state, mark the step corrected.
+        3. Persist an updated step_output row and an event for observability.
+        """
+        step_outputs = self.store.list_step_outputs(state.run_id)
+        soft_rows = [
+            row for row in step_outputs
+            if row.get("step_name") == "mechanism_synthesis"
+            and isinstance(row.get("output"), dict)
+            and bool((row.get("output") or {}).get("soft_advance"))
+        ]
+        if not soft_rows:
+            return
+
+        soft_rows.sort(key=lambda r: (int(r.get("attempt") or 0), int(r.get("retry_index") or 0)))
+
+        # Build a list of confirmed mechanism states (from fully-validated steps).
+        validated_rows = [
+            row for row in step_outputs
+            if row.get("step_name") == "mechanism_synthesis"
+            and isinstance(row.get("validation"), dict)
+            and bool((row.get("validation") or {}).get("passed"))
+        ]
+        validated_rows.sort(
+            key=lambda r: (int(r.get("attempt") or 0), int(r.get("retry_index") or 0))
+        )
+
+        self.store.append_event(
+            state.run_id,
+            "past_failure_reevaluation_started",
+            {
+                "soft_step_count": len(soft_rows),
+                "validated_step_count": len(validated_rows),
+            },
+            step_name="past_failure_reevaluation",
+        )
+
+        fixed_count = 0
+        for soft_row in soft_rows:
+            soft_attempt = int(soft_row.get("attempt") or 0)
+            soft_output = dict(soft_row.get("output") or {})
+            soft_smiles = str(soft_output.get("intermediate_smiles") or "").strip()
+            soft_resulting = list(soft_output.get("resulting_state") or [])
+
+            # Strategy: find the next validated step that has a higher attempt index.
+            # Use the current_state of that next step as the corrected resulting_state.
+            next_validated = next(
+                (
+                    r for r in validated_rows
+                    if int(r.get("attempt") or 0) > soft_attempt
+                ),
+                None,
+            )
+
+            corrected_resulting: Optional[List[str]] = None
+            if next_validated is not None:
+                next_output = dict(next_validated.get("output") or {})
+                prev_state = list(next_output.get("current_state") or [])
+                if prev_state:
+                    corrected_resulting = prev_state
+
+            candidate_resulting = corrected_resulting or soft_resulting
+            if not candidate_resulting:
+                continue
+
+            # Re-run atom_balance and state_progress validators.
+            current_state_for_step = list(
+                soft_output.get("current_state") or state.run_input.starting_materials or []
+            )
+            validation_payload: Dict[str, Any] = {
+                "current_state": current_state_for_step,
+                "intermediate_smiles": soft_smiles,
+                "resulting_state": candidate_resulting,
+                "reaction_smirks": "",
+                "electron_pushes": [],
+            }
+            validation_result = validate_mechanism_step_output(
+                validation_payload,
+                dbe_policy="soft",
+                enabled_validators={"atom_balance_validation", "state_progress_validation"},
+            )
+            passed = validation_result.passed if validation_result else False
+
+            # Update the soft step output with reevaluation result.
+            updated_output = {
+                **soft_output,
+                "reevaluated": True,
+                "reevaluated_passed": passed,
+                "reevaluated_resulting_state": candidate_resulting,
+                "reevaluated_from_next_step_attempt": int(next_validated.get("attempt") or 0)
+                if next_validated
+                else None,
+            }
+            if passed:
+                updated_output["soft_advance"] = False
+                fixed_count += 1
+
+            self.store.append_event(
+                state.run_id,
+                "past_failure_step_reevaluated",
+                {
+                    "soft_attempt": soft_attempt,
+                    "reevaluated_passed": passed,
+                    "corrected_resulting_state": candidate_resulting,
+                    "original_soft_smiles": soft_smiles,
+                },
+                step_name="past_failure_reevaluation",
+            )
+
+            # Persist updated step_output using the store's upsert method.
+            self.store.upsert_step_output(
+                run_id=state.run_id,
+                step_name="mechanism_synthesis",
+                attempt=soft_attempt,
+                retry_index=int(soft_row.get("retry_index") or 0),
+                output=updated_output,
+                validation={"passed": passed, "soft_advance_reevaluated": True},
+                source="deterministic",
+            )
+
+        self.store.append_event(
+            state.run_id,
+            "past_failure_reevaluation_completed",
+            {
+                "soft_step_count": len(soft_rows),
+                "fixed_count": fixed_count,
+                "remaining_unfixed": len(soft_rows) - fixed_count,
+            },
+            step_name="past_failure_reevaluation",
+        )
 
     def _run_post_step_modules(
         self,
@@ -3301,6 +4206,11 @@ class RunCoordinator:
 
             self._run_mechanism_loop(state, stop_event, harness)
 
+            if not state.paused:
+                # Run post-loop phase (e.g. past-failure re-evaluation) before
+                # making final pass/fail judgement.
+                self._run_post_loop_phase(state, harness)
+
             if state.paused:
                 return
             if hasattr(self.store, "get_run_row"):
@@ -3326,8 +4236,57 @@ class RunCoordinator:
                 and isinstance(row.get("validation"), dict)
                 and bool(row["validation"].get("passed"))
             ]
+            # Also include soft-advance steps so runs using proceed_on_validation_failure
+            # can still be marked complete (soft-accepted steps may have been corrected
+            # by the post-loop re-evaluation phase).
+            soft_steps = [
+                row
+                for row in step_outputs
+                if row.get("step_name") == "mechanism_synthesis"
+                and isinstance(row.get("output"), dict)
+                and bool((row.get("output") or {}).get("soft_advance"))
+                and bool((row.get("output") or {}).get("reevaluated_passed"))
+            ]
+            all_accepted_steps = mechanism_steps + soft_steps
 
-            if not mechanism_steps:
+            if not all_accepted_steps and not mechanism_steps:
+                # No valid steps at all — check if we have only soft steps to at
+                # least count the attempt for diagnostics.
+                soft_only = [
+                    row
+                    for row in step_outputs
+                    if row.get("step_name") == "mechanism_synthesis"
+                    and isinstance(row.get("output"), dict)
+                    and bool((row.get("output") or {}).get("soft_advance"))
+                ]
+                if not soft_only:
+                    self.store.set_run_status(run_id, "failed")
+                    self.store.append_event(
+                        run_id,
+                        "run_failed",
+                        {
+                            "reason": (
+                                "runtime_limit_reached"
+                                if reached_runtime_limit
+                                else "no_valid_mechanism_steps_generated"
+                            )
+                        },
+                    )
+                    return
+                # Has only unvalidated soft steps — still treat as failed but
+                # include count for diagnostics.
+                self.store.set_run_status(run_id, "failed")
+                self.store.append_event(
+                    run_id,
+                    "run_failed",
+                    {
+                        "reason": "no_validated_mechanism_steps",
+                        "soft_advance_steps": len(soft_only),
+                    },
+                )
+                return
+
+            if not mechanism_steps and not soft_steps:
                 self.store.set_run_status(run_id, "failed")
                 self.store.append_event(
                     run_id,
@@ -3344,7 +4303,7 @@ class RunCoordinator:
 
             has_completion = any(
                 bool((row.get("output") or {}).get("contains_target_product"))
-                for row in mechanism_steps
+                for row in all_accepted_steps
             )
             if has_completion:
                 self.store.set_run_status(run_id, "completed")
@@ -3379,7 +4338,12 @@ class RunCoordinator:
             self.store.append_event(
                 run_id,
                 "run_failed",
-                {"reason": "uncaught_exception", "error": str(exc)},
+                {
+                    "reason": "uncaught_exception",
+                    "error": str(exc),
+                    "step_index": state.step_index + 1,
+                    "phase": "coordinator_execute",
+                },
             )
         finally:
             model_context.clear_run_context()

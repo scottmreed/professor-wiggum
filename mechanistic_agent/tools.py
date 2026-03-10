@@ -2405,17 +2405,46 @@ def predict_missing_reagents_for_candidate(
     This delegates to ``predict_missing_reagents`` using the candidate step's
     ``current_state -> resulting_state`` transition as the balancing problem.
     """
-    raw = predict_missing_reagents(
-        starting_materials=current_state,
-        products=resulting_state,
-        conditions_guidance=json.dumps(
+    from mechanistic_agent.smiles_utils import sanitize_smiles_list
+
+    sanitized_current, invalid_current = sanitize_smiles_list(current_state)
+    sanitized_resulting, invalid_resulting = sanitize_smiles_list(resulting_state)
+    invalid_species = list(invalid_current) + list(invalid_resulting)
+    if invalid_species or not sanitized_current or not sanitized_resulting:
+        return _serialise(
             {
-                "rescue_mode": True,
-                "failed_checks": list(failed_checks or []),
-                "validation_details": dict(validation_details or {}),
+                "status": "failed",
+                "error": "candidate_rescue_invalid_species",
+                "invalid_species": invalid_species,
+                "sanitized_current": sanitized_current,
+                "sanitized_resulting": sanitized_resulting,
+                "add_reactants": [],
+                "add_products": [],
             }
-        ),
-    )
+        )
+
+    try:
+        raw = predict_missing_reagents(
+            starting_materials=sanitized_current,
+            products=sanitized_resulting,
+            conditions_guidance=json.dumps(
+                {
+                    "rescue_mode": True,
+                    "failed_checks": list(failed_checks or []),
+                    "validation_details": dict(validation_details or {}),
+                }
+            ),
+        )
+    except Exception as exc:
+        return _serialise(
+            {
+                "status": "failed",
+                "error": "candidate_rescue_exception",
+                "message": str(exc),
+                "add_reactants": [],
+                "add_products": [],
+            }
+        )
     try:
         parsed = json.loads(raw)
     except Exception:
@@ -2454,8 +2483,8 @@ def predict_missing_reagents_for_candidate(
         canonical = _validate_smiles_with_rdkit(smiles, field_name="candidate_rescue_species")
         return str(canonical or smiles).strip()
 
-    current_norm = {_normalise_species(item) for item in current_state if str(item).strip()}
-    resulting_norm = {_normalise_species(item) for item in resulting_state if str(item).strip()}
+    current_norm = {_normalise_species(item) for item in sanitized_current if str(item).strip()}
+    resulting_norm = {_normalise_species(item) for item in sanitized_resulting if str(item).strip()}
 
     # Matches bare radical-atom SMILES like [N], [O], [C], [S] — no implicit H, no charge.
     # Charged ions ([Br-], [K+]) and protonated atoms ([NH4+]) are excluded by the pattern.
@@ -3948,11 +3977,22 @@ def propose_intermediates(
         )
 
     guidance_payload: Dict[str, Any] = dict(template_guidance or {})
+    low_risk_mode = bool(guidance_payload.get("low_risk_mode"))
     template_guidance_text = _compact_json_context(
         guidance_payload,
         label="template_guidance",
         max_chars=max(1200, prompt_char_cap // 6),
     )
+    if low_risk_mode:
+        human_prompt += (
+            "LOW-RISK MODE: A prior proposal failed due to invalid species or non-executable chemistry.\n"
+            "Return exactly one conservative forward step candidate.\n"
+            "Requirements:\n"
+            "  - every species must be RDKit-parseable SMILES\n"
+            "  - include an explicit resulting_state with all retained and produced species\n"
+            "  - prefer atom-balance consistency over speculative intermediates\n"
+            "  - do not use shorthand aliases like CO2, H2O, HCl, or bare ions without brackets\n\n"
+        )
     if template_guidance_text:
         guidance_strength = str(guidance_payload.get("guidance_strength") or "strong").strip().lower()
         guidance_blurb = (
@@ -3964,11 +4004,12 @@ def propose_intermediates(
                 "Treat the template as a low-priority hint only. Prefer chemistry and validator-aligned "
                 "step proposals when the template conflicts with plausible mechanism progression."
             )
-        human_prompt += (
-            "Optional reaction-type template guidance (advisory only, do NOT force-fit chemistry):\n"
-            f"{guidance_blurb}\n"
-            f"{template_guidance_text}\n\n"
-        )
+        if not low_risk_mode:
+            human_prompt += (
+                "Optional reaction-type template guidance (advisory only, do NOT force-fit chemistry):\n"
+                f"{guidance_blurb}\n"
+                f"{template_guidance_text}\n\n"
+            )
 
     # Incomplete-payload feedback from prior attempt (set by coordinator on reproposal)
     incomplete_payload_reasons = guidance_payload.get("incomplete_payload_reasons")
@@ -3984,6 +4025,14 @@ def propose_intermediates(
             "kind, source_atom, target_atom, electrons=2; for pi_bond/sigma_bond moves include "
             "kind, source_bond ([bondStart, bondEnd]), through_atom (must equal source_bond[1]), "
             "target_atom, electrons=2.\n\n"
+        )
+
+    # SMILES validation errors from prior attempt (set by coordinator on reproposal)
+    smiles_error = guidance_payload.get("smiles_error_context")
+    if smiles_error:
+        human_prompt += (
+            f"SMILES VALIDATION ERRORS from prior attempt:\n{smiles_error}\n"
+            "Fix the specific structural problems above before reproposing.\n\n"
         )
 
     # Peer proposals appendix (decentralized topology, rounds 2+)
@@ -4512,7 +4561,10 @@ def propose_intermediates(
         if not analysis_text:
             analysis_text = raw_response_text
 
-        has_validated = bool(validated_intermediates)
+        executable_candidate_count = len(ranked_candidates)
+        has_executable_candidates = executable_candidate_count > 0
+        has_validated_intermediates = bool(validated_intermediates)
+        has_validated = has_validated_intermediates and has_executable_candidates
         chosen_intermediates: List[str]
         status_value = "success"
         message_text: Optional[str] = None
@@ -4522,11 +4574,18 @@ def propose_intermediates(
             chosen_intermediates = validated_intermediates[:2]
             message_text = f"Proposed {len(validated_intermediates)} validated intermediate(s) for next step"
         else:
-            chosen_intermediates = raw_fallbacks[:2]
             status_value = "warning"
-            message_text = (
-                "No intermediates passed RDKit validation; providing raw LLM proposals for review"
-            )
+            if has_validated_intermediates and not has_executable_candidates:
+                chosen_intermediates = []
+                message_text = (
+                    "Intermediate SMILES were valid, but candidate payload was non-executable "
+                    "(missing/invalid reaction_smirks or electron_pushes). Requesting reproposal."
+                )
+            else:
+                chosen_intermediates = raw_fallbacks[:2]
+                message_text = (
+                    "No intermediates passed RDKit validation; providing raw LLM proposals for review"
+                )
 
         result: Dict[str, Any] = {
             "status": status_value,
@@ -4539,6 +4598,8 @@ def propose_intermediates(
             "model_used": model_used,
             "tool_calling_used": _use_forced_tools,
             "validation_status": validation_status,
+            "executable_candidate_count": executable_candidate_count,
+            "has_executable_candidates": has_executable_candidates,
         }
 
         # Include ranked candidates from multi-candidate schema.

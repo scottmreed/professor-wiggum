@@ -160,4 +160,10 @@ training_data/local_legacy/
 traces/
 plans/
 evolution_workspace/
-local_contributions/
+
+# local_contributions — run outputs stay local, scripts are tracked
+local_contributions/runs/
+
+# clawdiators-test — ground truth is local only (mirrors competition policy)
+clawdiators-test/easy/test_ground_truth.json
+clawdiators-test/**/__pycache__/

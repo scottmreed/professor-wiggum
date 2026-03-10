@@ -37,6 +37,6 @@ def test_build_state_coerces_config_types_safely(tmp_path: Path) -> None:
     assert state.run_config.reproposal_on_repeat_failure is False
     assert state.run_config.candidate_rescue_enabled is True
     assert state.run_config.max_steps == 10
-    assert state.run_config.max_runtime_seconds == 240.0
+    assert state.run_config.max_runtime_seconds == 600.0
     assert state.run_config.dbe_policy == "strict"
     assert state.run_config.reaction_template_policy == "auto"

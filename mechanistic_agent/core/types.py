@@ -9,12 +9,21 @@ RunMode = Literal["verified", "unverified"]
 RunStatus = Literal["pending", "running", "paused", "completed", "failed", "stopped"]
 TemplateGuidanceMode = Literal["active", "weak", "disabled", "no_match"]
 ModuleKind = Literal["llm", "deterministic", "decision", "text_completion"]
-ModulePhase = Literal["pre_loop", "post_step", "loop"]
+ModulePhase = Literal["pre_loop", "post_step", "loop", "post_loop"]
 FewShotSelectionStrategy = Literal["top_score", "most_recent", "first"]
+# Quality levels for a few-shot example's source run.
+# clean  — no soft-advance steps, no validation failures
+# soft   — had soft-advance steps (e.g. atom_balance failures proceeded)
+# failed — run ended in failure before completion (partial trace)
+FewShotRunQuality = Literal["clean", "soft", "failed"]
+# Numeric weights used when sorting few-shot examples.
+FEWSHOT_QUALITY_WEIGHT: dict = {"clean": 0.0, "soft": -0.15, "failed": -0.30}
 OrchestrationMode = Literal["standard", "ralph"]
 CoordinationTopology = Literal["sas", "centralized_mas", "independent_mas", "decentralized_mas"]
+AdaptiveHarnessMode = Literal["off", "conservative"]
 HarnessStrategy = Literal["latest", "portfolio", "mutate"]
 BabysitMode = Literal["off", "advisory"]
+RalphLane = Literal["topology", "harness", "prompt", "few_shot"]
 RalphStopReason = Literal[
     "completed",
     "max_iterations",
@@ -166,12 +175,21 @@ class FewShotSelectionConfig:
     max_examples: int = 4
     selection_strategy: FewShotSelectionStrategy = "top_score"
     min_score: Optional[float] = None
+    # Prefer examples from clean runs (no soft-advance steps).
+    # When True, clean examples rank above soft/failed ones.  When there are
+    # fewer than `min_clean_for_preference` clean examples available, the
+    # preference is relaxed and all examples are considered together so the
+    # pool is never artificially starved early in the system's life.
+    prefer_clean_traces: bool = True
+    min_clean_for_preference: int = 2
 
     def as_dict(self) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "enabled": self.enabled,
             "max_examples": self.max_examples,
             "selection_strategy": self.selection_strategy,
+            "prefer_clean_traces": self.prefer_clean_traces,
+            "min_clean_for_preference": self.min_clean_for_preference,
         }
         if self.min_score is not None:
             payload["min_score"] = self.min_score
@@ -197,11 +215,19 @@ class FewShotSelectionConfig:
         except (TypeError, ValueError):
             min_score_value = None
 
+        raw_min_clean = payload.get("min_clean_for_preference", 2)
+        try:
+            min_clean = max(0, int(raw_min_clean))
+        except (TypeError, ValueError):
+            min_clean = 2
+
         return cls(
             enabled=bool(payload.get("enabled", True)),
             max_examples=max_examples,
             selection_strategy=strategy,
             min_score=min_score_value,
+            prefer_clean_traces=bool(payload.get("prefer_clean_traces", True)),
+            min_clean_for_preference=min_clean,
         )
 
 
@@ -352,6 +378,7 @@ class HarnessConfig:
     pre_loop_modules: List[ModuleSpec] = field(default_factory=list)
     loop_module: Optional[Dict[str, Any]] = None
     post_step_modules: List[ModuleSpec] = field(default_factory=list)
+    post_loop_modules: List[ModuleSpec] = field(default_factory=list)
     few_shot_defaults: FewShotSelectionConfig = field(default_factory=FewShotSelectionConfig)
     topology_profiles: Dict[str, TopologyProfile] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -369,6 +396,8 @@ class HarnessConfig:
             "few_shot_defaults": self.few_shot_defaults.as_dict(),
             "metadata": dict(self.metadata),
         }
+        if self.post_loop_modules:
+            d["post_loop_modules"] = [m.as_dict() for m in self.post_loop_modules]
         if self.topology_profiles:
             d["topology_profiles"] = {k: v.as_dict() for k, v in self.topology_profiles.items()}
         return d
@@ -395,6 +424,9 @@ class HarnessConfig:
             post_step_modules=[
                 ModuleSpec.from_dict(m) for m in (data.get("post_step_modules") or [])
             ],
+            post_loop_modules=[
+                ModuleSpec.from_dict(m) for m in (data.get("post_loop_modules") or [])
+            ],
             few_shot_defaults=FewShotSelectionConfig.from_dict(data.get("few_shot_defaults")),
             topology_profiles=profiles,
             metadata=dict(data.get("metadata") or {}),
@@ -409,14 +441,17 @@ class HarnessConfig:
         return TopologyProfile()
 
     def all_modules(self) -> List[ModuleSpec]:
-        """Return all modules across both phases."""
-        return list(self.pre_loop_modules) + list(self.post_step_modules)
+        """Return all modules across all phases."""
+        return list(self.pre_loop_modules) + list(self.post_step_modules) + list(self.post_loop_modules)
 
     def enabled_pre_loop(self) -> List[ModuleSpec]:
         return [m for m in self.pre_loop_modules if m.enabled]
 
     def enabled_post_step(self) -> List[ModuleSpec]:
         return [m for m in self.post_step_modules if m.enabled]
+
+    def enabled_post_loop(self) -> List[ModuleSpec]:
+        return [m for m in self.post_loop_modules if m.enabled]
 
     def few_shot_policy_for_call(self, call_name: str) -> FewShotSelectionConfig:
         """Resolve the active few-shot policy for a prompt call in this harness."""
@@ -492,9 +527,13 @@ class RunConfig:
     ralph_max_runtime_seconds: float = 6000.0
     max_cost_usd: Optional[float] = 2.0
     repeat_failure_signature_limit: int = 2
+    adaptive_harness_mode: AdaptiveHarnessMode = "off"
     babysit_mode: BabysitMode = "off"
     allow_validator_mutation: bool = False
+    mutation_lane: Optional[RalphLane] = None
     ralph_parent_run_id: Optional[str] = None
+    proceed_on_validation_failure: bool = True
+    proceed_only_on_arrow_push_failure: bool = False
 
 
 @dataclass(slots=True)
@@ -510,6 +549,63 @@ class RalphConfig:
     harness_list: List[str] = field(default_factory=list)
     babysit_mode: BabysitMode = "off"
     allow_validator_mutation: bool = False
+    mutation_lane: Optional[RalphLane] = None
+
+
+@dataclass(slots=True)
+class OvernightRalphConfig:
+    """Program-level configuration for overnight Ralph hill-climbing."""
+
+    eval_slice_id: str = "default"
+    eval_slice_size: int = 10
+    eval_case_ids: List[str] = field(default_factory=list)
+    max_experiments: int = 20
+    max_cost_usd: float = 15.0
+    acceptance_threshold_pct: float = 0.02
+    allowed_lanes: List[RalphLane] = field(default_factory=lambda: ["topology", "harness"])
+    program_path: str = "ralph_program.md"
+    mutation_budget_per_night: Dict[str, Any] = field(default_factory=dict)
+    frozen_surfaces: List[str] = field(default_factory=list)
+    anti_overfitting_rules: Dict[str, Any] = field(default_factory=dict)
+    rollback_rules: Dict[str, Any] = field(default_factory=dict)
+    stop_conditions: Dict[str, Any] = field(default_factory=dict)
+    trace_artifact_requirements: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class MicroEvalResult:
+    """Aggregated metrics for one frozen-slice micro evaluation."""
+
+    eval_slice_id: str
+    case_count: int
+    completion_pct: float
+    validator_pass_pct: float
+    avg_retries: float
+    avg_backtracks: float
+    token_cost_usd: float
+    median_steps_to_completion: float
+    completed_runs: int = 0
+    validator_pass_runs: int = 0
+
+
+@dataclass(slots=True)
+class ExperimentRecord:
+    """One overnight Ralph mutation/evaluation attempt."""
+
+    parent_checkpoint_sha: str
+    mutated_asset_path: str
+    mutation_lane: RalphLane
+    mutation_summary: str
+    eval_slice_id: str
+    completion_pct: float
+    validator_pass_pct: float
+    avg_retries: float
+    avg_backtracks: float
+    token_cost_usd: float
+    keep: bool
+    revert_reason: Optional[str] = None
+    timestamp: float = 0.0
+    experiment_id: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -637,6 +733,7 @@ class RunState:
     template_guidance_state: Optional[TemplateGuidanceState] = None
     selected_reaction_template: Optional[Dict[str, Any]] = None
     step_start_times: Dict[str, float] = field(default_factory=dict)
+    adaptive_runtime_state: Dict[str, Any] = field(default_factory=dict)
 
     def initialise(self) -> None:
         if not self.current_state:

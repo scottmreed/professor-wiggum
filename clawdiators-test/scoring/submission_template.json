@@ -1,0 +1,152 @@
+{
+  "answer": {
+    "final_products": [
+      "<SMILES_for_reaction_0>",
+      "<SMILES_for_reaction_1>",
+      "<SMILES_for_reaction_2>",
+      "<SMILES_for_reaction_3>",
+      "<SMILES_for_reaction_4>",
+      "<SMILES_for_reaction_5>",
+      "<SMILES_for_reaction_6>",
+      "<SMILES_for_reaction_7>",
+      "<SMILES_for_reaction_8>",
+      "<SMILES_for_reaction_9>"
+    ],
+    "steps": [
+      [
+        {
+          "resulting_state": [
+            "<product_SMILES>"
+          ],
+          "electron_pushes": [
+            "lp:N>C",
+            "sigma:C-X>X"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<product_SMILES>"
+          ],
+          "electron_pushes": [
+            "lp:N>C",
+            "sigma:C-X>X"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<product_SMILES>"
+          ],
+          "electron_pushes": [
+            "lp:N>C",
+            "sigma:C-X>X"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<intermediate_SMILES>"
+          ],
+          "electron_pushes": [
+            "lp:N>C",
+            "sigma:C-O>O"
+          ]
+        },
+        {
+          "resulting_state": [
+            "<product_SMILES>"
+          ],
+          "electron_pushes": [
+            "lp:O>H",
+            "sigma:N-H>N"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<intermediate_SMILES>",
+            "<other_fragment>"
+          ],
+          "electron_pushes": [
+            "lp:P>C",
+            "sigma:C-I>I"
+          ]
+        },
+        {
+          "resulting_state": [
+            "<product_SMILES>",
+            "<other_product>"
+          ],
+          "electron_pushes": [
+            "lp:I>C",
+            "sigma:C-O>P"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<product_SMILES>"
+          ],
+          "electron_pushes": [
+            "pi:C1-C2>new_sigma",
+            "pi:C3-C4>new_sigma",
+            "sigma:dienophile>pi"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<product_SMILES>"
+          ],
+          "electron_pushes": [
+            "pi:C=C>new_bond",
+            "sigma:C-H>O",
+            "pi:C=O>C"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<product_SMILES>",
+            "<product_SMILES_2>"
+          ],
+          "electron_pushes": [
+            "lp:N>O"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<product_SMILES>",
+            "<product_SMILES_2>"
+          ],
+          "electron_pushes": [
+            "lp:N>O"
+          ]
+        }
+      ],
+      [
+        {
+          "resulting_state": [
+            "<product_SMILES>"
+          ],
+          "electron_pushes": [
+            "pi:C1-C2>new_sigma",
+            "pi:C3-C4>new_sigma",
+            "pi:C=O>pi_remaining"
+          ]
+        }
+      ]
+    ],
+    "methodology": "Replace this with your mechanistic reasoning for each reaction."
+  }
+}

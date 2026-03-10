@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
-from mechanistic_agent.core.types import FewShotSelectionConfig
+from mechanistic_agent.core.types import FEWSHOT_QUALITY_WEIGHT, FewShotSelectionConfig
 
 _PROMPT_START_MARKER = "<!-- PROMPT_START -->"
 _PROMPT_END_MARKER = "<!-- PROMPT_END -->"
@@ -291,6 +291,12 @@ def load_call_few_shot_examples(
                 if example_key in seen_keys:
                     continue
                 seen_keys.add(example_key)
+                raw_quality = payload.get("source_run_quality")
+                quality = (
+                    raw_quality
+                    if raw_quality in {"clean", "soft", "failed"}
+                    else None
+                )
                 rows.append(
                     {
                         "input": input_text,
@@ -298,6 +304,7 @@ def load_call_few_shot_examples(
                         "score": score,
                         "index": running_index,
                         "example_key": example_key,
+                        "source_run_quality": quality,
                     }
                 )
                 running_index += 1
@@ -311,6 +318,7 @@ def append_call_few_shot_example(
     output_text: str,
     score: float | None = None,
     example_key: str | None = None,
+    source_run_quality: str | None = None,
     base_dir: Path | None = None,
     model_name: str | None = None,
 ) -> Path:
@@ -326,6 +334,8 @@ def append_call_few_shot_example(
         payload["score"] = round(float(score), 6)
     if example_key:
         payload["example_key"] = str(example_key)
+    if source_run_quality and source_run_quality in {"clean", "soft", "failed"}:
+        payload["source_run_quality"] = source_run_quality
     line = json.dumps(payload, sort_keys=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
@@ -482,17 +492,39 @@ def select_few_shot_examples(
             continue
         scored_examples.append(enriched)
 
-    if config.selection_strategy == "most_recent":
-        scored_examples.sort(key=lambda row: int(row.get("index") or 0), reverse=True)
-    elif config.selection_strategy == "first":
-        scored_examples.sort(key=lambda row: int(row.get("index") or 0))
-    else:
-        scored_examples.sort(
-            key=lambda row: (
-                -float(row.get("score") or 0.0),
-                -int(row.get("index") or 0),
-            )
+    def _sort_key(row: Dict[str, Any]) -> tuple:
+        base_score = float(row.get("score") or 0.0)
+        idx = int(row.get("index") or 0)
+        if config.selection_strategy == "most_recent":
+            return (-idx,)
+        if config.selection_strategy == "first":
+            return (idx,)
+        # top_score: incorporate quality penalty if preference is active
+        quality_penalty = 0.0
+        if config.prefer_clean_traces:
+            q = row.get("source_run_quality")
+            quality_penalty = float(FEWSHOT_QUALITY_WEIGHT.get(q or "clean", 0.0))
+        return (-base_score + quality_penalty, -idx)
+
+    # When prefer_clean_traces is on, check whether we have enough clean
+    # examples to enforce the preference.  If not, fall back to treating
+    # all examples equally so we don't starve the prompt early in the
+    # system's life.
+    if config.prefer_clean_traces:
+        clean_count = sum(
+            1 for row in scored_examples if row.get("source_run_quality") in {None, "clean"}
         )
+        if clean_count < config.min_clean_for_preference:
+            # Not enough clean examples yet — ignore quality signal entirely.
+            scored_examples.sort(
+                key=lambda row: (
+                    -float(row.get("score") or 0.0),
+                    -int(row.get("index") or 0),
+                )
+            )
+            return scored_examples[: config.max_examples]
+
+    scored_examples.sort(key=_sort_key)
     return scored_examples[: config.max_examples]
 
 

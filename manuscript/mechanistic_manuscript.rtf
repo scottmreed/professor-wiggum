@@ -1,0 +1,439 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2867
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;\f1\froman\fcharset0 Times-Bold;\f2\froman\fcharset0 Times-Italic;
+}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww25360\viewh17100\viewkind1\viewscale227
+\deftab720
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f0\fs24 \cf0 \expnd0\expndtw0\kerning0
+Evolving Reaction Mechanism Prediction Skill in AI\
+Scott Reed, CU Denver, Center for Advanced Computational Molecular Science.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Abstract
+\f0\b0 \
+\
+Foundation generative AI models can sometimes describe
+\f2\i plausible
+\f0\i0  organic mechanisms, but they frequently violate hard constraints (atom/bond balance, impossible valences, inconsistent intermediates) and they struggle to maintain stepwise coherence over long multi-step pathways. These failure modes mirror known issues in reaction prediction where data-driven models can break mass conservation and even \'93hallucinate\'94 atoms or electrons, motivating explicit conservation-aware architectures for mechanism prediction. [1,2] 
+\f1\b Mechanistic
+\f0\b0  is an agent harness for generating 
+\f2\i verifiable
+\f0\i0  stepwise mechanisms from SMILES-defined reactions by combining structured LLM proposals with deterministic chemistry checks, explicit backtracking, and evidence-gated evolution of prompts and modules over time.\
+A run begins with deterministic preprocessing and normalization of the reaction state, followed by a sequence of preliminary analyses that constrain the search space: reaction balance checks, optional functional-group fingerprinting, and condition assessment. LLM-backed subagents then propose missing reagents/stoichiometry, attempt atom mapping, and suggest reaction-type templates that can provide compact mechanistic guidance when confidence is sufficient. The core execution is an explicit loop that iteratively proposes the next intermediate(s) and elementary transformation(s), validates them, and updates the reaction state. LLM steps use 
+\f1\b forced tool calling
+\f0\b0  with typed schemas to return structured outputs (e.g., conditions, missing reagents, atom maps, intermediate candidates) rather than brittle prose-embedded JSON; models lacking tool calling fall back to prompted structured parsing. Tool schemas include an optional `text` field for verbose models to provide additional reasoning without disrupting structured output extraction. Deterministic post-step validators enforce invariants such as atom/bond conservation, degree-of-unsaturation (DBE) policies, and \'93state progress\'94 toward target products; invalid candidates trigger controlled retries, candidate rescue, branching/backtracking, or pause/resume when retry budgets are exhausted. The emphasis on conservation and step validity is consistent with recent mechanism-aware modeling work showing that constraint-enforcing representations can directly mitigate hallucinatory failure modes and improve mechanistic fidelity. [1,2] Optional deterministic annotation modules can add mechanistic metadata (e.g., arrow-pushing style annotations) once a step is accepted.\
+Mechanistic is designed to
+\f1\b improve through use
+\f0\b0 . Every run emits an auditable trace (inputs, model/provider choices, prompt hashes, tool outputs, validator decisions, retries, and final outcomes) stored in SQLite and file artifacts. Contributors promote high-quality traces into curated few-shot examples; prompt edits and harness changes are gated by automated tests and
+\f2\i evidence files
+\f0\i0  demonstrating measurable gains on fixed-tier evaluation sets (e.g., HumanBenchmark-derived tiers) under a deterministic scoring rubric. This \'93evidence-gated\'94 approach parallels trends in broader agent research where systems evolve via trace-based feedback and empirical validation, including reflective prompt evolution and open-ended self-improvement loops. [5,6,7,8] This workflow makes improvements reproducible, reviewable in pull requests, and reversible\'97enabling a continuous, community-driven path toward robust, stepwise, constraint-satisfying mechanistic prediction. A primary goal of the harness is to serve as a public, crowdsourced evaluation platform for testing the coordination topology variants described by Kim et al.\'97single-agent sequential (SAS), centralized multi-agent, independent parallel, and decentralized peer-debate\'97evaluated against a shared PMechDB-derived benchmark. [9] The four topologies are run-time harness parameters, enabling head-to-head comparison on the same reactions while holding all prompts and validators constant.\
+\
+
+Organic reaction mechanisms are usually communicated as sequences of elementary, constraint-satisfying transformations, yet most modern generative workflows still optimize for plausibility in text rather than physical consistency across steps. The result is a predictable gap: models can sound right while silently drifting into invalid chemistry as the pathway length grows. In this paper we introduce Mechanistic, a SMILES-first harness that treats the LLM as a proposal engine inside a deterministic validation-and-retry loop, enforcing conservation laws and coherent intermediate states while retaining the flexibility to explore alternatives via controlled branching and backtracking. This approach complements emerging \'93mechanism-aware\'94 modeling efforts that explicitly target elementary-step prediction and arrow-pushing-style interpretability rather than only end-to-end reactant?product translation. [1,2,3,4]\
+
+\f1\b Figure 1: Mechanistic Agent Harness Architecture\f0\b0\
+The harness integrates modular analysis components with LLM-powered proposal generation and deterministic validation. Pre-loop modules perform initial chemical analysis, while the mechanism loop iteratively proposes and validates elementary steps until target products are reached.\
+
+\f1\b 1.1 Methods
+\f0\b0 \
+
+\f1\b Methods\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f0\b0 \cf0 \
+The Mechanistic agent harness integrates a modular pipeline of analysis modules that collectively establish a rigorous foundation for predicting organic reaction mechanisms. Each module contributes specific chemical intelligence and constraint enforcement, working together to transform raw SMILES inputs into validated, stepwise mechanistic pathways. The pipeline is structured as a data-driven harness configurable via JSON files, enabling systematic testing and evolution of different module combinations. Pre-loop modules perform initial analysis to constrain the search space, while post-step validators ensure mechanistic validity. Decision gates control execution flow, with explicit backtracking when validation fails, creating a robust framework that combines LLM creativity with chemical rigor. This hybrid \'93generate-then-validate\'94 posture is consistent with the broader observation that unconstrained generation can drift, while hard invariants stabilize mechanistic rollouts. [1]\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Check Atom Balance
+\f0\b0 \
+The atom balance check module performs a fundamental stoichiometric analysis of the input reaction, counting atoms of each element on both reactant and product sides. This deterministic validation ensures the reaction is stoichiometrically plausible before proceeding with mechanistic prediction. Any imbalance flags potential missing reagents or products that must be addressed before mechanism generation can begin. The module uses RDKit to parse SMILES strings and compute atomic compositions, providing immediate feedback on reaction completeness. This early validation prevents wasted computational effort on unbalanced reactions and guides users toward providing complete reaction specifications. More generally, mass conservation is a foundational constraint for physically consistent reaction modeling and is frequently not enforced by standard data-driven reaction predictors. [1] Furthermore, this module serves as a critical gatekeeper that prevents the system from attempting to generate mechanisms for reactions that violate basic conservation laws, ensuring computational resources are directed toward chemically meaningful problems.\
+\
+
+\f1\b Identify Functional Groups
+\f0\b0 \
+Functional group identification employs RDKit pattern matching to systematically catalog reactive functional groups present in starting materials and target products. This analysis creates a fingerprint of chemical functionality that informs subsequent mechanistic reasoning and constraint application. The module detects common organic functional groups (alcohols, carbonyls, amines, etc.) and their relative positions, providing context for likely reaction pathways. This information is stored in the reaction state and made available to LLM modules for more informed mechanistic proposals. The deterministic fingerprinting helps constrain LLM suggestions to chemically reasonable transformations while highlighting potential reaction centers. This mirrors long-standing mechanism generation software that represents molecules as graphs and uses functional-group templates (\'93reaction families\'94) to enumerate plausible reactions. [4] By providing this structural context early in the pipeline, the system can avoid generating implausible mechanistic hypotheses and focus computational resources on chemically relevant reaction pathways.\
+\
+
+\f1\b Recommend pH
+\f0\b0 \
+The pH recommendation module analyzes the functional groups present and suggests optimal reaction conditions based on acid-base chemistry principles. Using deterministic rules derived from organic chemistry knowledge, it recommends pH ranges that favor desired reactivity while minimizing side reactions. The module considers the pKa values of acidic and basic functional groups to suggest conditions that control protonation states. This information is particularly valuable for reactions involving amines, carboxylic acids, or other ionizable groups. The recommendations are stored in the reaction state and can influence subsequent condition assessment and mechanistic proposals, ensuring chemically appropriate reaction environments.\
+\
+
+\f1\b Assess Reaction Conditions
+\f0\b0 \
+Building on functional group analysis and pH recommendations, this LLM-powered module evaluates the provided reaction conditions against the chemical requirements of the transformation. The module assesses temperature, solvent, catalysts, and other reaction parameters for their suitability given the starting materials and target products. It uses structured tool calling to return condition assessments with confidence scores and specific recommendations for optimization. When conditions appear suboptimal or incomplete, the module suggests improvements that could enhance reaction efficiency or selectivity. This assessment helps constrain the mechanistic search space by ruling out pathways incompatible with the given conditions.\
+\
+
+\f1\b Predict Missing Reagents
+\f0\b0 \
+For reactions with incomplete stoichiometry, this LLM module proposes missing reagents or catalysts needed to complete the transformation. Drawing on chemical knowledge of reaction types and the identified functional groups, it suggests plausible additions that would enable the desired chemistry. The module uses structured outputs to provide reagent predictions with confidence levels and mechanistic rationales. Multiple candidate reagents may be proposed when uncertainty exists, allowing the system to explore different mechanistic possibilities. This capability is crucial for handling real-world reaction data that may have incomplete reagent specifications, ensuring comprehensive mechanistic analysis. The module's ability to suggest multiple candidates also enables the system to consider alternative reaction conditions and mechanistic pathways that might not be immediately obvious from the provided reaction data.\
+\
+
+\f1\b Map Atoms Between Reactants/Products
+\f0\b0 \
+Atom mapping establishes correspondence between atoms in reactants and products, providing essential connectivity information for mechanistic reasoning. This LLM module attempts to assign atom-to-atom mappings that preserve chemical identity through the reaction transformation. When successful, the mapping reveals which atoms undergo changes and which remain unchanged, guiding mechanistic proposals. The module uses structured tool outputs to return mapping confidence and alternative mapping possibilities. Failed mappings trigger fallback strategies or user intervention, as atom connectivity is fundamental to valid mechanistic pathways. This mapping serves as a foundation for subsequent mechanistic steps and validation checks. Furthermore, accurate atom mapping enables the system to track molecular transformations with precision, ensuring that mechanistic steps maintain chemical consistency throughout the reaction pathway.\
+\
+
+\f1\b Map To Reaction Type
+\f0\b0 \
+Building on atom mapping and functional group analysis, this module classifies the reaction into established organic reaction type templates. The LLM evaluates the transformation pattern against known reaction categories (substitution, elimination, addition, rearrangement, etc.) with specific mechanistic implications. Structured outputs include reaction type classifications with confidence scores and template-based mechanistic guidance. High-confidence classifications can provide compact mechanistic frameworks that constrain subsequent step proposals. The module helps bridge between empirical reaction data and theoretical mechanistic understanding, offering structured guidance when pattern recognition succeeds. SMARTS codes are used to identify functional groups in the reactants and products. Related work also uses \'93reactive atom\'94 identification and step-class prediction as explicit intermediate targets to keep mechanism predictions interpretable. [2,3] By categorizing reactions into familiar mechanistic patterns, this module significantly reduces the search space for mechanism generation and provides context-aware constraints that improve the quality and relevance of proposed mechanistic steps.\
+\
+
+\f1\b Propose Next Mechanism Step
+\f0\b0 \
+At the heart of the mechanistic loop, this LLM module generates candidate elementary steps that advance the reaction toward products. Drawing on current reaction state, functional group context, and reaction type guidance, it proposes specific intermediates and transformations. The module uses forced tool calling to return up to three ranked candidate steps, each with SMILES intermediates and balanced reaction descriptions. Candidates are evaluated for chemical plausibility before validation, with ranking based on mechanistic coherence and progress toward targets. The proposal step supports four coordination topologies aligned with the taxonomy of Kim et al.: (1) SAS \'97 a single proposer generating one candidate; (2) centralized MAS \'97 one orchestrator generating up to three ranked candidates; (3) independent MAS \'97 N agents called in parallel with candidate pools concatenated before validation; and (4) decentralized MAS \'97 N agents conducting D rounds of peer debate before consensus merge. [9] Topology is selected at run time as a harness parameter and does not affect the prompt content, few-shot examples, or validation chain. This creative proposal phase generates the hypotheses that subsequent validation modules will test rigorously.\
+\
+
+\
+
+\f1\b Check Bond/Electron Conservation
+\f0\b0 \
+This deterministic module enforces fundamental chemical laws by verifying bond and electron conservation in proposed steps. Using RDKit to analyze molecular structures, it confirms that bond orders, formal charges, and electron counts remain consistent through each transformation. The module checks for impossible valences, unphysical charge distributions, and invalid bond formations that would violate chemical principles. Any violations trigger step rejection, ensuring that only chemically valid transformations advance the mechanism. Constraint-enforcing representations that explicitly conserve mass and electrons have been shown to reduce hallucinatory failure modes and improve mechanistic fidelity in learned models. [1] This hard constraint enforcement prevents the accumulation of impossible intermediates that could derail long mechanistic pathways.\
+\
+
+\f1\b Check Step Atom Balance
+\f0\b0 \
+This module extends atom balance checking to individual mechanistic steps, ensuring each elementary transformation maintains stoichiometric consistency. Every atom present in reactants must appear in products, with proper accounting for implicit species like protons or solvent molecules. The deterministic analysis uses RDKit to count atoms and compare compositions across the step boundary. Imbalances indicate missing reagents, improper stoichiometry, or invalid mechanistic proposals that must be corrected. This validation is crucial for maintaining mechanistic integrity throughout multi-step pathways, preventing the gradual accumulation of atomic inconsistencies.\
+\
+
+\f1\b Check State Changed
+\f0\b0 \
+The state change validator ensures that each accepted mechanistic step actually advances the reaction toward target products. It compares the current reaction state before and after the step, measuring progress through metrics like structural similarity to targets and changes in functional group composition. Steps that fail to demonstrate meaningful progress toward products are rejected, preventing mechanistic stagnation or circular pathways. The module uses deterministic chemical similarity measures and functional group analysis to quantify advancement. This validation maintains forward momentum in mechanism generation, ensuring systematic progress toward completion rather than random exploration.\
+\
+
+\f1\b Collect Validation Warnings
+\f0\b0 \
+This module aggregates feedback from all validation checks into a comprehensive assessment of step quality and potential issues. It compiles warnings about minor chemical concerns, suboptimal conditions, or alternative mechanistic possibilities that don't warrant rejection but deserve consideration. The collected warnings inform the decision-making process and can guide future step proposals or user interventions. Warnings are categorized by severity and type, providing nuanced feedback that helps refine the mechanistic pathway. This comprehensive assessment ensures that accepted steps are not only valid but also chemically reasonable and well-supported.\
+\
+
+\f1\b Map Atoms for Step
+\f0\b0 \
+For accepted mechanistic steps, this module establishes detailed atom-atom correspondence within the elementary transformation. Building on the global reactant-product mapping, it tracks how specific atoms are transformed, created, or destroyed in each step. The mapping provides mechanistic transparency and enables detailed validation of electron movement and bond changes. Using RDKit analysis, it ensures that atom identities are preserved correctly through complex rearrangements or multi-atom transfers. This granular mapping supports advanced mechanistic analysis and provides the foundation for arrow-pushing style annotations in documentation. Moreover, this step-level mapping enables precise tracking of molecular changes throughout the reaction sequence, facilitating both validation and educational visualization of complex mechanistic pathways.\
+\
+
+\f1\b Retry or Continue
+\f0\b0 \
+When validation identifies issues with a proposed step, this decision module evaluates whether retrying with modified parameters is appropriate or if the step should be abandoned. It considers the nature and severity of validation failures, available retry budget, and alternative candidate steps. The module implements intelligent retry logic that adjusts LLM prompts with specific feedback to address identified problems. When retries are exhausted or deemed unproductive, it routes execution toward backtracking or alternative strategies. This decision point balances persistence in problem-solving with efficiency in exploration, preventing excessive time spent on unlikely mechanistic pathways. The \'93explicit exploration under a budget\'94 framing is consistent with broader agentic optimization work that uses traces and evaluation feedback to drive iterative improvement in multi-agent and orchestration settings. [6,7,9]\
+\
+
+\f1\b Backtrack
+\f0\b0 \
+When current mechanistic approaches fail validation or exhaust retry attempts, this module searches for earlier successful branch points where alternative pathways can be explored. It maintains a history of branching decisions and can revert the reaction state to previous snapshots with untried alternatives. The backtracking preserves all accumulated knowledge while avoiding the failed path, enabling systematic exploration of mechanistic space. The module prioritizes the most recent viable branch points to minimize lost progress. This controlled backtracking ensures comprehensive mechanistic exploration without exponential computational cost, maintaining efficiency while ensuring thoroughness.\
+\
+
+\f1\b Termination checks - Target Products Reached
+\f0\b0 \
+This terminal decision module evaluates whether the current reaction state contains the target products, indicating mechanism completion. It performs structural comparison between current intermediates and specified target products, accounting for different representations and protonation states. The module considers both exact matches and reasonable equivalents that may result from the mechanistic pathway. Successful completion triggers run finalization and result reporting. This clear success criterion ensures mechanisms terminate appropriately when goals are achieved, preventing unnecessary continuation beyond the reaction's natural endpoint.\
+When validation repeatedly fails and backtracking options are exhausted, the system enters a paused state awaiting user intervention. This occurs in complex reactions where automated reasoning reaches its limits or encounters genuinely ambiguous mechanistic choices. The pause provides users with current state information, validation history, and available options for manual guidance. Users can inject verified steps, modify conditions, or provide additional chemical knowledge to resolve the impasse. This human-in-the-loop capability ensures the system can handle reactions beyond current automated capabilities while maintaining rigorous validation.\
+
+\f1\b Run Complete
+\f0\b0 \
+Upon successful mechanism completion or user-directed termination, this final module handles run finalization and result reporting. It compiles the complete mechanistic pathway, validation history, and performance metrics into structured outputs. The module generates comprehensive traces for analysis and potential inclusion in training data. Results are stored in both SQLite database and file artifacts for auditability and future reference. This completion phase ensures all mechanistic predictions are properly documented and available for evaluation, feedback, and continuous system improvement.\
+\
+
+\f1\b 1.2 Collaborative Agent Harness Update\
+\f0\b0 \
+The current Mechanistic workflow treats the agent harness as a collaborative, versioned research object rather than a fixed monolith. Contributions are organized through explicit templates in `templates/contributions/`, with separate tracks for few-shot updates, new subagents, new models, harness revisions, and single-reaction local submissions. Each track asks contributors to document the exact files changed, the evaluation tier used for gating, the observed leaderboard delta, and contact metadata for possible manuscript attribution. This template-driven structure standardizes how human feedback becomes durable system updates and keeps prompt edits, model additions, and harness changes reviewable on the same evidence standard.\
+\
+The collaborative loop is intentionally asymmetric. Track 5 captures local single-reaction successes or failures without requiring a merge-ready claim, allowing users to preserve edge cases as future evidence. Tracks 1-4 elevate those observations into repository changes only when they are supported by approved traces, required fast tests, and eval-tier performance checks. In practice, this means a chemist or operator can flag a mechanistic failure from one run, while a later contributor converts that case into a few-shot addition, a new validator, a model-catalog expansion, or a harness variant once the broader benchmark impact is demonstrated.\
+\
+This update also aligns collaboration with the current test-case import flow. The files `templates/test_case_template.json` and `templates/test_case_template.yaml` define the canonical structure for user-supplied reactions, including starting materials, products, optional run-level model overrides, and optional `verified_mechanism` step annotations. Because these templates accept SMILES, InChI, common names, or MOL blocks and can include provisional mechanistic supervision, they serve as the bridge between ad hoc user submissions and benchmark-quality evaluation artifacts. Together, the contribution templates and test-case templates make the harness collaborative at two levels: users can contribute both new reactions and new algorithmic changes, but only the latter enter the main evolution path after evidence-gated review.\
+\
+\f1\b 1.3 Agent Harness and Methods - Versioning
+\f0\b0 \
+\
+ 
+\f1\b Prompt Versioning, Harness Configuration, and Evidence-Gated Evolution
+\f0\b0 \
+\
+Mechanistic implements a repository-native versioning system for prompt assets, skill definitions, harness configurations, curated memory, and contribution artifacts. The design goal is reproducible evolution: every run can be tied back to concrete prompt bundles, model metadata, harness configuration, and evaluation context, and every proposed change is judged against the same stored traces and tiered benchmarks. The project explicitly treats evidence (traces + eval results) as the merge gate for prompt/module changes, and treats deterministic chemistry checks as non-overridable ground truth. [7] Rather than keeping prompts in a separate legacy prompt folder, the current system colocates mechanistic prompt text, input-output documentation, and deterministic validator definitions inside the skill directories that actually implement each step.\
+ 
+\f1\b Prompt Versioning System
+\f0\b0 \
+Prompts are versioned through SHA256 hashes computed from the active prompt bundle for each LLM-backed call. In the current layout, the shared base prompt lives in `skills/mechanistic/base_system/SKILL.md`, while each call-specific prompt lives in `skills/mechanistic/<call_name>/SKILL.md` between `<!-- PROMPT_START -->` and `<!-- PROMPT_END -->` markers. Few-shot examples remain adjacent to the prompt in `skills/mechanistic/<call_name>/few_shot.jsonl`. The runtime extracts the shared prompt block, the call-specific prompt block, and the few-shot lines, hashes each component, and stores a combined `prompt_bundle_sha256` so a trace can be linked to the exact prompt composition that produced it. This colocation means the prompt text, human-readable skill contract, and any deterministic validator implementation for that capability evolve together under version control.\
+\
+ 
+\f1\b Harness Configuration Versioning
+\f0\b0 \
+The execution pipeline is versioned as named harness variants under `harness_versions/<name>/harness.json`. Each harness file is a schema `2.0` JSON document that records the full module sequence, including `pre_loop_modules`, a single `loop_module`, and `post_step_modules`, plus explicit step ordering, `tool_calling_mode`, and human-readable changelog metadata. The default harness uses forced tool calling and encodes the current architecture: deterministic balance and functional-group analysis, deterministic pH recommendation, LLM-based conditions/reagent/mapping steps, then an iterative mechanism-step proposal loop followed by deterministic validation and reflection modules. Because each harness file is hashed as a standalone artifact and alternative harnesses live in separate subdirectories, pipeline variants can be benchmarked, compared on the leaderboard, and reverted without ambiguity. Harness-specific validator overrides are also versioned locally through `harness_versions/<harness>/patches/<validator_name>.py`, while the ground-truth implementation remains in `skills/mechanistic/<validator_name>/validator.py`. Harness variants are saved as named JSON configurations in harness_versions/ and each includes `topology_profiles` specifying agent count, peer rounds, and aggregation mode for each of the four coordination strategies [9].\
+\
+ 
+\f1\b Few-Shot Processing and Evidence Gates
+\f0\b0 \
+Few-shot updates are controlled by an evidence gate that prevents prompt drift from being justified by isolated anecdotes. When a run yields a high-quality trace for an LLM-backed step, the trace can be approved and exported to `traces/evidence/<call_name>/<prompt_bundle_sha>/<trace_id>.json`, where the payload records the exact prompt hashes, model metadata, approval metadata, and structured trace body. Contributors then update `skills/mechanistic/<call_name>/few_shot.jsonl` and validate the linkage with `PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py --call <call_name>`. The corresponding Track 1 template requires the approved trace path, trace identifier, prompt bundle SHA, model used, and medium-tier leaderboard change, making the evidence trail explicit in the pull request itself. This is aligned with the principle that performance claims should be traceable to specific runs and standardized benchmarks, rather than anecdotal examples. [7]\
+\
+ 
+\f1\b Pull Request Process and Eval Tier Gating
+\f0\b0 \
+All repository-facing changes follow explicit contribution tracks defined in `templates/contributions/README.md`. Track 1 governs few-shot changes, Track 2 new subagents or validators, Track 3 model additions, Track 4 harness revisions, and Track 5 local single-reaction submissions kept out of version control. Tracks 1-4 require `make test` and a tier-specific regression run from `tests/llm/test_eval_tiers.py`, with easy-tier gating for model additions, medium-tier gating for few-shot, subagent, and harness changes, and hard-tier evidence for state-of-the-art claims when relevant. The fixed eval tiers are defined in `training_data/eval_tiers.json` as 10 easy (1-2 step), 10 medium (3 step), and 10 hard (4-8 step) reactions. The templates also require reporting baseline and candidate leaderboard rows, which forces each claimed improvement to be tied to the same benchmark surface rather than to a hand-picked example.\
+\
+\f1\b Reaction Templates and Verified Mechanism Packaging
+\f0\b0 \
+Versioning in the current methods stack also extends to user-supplied reaction data. The canonical reaction packaging format is defined in `templates/test_case_template.json` and `templates/test_case_template.yaml`, which support reaction identifiers, descriptions, starting materials, products, optional temperature and pH fields, optional `run_config` model overrides, and an optional `verified_mechanism` block. The verified block can include step indices, current and resulting states, predicted intermediates, electron-push annotations, reaction SMIRKS, confidence values, and literature references. These templates make it possible to convert a local reaction into a reproducible test artifact that is importable through the API and suitable for either unverified exploration or verified comparison. As a result, the same versioned framework governs both algorithm changes and the reaction cases used to evaluate them.\
+\
+An outer-loop orchestrator called Ralph manages full-pipeline retries across a pool of harness variants: it runs each variant as a child attempt, tracks cumulative cost and completion status, and stops when the target mechanism is found or the attempt budget is exhausted. Ralph operates at the level of complete harness variants rather than individual proposal steps, providing a meta-level exploration layer that is orthogonal to per-step topology selection. The \'93Human Benchmark Pathway Dataset\'94 concept also matches prior work that curated hundreds of multi-step textbook pathways to evaluate mechanistic reasoning and student-level baselines. [3]\
+
+\f1\b Evaluation and Leaderboard System
+\f0\b0 \
+Performance tracking uses deterministic scoring against known benchmark mechanisms. The evaluation set (`training_data/eval_set.json`) contains 350 reactions from the PMechDB dataset, with known step-by-step mechanisms. Each completed run is scored against its expected pathway using a weighted rubric: validity component (80% validation score + 20% mapping confidence), alignment component (structural similarity to expected intermediates), final product match, and efficiency penalties for circular steps or excessive retries. The leaderboard tracks performance by model family, cost class, and harness version, with scores ranging from 0.0 to 1.0. A run "passes" if it achieves \'e2\'89\'a50.70 overall score and reaches the target products. This scoring enables quantitative comparison of different prompt versions, harness configurations, and model capabilities while maintaining auditability through stored traces.\
+\
+
+\f1\b References
+\f0\b0 \
+\
+[1] Joonyoung F. Joung, Mun Hong Fong, Nicholas Casetti, Jordan P. Liles, Ne S. Dassanayake, and Connor W. Coley. 2025. Electron flow matching for generative reaction mechanism prediction. *Nature* 645 (4 Sept. 2025), 115\'96121. https://doi.org/10.1038/s41586-025-09426-9\
+\
+[2] Ryan J. Miller, Alexander E. Dashuta, Brayden Rudisill, David Van Vranken, and Pierre Baldi. 2025. Mechanism-Aware Deep Learning for Polar Reaction Prediction. *Journal of the American Chemical Society* 147 (2025), 41168\'9641176. https://doi.org/10.1021/jacs.5c16838\
+\
+[3] Ajnabiul Hoque, Manajit Das, Mayank Baranwal, and Raghavan B. Sunoj. 2024. ReactAIvate: A Deep Learning Approach to Predicting Reaction Mechanisms and Unmasking Reactivity Hotspots. arXiv:2407.10090. https://arxiv.org/abs/2407.10090\
+\
+[4] Connie W. Gao, Joshua W. Allen, William H. Green, and Richard H. West. 2016. Reaction Mechanism Generator: Automatic construction of chemical kinetic mechanisms. *Computer Physics Communications* 203 (2016), 212\'96225. https://doi.org/10.1016/j.cpc.2016.02.013\
+\
+[5] Lakshya A. Agrawal, Shangyin Tan, Dilara Soylu, Noah Ziems, Rishi Khare, Krista Opsahl-Ong, Arnav Singhvi, Herumb Shandilya, Michael J. Ryan, Meng Jiang, Christopher Potts, Koushik Sen, Alexandros G. Dimakis, Ion Stoica, Dan Klein, Matei Zaharia, and Omar Khattab. 2026. GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning. arXiv:2507.19457. https://arxiv.org/abs/2507.19457\
+\
+[6] Jenny Zhang, Shengran Hu, Cong Lu, Robert Tjarko Lange, and Jeff Clune. 2025. Darwin G\"odel Machine: Open-Ended Evolution of Self-Improving Agents. arXiv:2505.22954. https://arxiv.org/abs/2505.22954\
+\
+[7] Yutaro Yamada, Robert Tjarko Lange, Cong Lu, Shengran Hu, Chris Lu, Jakob Foerster, Jeff Clune, and David Ha. 2025. The AI Scientist-v2: Workshop-Level Automated Scientific Discovery via Agentic Tree Search. arXiv:2504.08066. https://arxiv.org/abs/2504.08066\
+\
+[8] Ludovico Mitchener, Angela Yiu, Benjamin Chang, Mathieu Bourdenx, Tyler Nadolski, Arvis Sulovari, Eric C. Landsness, D\'a1niel L. Barab\'a1si, Siddharth Narayanan, Nicky Evans, et al. 2025. Kosmos: An AI Scientist for Autonomous Discovery. arXiv:2511.02824. https://arxiv.org/abs/2511.02824\
+\
+[9] Yubin Kim, Ken Gu, Chanwoo Park, Chunjong Park, Samuel Schmidgall, A. Ali Heydari, Yao Yan, Zhihan Zhang, Yuchen Zhuang, Mark Malhotra, Paul Pu Liang, Hae Won Park, Yuzhe Yang, Xuhai Xu, Yilun Du, Shwetak Patel, Tim Althoff, Daniel McDuff, and Xin Liu. 2025. Towards a Science of Scaling Agent Systems. arXiv:2512.08296. https://arxiv.org/abs/2512.08296\
+
+\f1\b Appendix
+\f0\b0 \
+\
+
+\f1\b Part 1: Detailed Agent Harness Module Specifications
+\f0\b0 \
+The following provides comprehensive details on each module in the Mechanistic agent harness, including deterministic vs. LLM-driven implementation, input/output specifications, and representative prompt excerpts from the base (pre-optimization) configuration. All modules operate within a structured state machine that maintains reaction context across execution phases.\
+\
+
+\f1\b Deterministic Modules
+\f0\b0 \
+\
+
+\f1\b Check Atom Balance
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Deterministic | Phase: Pre-loop
+\f0\i0 \
+Inputs: starting_materials (SMILES array), products (SMILES array)\
+Outputs: balanced (boolean), deficit (atom count object), surplus (atom count object)\
+This module uses RDKit to parse SMILES and count atoms by element on both sides of the reaction. It identifies stoichiometric imbalances that would prevent valid mechanism generation, serving as an early quality gate before expensive LLM calls.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Identify Functional Groups
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Deterministic | Phase: Pre-loop
+\f0\i0 \
+Inputs: starting_materials (SMILES array), products (SMILES array)\
+Outputs: functional_groups (group name -> count mapping), leaving_groups (string array)\
+Employs RDKit SMARTS pattern matching to catalog reactive functional groups (alcohols, carbonyls, amines, carboxylic acids, etc.) and potential leaving groups. The functional group fingerprint constrains subsequent LLM reasoning to chemically plausible reaction types.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Recommend pH
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Deterministic | Phase: Pre-loop
+\f0\i0 \
+Inputs: starting_materials (SMILES array), products (SMILES array), user_ph (optional)\
+Outputs: recommended_ph (float), source (user/heuristic/dimorphite)\
+Uses Dimorphite-DL protonation state analysis or heuristic pKa-based rules to suggest optimal reaction conditions. Considers acid-base properties of functional groups to recommend pH ranges that favor desired reactivity while minimizing side reactions.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Check Bond/Electron Conservation
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Deterministic | Phase: Post-step
+\f0\i0 \
+Inputs: reaction_smirks (with DBE metadata)\
+Outputs: valid (boolean), total_delta (electron balance), message (error description)\
+Parses DBE (degree of unsaturation) metadata from SMIRKS reaction strings to verify that bond-order and electron-count changes sum to zero. This enforces fundamental chemical conservation laws at each mechanistic step.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Check Step Atom Balance
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Deterministic | Phase: Post-step
+\f0\i0 \
+Inputs: current_state (SMILES array), resulting_state (SMILES array)\
+Outputs: balanced (boolean), deficit (atom count object), surplus (atom count object)\
+Ensures every atom present in the current reaction state appears in the resulting state after a mechanistic step. Prevents the gradual accumulation of atomic inconsistencies that could derail long mechanistic pathways.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Check State Changed
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Deterministic | Phase: Post-step
+\f0\i0 \
+Inputs: current_state (SMILES array), resulting_state (SMILES array)\
+Outputs: resulting_state_changed (boolean), unchanged_starting_materials_detected (boolean)\
+Validates that the proposed mechanistic step actually advances the reaction toward products. Rejects steps that return starting materials unchanged or fail to demonstrate meaningful chemical progress.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Collect Validation Warnings
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Deterministic | Phase: Post-step
+\f0\i0 \
+Inputs: mechanism_step_output, validation_result\
+Outputs: warnings (string array), critique_signals\
+Aggregates validation feedback from all post-step checks into a comprehensive assessment. Compiles warnings about minor chemical concerns that don't warrant rejection but deserve consideration in subsequent steps.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 LLM-Powered Modules
+\f0\b0 \
+\
+
+\f1\b Assess Reaction Conditions
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: LLM | Phase: Pre-loop | Call: assess_initial_conditions
+\f0\i0 \
+Inputs: starting_materials (SMILES array), products (SMILES array), ph (from pH recommendation), functional_groups (optional)\
+Outputs: environment (acidic/basic/neutral), representative_ph, ph_range, acid_candidates (if acidic), base_candidates (if basic), warnings\
+Representative prompt excerpt: "Assess the reaction environment using the supplied reactant and product context. Decide whether conditions should be acidic, basic, or neutral, and provide compact structured reasoning. Prefer conservative suggestions that maintain compatibility with the dominant functional groups."\
+This module evaluates provided reaction conditions against chemical requirements, suggesting optimizations when conditions appear suboptimal for the target transformation.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Predict Missing Reagents
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: LLM | Phase: Pre-loop | Call: predict_missing_reagents
+\f0\i0 \
+Inputs: starting_materials (SMILES array), products (SMILES array), conditions_guidance (from Assess Reaction Conditions)\
+Outputs: missing_reactants (SMILES array), missing_products (SMILES array), verification\
+Representative prompt excerpt: "Propose missing reactants or byproducts needed to achieve atom balance. When used in step-rescue mode, prefer minimal additions that preserve the candidate mechanism while fixing balance gaps. Use strict conservation logic and return only structured additions that improve stoichiometric consistency."\
+Addresses incomplete reaction specifications by proposing missing reagents or products needed for stoichiometric consistency under the recommended conditions.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Map Atoms Between Reactants/Products
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: LLM | Phase: Pre-loop | Call: attempt_atom_mapping
+\f0\i0 \
+Inputs: starting_materials (SMILES array), products (SMILES array), functional_groups (optional)\
+Outputs: mapped_atoms, unmapped_atoms, confidence, reasoning\
+Attempts to establish correspondence between atoms in reactants and products, providing essential connectivity information for mechanistic reasoning when successful.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Map To Reaction Type
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: LLM | Phase: Pre-loop | Call: select_reaction_type
+\f0\i0 \
+Inputs: starting_materials, products, balance_analysis, functional_groups, ph_recommendation, initial_conditions, missing_reagents, atom_mapping\
+Outputs: selected_label_exact (taxonomy label or no_match), selected_type_id, confidence, rationale, top_candidates\
+Classifies the reaction into established organic reaction type templates, providing mechanistic guidance when confidence is sufficient.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Propose Next Mechanism Step
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: LLM | Phase: Loop | Call: propose_mechanism_step
+\f0\i0 \
+Inputs: current_state, reaction_context, previous_steps, validation_history\
+Outputs: candidates (array of ranked proposals with intermediate_smiles, reaction_smirks, electron_pushes, resulting_state)\
+Representative prompt excerpt: "Propose the next forward mechanism candidate(s) from the current state. Return ranked candidates with concise balanced transformation descriptions and realistic intermediates. Do not repeat prior accepted intermediates unless explicitly justified by the current step state."\
+Generates up to three ranked candidate elementary steps that advance the reaction toward target products, using structured tool calling to return candidates with SMILES intermediates and balanced reaction descriptions.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Map Atoms for Step
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: LLM | Phase: Post-step | Call: attempt_atom_mapping_for_step
+\f0\i0 \
+Inputs: current_state (SMILES array), resulting_state (SMILES array)\
+Outputs: compact_mapped_atoms, unmapped_atoms\
+Establishes atom-atom correspondence within accepted mechanistic steps, supporting detailed electron movement tracking and mechanistic transparency.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Decision and Control Modules
+\f0\b0 \
+\
+
+\f1\b Retry or Continue?
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Control Logic | Phase: Loop Control
+\f0\i0 \
+Inputs: validation_results, retry_budget_remaining, alternative_candidates_available\
+Outputs: action (retry/resume_with_fallback/branch/abort)\
+Evaluates validation failures and determines whether retrying with modified parameters is appropriate or if alternative strategies should be pursued.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Backtrack?
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Control Logic | Phase: Loop Control
+\f0\i0 \
+Inputs: branch_points_available, validation_failure_history, progress_toward_targets\
+Outputs: backtrack_decision, target_branch_point_index, preserved_state\
+Searches for earlier successful branch points when current approaches fail, enabling systematic exploration of mechanistic space without exponential computational cost.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Target Products Reached?
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Control Logic | Phase: Termination
+\f0\i0 \
+Inputs: current_state, target_products, completion_criteria\
+Outputs: completion_status (reached/not_reached), final_validation\
+Evaluates whether the current reaction state contains target products, serving as the primary success criterion for mechanism completion.\
+\
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f1\b \cf0 Run Complete
+\f0\b0 \
+\pard\pardeftab720\ri0\sa240\partightenfactor0
+
+\f2\i \cf0 Type: Control Logic | Phase: Termination
+\f0\i0 \
+Inputs: final_mechanism_pathway, performance_metrics, trace_data\
+Outputs: completion_report, archived_trace, leaderboard_contribution\
+Handles run finalization with comprehensive result documentation and performance tracking for continuous system improvement.\
+\
+The Mechanistic Agent represents a paradigm shift in computational chemistry by implementing an evolutionary learning framework where AI systems can improve their mechanistic reasoning capabilities through structured feedback and validation. Unlike traditional machine learning approaches that require extensive labeled datasets and fixed model architectures, this system evolves through a continuous cycle of proposal, validation, and evidence-based refinement. Each mechanistic prediction generates rich trace data that captures not only the final pathway but also the decision-making process, including LLM confidence levels, validation outcomes, retry attempts, and backtracking events. This comprehensive audit trail enables systematic identification of failure modes and successful strategies, which are then incorporated into improved prompts and few-shot examples through a rigorous pull request process. The deterministic chemistry validators serve as the ultimate ground truth, ensuring that all mechanistic steps maintain chemical plausibility while allowing creative exploration of reaction pathways. This approach bridges the gap between the pattern recognition strengths of large language models and the strict requirements of chemical accuracy, creating a system that can genuinely learn and improve its mechanistic reasoning capabilities over time through community-driven evidence accumulation.\
+\
+The shared base system prompt establishes fundamental chemical reasoning context: "You are Mechanistic Loop, an expert assistant for organic reaction mechanisms and chemically consistent stepwise reasoning. SMILES is a linear notation for molecules where atoms, bonds, charges, ring closures, and branching encode a concrete molecular graph. When reading SMILES, preserve atom identity and valence assumptions so changes across steps remain chemically plausible and auditable." This foundation ensures all LLM modules operate within consistent chemical reasoning frameworks while maintaining the system's commitment to verifiable, constraint-satisfying mechanistic prediction.\
+}

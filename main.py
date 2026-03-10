@@ -13,6 +13,7 @@ import typer
 
 from mechanistic_agent import OPTIONAL_LLM_TOOL_NAMES, ReactionInputs
 from mechanistic_agent.core import RegistrySet, RunCoordinator, RunStore, select_step_models
+from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
 from mechanistic_agent.curriculum import (
     OPUS_MODEL,
     build_curriculum_status,
@@ -23,7 +24,18 @@ from mechanistic_agent.curriculum import (
     render_launchd_plist,
     submit_curriculum_release,
 )
-from mechanistic_agent.model_registry import get_default_model, get_model_family, to_internal_reasoning_level
+from mechanistic_agent.model_registry import (
+    get_default_model,
+    get_model_family,
+    resolve_model_key,
+    to_internal_reasoning_level,
+)
+from mechanistic_agent.eval_set_resolution import (
+    EvalSetResolutionError,
+    case_ids_hash,
+    resolve_eval_set,
+    select_eval_cases,
+)
 
 try:  # pragma: no cover - optional helper
     from dotenv import load_dotenv
@@ -42,6 +54,138 @@ def _parse_materials(raw: Optional[str], fallback: List[str]) -> List[str]:
     if raw is None:
         return list(fallback)
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _canonicalize_model_name_or_raise(model_name: str) -> str:
+    try:
+        return resolve_model_key(model_name)
+    except ValueError as exc:
+        raise typer.BadParameter(f"Unsupported model '{model_name}'") from exc
+
+
+def _first_text_value(*values: Any) -> Optional[str]:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _validation_error_text(validation: Any) -> Optional[str]:
+    if not isinstance(validation, dict):
+        return None
+    direct = _first_text_value(validation.get("error"), validation.get("message"))
+    if direct:
+        return direct
+    for check in validation.get("checks") or []:
+        if not isinstance(check, dict):
+            continue
+        details = check.get("details")
+        if not isinstance(details, dict):
+            continue
+        detail_text = _first_text_value(details.get("error"), details.get("message"))
+        if detail_text:
+            return detail_text
+    return None
+
+
+def _extract_eval_run_diagnostics(snapshot: Dict[str, Any]) -> Dict[str, Optional[str]]:
+    run_status = _first_text_value(snapshot.get("status"))
+    failure_reason: Optional[str] = None
+    first_step_error: Optional[str] = None
+
+    events = list(snapshot.get("events") or [])
+    for event in reversed(events):
+        if str(event.get("event_type") or "") != "run_failed":
+            continue
+        payload = event.get("payload") or {}
+        if isinstance(payload, dict):
+            failure_reason = _first_text_value(
+                payload.get("reason"),
+                payload.get("error"),
+                payload.get("message"),
+            )
+        break
+
+    for row in snapshot.get("step_outputs") or []:
+        if str(row.get("source") or "") != "llm":
+            continue
+        step_name = _first_text_value(row.get("step_name")) or "unknown_step"
+        output = row.get("output")
+        if not isinstance(output, dict):
+            output = {}
+        error_text = _first_text_value(output.get("error"))
+        if error_text is None and str(output.get("status") or "").lower() in {"failed", "no_response"}:
+            error_text = _first_text_value(output.get("message"), output.get("note"), output.get("rationale"))
+        if error_text is None:
+            error_text = _validation_error_text(row.get("validation"))
+        if error_text:
+            first_step_error = f"{step_name}: {error_text}"
+            break
+
+    if first_step_error is None:
+        for event in events:
+            payload = event.get("payload") or {}
+            if not isinstance(payload, dict):
+                continue
+            error_text = _first_text_value(payload.get("error"), payload.get("message"))
+            if error_text is None:
+                error_text = _validation_error_text(payload.get("validation"))
+            if error_text:
+                step_name = _first_text_value(event.get("step_name"), payload.get("step_name"))
+                first_step_error = f"{step_name}: {error_text}" if step_name else error_text
+                break
+
+    return {
+        "run_status": run_status,
+        "failure_reason": failure_reason,
+        "first_step_error": first_step_error,
+    }
+
+
+def _build_eval_case_summary(
+    *,
+    snapshot: Dict[str, Any],
+    score: float,
+    passed: bool,
+    step_outputs: List[Dict[str, Any]],
+    case_step_count: Optional[int],
+    subagent_scores: Dict[str, Any],
+    scored_error: Optional[str] = None,
+) -> Dict[str, Any]:
+    diagnostics = _extract_eval_run_diagnostics(snapshot)
+    summary: Dict[str, Any] = {
+        "score": score,
+        "passed": passed,
+        "step_count": len([s for s in step_outputs if s.get("step_name") == "mechanism_synthesis"]),
+        "n_mechanistic_steps": case_step_count,
+        "error": scored_error or diagnostics.get("first_step_error") or diagnostics.get("failure_reason"),
+        "eval_mode": "harness",
+        "subagent_scores": subagent_scores,
+    }
+    summary.update(diagnostics)
+    return summary
+
+
+def _format_eval_case_result_line(
+    *,
+    index: int,
+    case_id: str,
+    score: float,
+    passed: bool,
+    total_cost: float,
+    latency_ms: Optional[float],
+    summary: Dict[str, Any],
+) -> str:
+    latency_text = ""
+    if latency_ms is not None:
+        latency_text = f" latency={latency_ms/1000:.1f}s"
+    line = f"  [{index}] {case_id}: score={score:.3f} passed={passed} cost=${total_cost:.3f}{latency_text}"
+    if str(summary.get("run_status") or "") != "failed":
+        return line
+    detail = _first_text_value(summary.get("failure_reason"), summary.get("first_step_error"))
+    if detail:
+        return f"{line} status=failed reason={detail}"
+    return f"{line} status=failed"
 
 
 def _historical_cost_stats(db_path: Path) -> Dict[str, float]:
@@ -94,6 +238,93 @@ def _filter_leaderboard_rows(items: List[Dict[str, object]], *, completed_only: 
     return [item for item in items if str(item.get("status") or "").lower() == "completed"]
 
 
+# ── Clawdiators 1000-pt speed calibration ──────────────────────────────────
+# Set HARNESS_SPEED_CALIBRATION_MS to the per-case average latency (in ms)
+# observed during the benchmark dry-run. That run defines 75 pts.
+# Formula: T_max = 4 × HARNESS_SPEED_CALIBRATION_MS
+#   At calibration latency → speed_pts = 75  (benchmark)
+#   At 0 ms               → speed_pts = 100
+#   At T_max ms           → speed_pts = 0
+# Calibrated to 100s/case benchmark (400s max).
+HARNESS_SPEED_CALIBRATION_MS: int = 100_000
+
+
+def _latency_to_speed_pts(avg_latency_ms: float) -> int:
+    """Convert average per-case latency to a 0-100 speed score.
+
+    Uses HARNESS_SPEED_CALIBRATION_MS as the anchor: opus-4.6 benchmark latency → 75 pts.
+    Returns 100 when uncalibrated (HARNESS_SPEED_CALIBRATION_MS == 0).
+    """
+    if HARNESS_SPEED_CALIBRATION_MS <= 0:
+        return 100  # uncalibrated — full credit until benchmark is set
+    t_max = HARNESS_SPEED_CALIBRATION_MS * 4.0
+    return round(max(0.0, 1.0 - avg_latency_ms / t_max) * 100)
+
+
+def _graded_to_clawdiators_pts(
+    all_graded: List[Dict[str, Any]],
+    all_latencies_ms: List[float],
+) -> Dict[str, Any]:
+    """Convert harness graded dicts + per-case latencies to a clawdiators 1000-pt breakdown.
+
+    Rubric mapping (harness proxies):
+      Product Accuracy (30%)  ← final_product_reached count / total
+      Pathway Coverage (30%)  ← known_alignment_component avg
+      Electron Push Quality (20%) ← step_validity_component avg (validation+mapping proxy)
+      Speed (10%)             ← per-case wall-clock latency via _latency_to_speed_pts()
+      Methodology (10%)       ← always 100 pts in harness mode (methodology always present)
+    Anti-gaming gate: if product_ratio == 0, pathway/push/speed are all zeroed.
+    """
+    n = len(all_graded)
+    n_hit = sum(1 for g in all_graded if g.get("final_product_reached", False))
+    product_ratio = n_hit / n
+    pathway_ratio = sum(g.get("known_alignment_component", 0.0) for g in all_graded) / n
+    push_ratio    = sum(g.get("step_validity_component", 0.0) for g in all_graded) / n
+    avg_lat       = sum(all_latencies_ms) / n if all_latencies_ms else 0.0
+
+    if product_ratio == 0.0:
+        pathway_ratio = push_ratio = 0.0
+        speed_pts = 0
+    else:
+        speed_pts = _latency_to_speed_pts(avg_lat)
+
+    pts: Dict[str, Any] = {
+        "product":        round(product_ratio * 300),
+        "pathway":        round(pathway_ratio * 300),
+        "push":           round(push_ratio * 200),
+        "speed":          speed_pts,
+        "methodology":    100,
+        "avg_latency_ms": round(avg_lat, 1),
+        "n_total":        n,
+        "n_product_hit":  n_hit,
+    }
+    pts["total"]   = pts["product"] + pts["pathway"] + pts["push"] + pts["speed"] + pts["methodology"]
+    pts["outcome"] = "WIN" if pts["total"] >= 700 else ("DRAW" if pts["total"] >= 400 else "LOSS")
+    return pts
+
+
+def _leaderboard_row_to_pts(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert a leaderboard DB row (0.0-1.0 metrics) to a clawdiators 1000-pt display dict.
+
+    This is an approximation: the DB stores mean_quality_score and deterministic_pass_rate
+    but not the full component breakdown. Use _graded_to_clawdiators_pts() during eval for
+    the authoritative per-component breakdown.
+    """
+    quality   = float(row.get("weighted_quality_score") or row.get("mean_quality_score") or 0.0)
+    pass_rate = float(row.get("weighted_pass_rate") or row.get("deterministic_pass_rate") or 0.0)
+    avg_lat   = float(row.get("avg_latency_ms") or 0.0)
+    product_pts     = round(pass_rate * 300)
+    pathway_pts     = round(quality * 300)
+    push_pts        = round(quality * 200)
+    speed_pts       = _latency_to_speed_pts(avg_lat) if pass_rate > 0 else 0
+    methodology_pts = 100
+    if pass_rate == 0.0:
+        pathway_pts = push_pts = speed_pts = 0
+    total   = product_pts + pathway_pts + push_pts + speed_pts + methodology_pts
+    outcome = "WIN" if total >= 700 else ("DRAW" if total >= 400 else "LOSS")
+    return {"total": total, "outcome": outcome}
+
+
 def _render_leaderboard_markdown(
     eval_set_id: str,
     items: List[Dict[str, object]],
@@ -126,7 +357,7 @@ def _render_leaderboard_markdown(
         top = items[0]
         top_model = str(top.get("model_name") or top.get("model") or "unknown")
         top_thinking = str(top.get("thinking_level") or "none")
-        top_quality = float(top.get("weighted_quality_score") or top.get("mean_quality_score") or 0.0)
+        top_pts = _leaderboard_row_to_pts(top)
         top_pass_rate = float(top.get("weighted_pass_rate") or top.get("deterministic_pass_rate") or 0.0) * 100.0
         top_group = str(top.get("run_group_name") or "n/a")
         lines.extend(
@@ -135,7 +366,7 @@ def _render_leaderboard_markdown(
                 "",
                 f"- Model: `{top_model}`",
                 f"- Thinking: `{top_thinking}`",
-                f"- Mean quality: `{top_quality:.3f}`",
+                f"- Score: `{top_pts['total']}/1000` ({top_pts['outcome']})",
                 f"- Deterministic pass rate: `{top_pass_rate:.1f}%`",
             ]
         )
@@ -166,29 +397,31 @@ def _render_leaderboard_markdown(
     if includes_cost:
         lines.extend(
             [
-                "| Rank | Model | Thinking | Type | Quality | Pass | Cases | Cost | Group |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+                "| Rank | Model | Thinking | Type | Score | Outcome | Pass | Cases | Cost | Group |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             ]
         )
     else:
         lines.extend(
             [
-                "| Rank | Model | Thinking | Type | Quality | Pass | Cases | Group |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- |",
+                "| Rank | Model | Thinking | Type | Score | Outcome | Pass | Cases | Group |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
             ]
         )
     if not items:
         if includes_cost:
-            lines.append("| - | - | - | - | - | - | - | - | No completed rows |")
+            lines.append("| - | - | - | - | - | - | - | - | - | No completed rows |")
         else:
-            lines.append("| - | - | - | - | - | - | - | No completed rows |")
+            lines.append("| - | - | - | - | - | - | - | - | No completed rows |")
         return "\n".join(lines)
 
     for index, row in enumerate(items, 1):
         model = str(row.get("model_name") or row.get("model") or "unknown")
         thinking = str(row.get("thinking_level") or "none")
         run_type = "Baseline" if row.get("is_baseline") else "Harness"
-        quality = f"{float(row.get('weighted_quality_score') or row.get('mean_quality_score') or 0.0):.3f}"
+        pts = _leaderboard_row_to_pts(row)
+        score_display = f"{pts['total']}/1000"
+        outcome = pts["outcome"]
         pass_rate = f"{float(row.get('weighted_pass_rate') or row.get('deterministic_pass_rate') or 0.0) * 100.0:.1f}%"
         case_count = str(row.get("case_count") or 0)
         group = str(row.get("run_group_name") or "n/a")
@@ -196,11 +429,11 @@ def _render_leaderboard_markdown(
             total_cost = float(row.get("total_cost") or 0.0)
             cost_display = f"${total_cost:.3f}"
             lines.append(
-                f"| {index} | `{model}` | `{thinking}` | {run_type} | {quality} | {pass_rate} | {case_count} | {cost_display} | `{group}` |"
+                f"| {index} | `{model}` | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | {cost_display} | `{group}` |"
             )
         else:
             lines.append(
-                f"| {index} | `{model}` | `{thinking}` | {run_type} | {quality} | {pass_rate} | {case_count} | `{group}` |"
+                f"| {index} | `{model}` | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | `{group}` |"
             )
     return "\n".join(lines)
 
@@ -224,8 +457,6 @@ def _eval_case_step_count(case: Dict[str, Any]) -> Optional[int]:
             if isinstance(steps, list):
                 return len(steps)
     return None
-
-
 @app.command()
 def run(
     starting: Optional[str] = typer.Option(
@@ -244,7 +475,7 @@ def run(
         help="Exact model identifier used for all LLM-backed subagents",
     ),
     max_steps: int = typer.Option(10, "--max-steps", help="Maximum mechanism loop steps"),
-    max_runtime: float = typer.Option(240.0, "--max-runtime", help="Maximum runtime in seconds"),
+    max_runtime: float = typer.Option(600.0, "--max-runtime", help="Maximum runtime in seconds"),
     orchestration_mode: str = typer.Option(
         "standard",
         "--orchestration-mode",
@@ -285,6 +516,11 @@ def run(
         "off",
         "--babysit",
         help="Babysit mode: off or advisory",
+    ),
+    mutation_lane: Optional[str] = typer.Option(
+        None,
+        "--mutation-lane",
+        help="Optional Ralph mutation lane guard: topology, harness, prompt, few_shot",
     ),
     allow_validator_mutation: bool = typer.Option(
         True,
@@ -332,10 +568,15 @@ def run(
     babysit_mode = babysit_mode.strip().lower()
     if babysit_mode not in {"off", "advisory"}:
         raise typer.BadParameter("babysit must be one of: off, advisory")
+    if mutation_lane is not None:
+        mutation_lane = mutation_lane.strip().lower()
+        if mutation_lane not in {"topology", "harness", "prompt", "few_shot"}:
+            raise typer.BadParameter("mutation-lane must be one of: topology, harness, prompt, few_shot")
     if thinking_level is not None:
         thinking_level = thinking_level.strip().lower()
         if thinking_level not in {"low", "high"}:
             raise typer.BadParameter("thinking-level must be one of: low, high")
+    model_name = _canonicalize_model_name_or_raise(model_name)
 
     base = Path.cwd()
     registry = RegistrySet(base)
@@ -421,6 +662,7 @@ def run(
             "repeat_failure_signature_limit": max(1, int(repeat_failure_signature_limit)),
             "babysit_mode": babysit_mode,
             "allow_validator_mutation": allow_validator_mutation,
+            "mutation_lane": mutation_lane,
         },
         **hashes,
     )
@@ -605,6 +847,84 @@ def vote(
     typer.echo(f"Vote recorded: {vote_id}")
 
 
+@app.command(name="overnight-ralph")
+def overnight_ralph(
+    eval_slice_id: str = typer.Option("default", "--eval-slice-id", help="Frozen eval slice id"),
+    lanes: str = typer.Option(
+        "topology,harness",
+        "--lanes",
+        help="Comma-separated lane list: topology,harness,prompt,few_shot",
+    ),
+    max_experiments: int = typer.Option(20, "--max-experiments", help="Maximum experiment count"),
+    max_cost_usd: float = typer.Option(15.0, "--max-cost-usd", help="Max overnight budget in USD"),
+    acceptance_threshold: float = typer.Option(
+        0.02,
+        "--acceptance-threshold",
+        help="Required absolute improvement for keep decisions",
+    ),
+    program: str = typer.Option("ralph_program.md", "--program", help="Program markdown path"),
+    model_name: str = typer.Option(
+        get_default_model(),
+        "--model-name",
+        "--model",
+        help="Model identifier used for child micro-eval runs",
+    ),
+    harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
+    json_output: bool = typer.Option(False, "--json", help="Emit summary as JSON"),
+) -> None:
+    """Run lane-scoped overnight Ralph hill-climbing on a frozen eval slice."""
+    base = Path.cwd()
+    program_path = Path(program)
+    if not program_path.is_absolute():
+        program_path = (base / program_path).resolve()
+    if not program_path.exists():
+        raise typer.BadParameter(f"Program file not found: {program_path}")
+
+    model_name = _canonicalize_model_name_or_raise(model_name)
+    parsed_lanes = [item.strip() for item in lanes.split(",") if item.strip()]
+    for lane in parsed_lanes:
+        if lane not in {"topology", "harness", "prompt", "few_shot"}:
+            raise typer.BadParameter(f"Invalid lane '{lane}'")
+
+    program_config = load_overnight_program(program_path)
+    if eval_slice_id:
+        program_config.eval_slice_id = eval_slice_id
+    if parsed_lanes:
+        program_config.allowed_lanes = parsed_lanes  # type: ignore[assignment]
+    program_config.max_experiments = max(1, int(max_experiments))
+    program_config.max_cost_usd = float(max_cost_usd)
+    program_config.acceptance_threshold_pct = max(0.0, float(acceptance_threshold))
+
+    store = RunStore(base / "data" / "mechanistic.db")
+    orchestrator = OvernightRalphOrchestrator(base_dir=base, store=store)
+    plan = select_step_models(model_name=model_name)
+    run_config = {
+        "model": model_name,
+        "model_name": model_name,
+        "model_family": get_model_family(model_name),
+        "thinking_level": None,
+        "reasoning_level": None,
+        "step_models": plan.step_models,
+        "step_reasoning": plan.step_reasoning,
+        "optional_llm_tools": list(OPTIONAL_LLM_TOOL_NAMES),
+        "functional_groups_enabled": True,
+        "intermediate_prediction_enabled": True,
+        "max_steps": 6,
+        "max_runtime_seconds": 180.0,
+        "orchestration_mode": "standard",
+        "harness_name": harness,
+    }
+    summary = orchestrator.run(config=program_config, run_config=run_config)
+    if json_output:
+        typer.echo(json.dumps(summary, indent=2, sort_keys=True))
+        return
+    typer.echo(f"Status: {summary.get('status')}")
+    typer.echo(f"Eval slice: {summary.get('eval_slice_id')}")
+    typer.echo(f"Experiments: {summary.get('experiments_attempted')}/{summary.get('max_experiments')}")
+    typer.echo(f"Keeps: {summary.get('keep_count')}  Discards: {summary.get('discard_count')}")
+    typer.echo(f"Spent cost: ${float(summary.get('spent_cost_usd') or 0.0):.4f}")
+
+
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", help="Host for the FastAPI runtime server"),
@@ -653,7 +973,15 @@ def baseline(
     ph: Optional[float] = typer.Option(None, "--ph", help="Observed reaction pH (optional)"),
     max_cases: int = typer.Option(25, "--max-cases", help="Max cases when running an eval set"),
     timeout: float = typer.Option(180.0, "--timeout", help="Per-case timeout in seconds"),
+    llm_seed: int = typer.Option(42, "--llm-seed", help="Deterministic seed hint for providers that support it"),
+    llm_temperature: float = typer.Option(0.0, "--llm-temperature", help="Sampling temperature when using fixed policy"),
+    sampling_policy: str = typer.Option(
+        "fixed",
+        "--sampling-policy",
+        help="LLM sampling policy: fixed or provider_default",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
+    allow_holdout: bool = typer.Option(False, "--allow-holdout", hidden=True),
 ) -> None:
     """Run harness-free single-shot baseline mechanism prediction.
 
@@ -670,6 +998,10 @@ def baseline(
         thinking_level = thinking_level.strip().lower()
         if thinking_level not in {"low", "high"}:
             raise typer.BadParameter("thinking-level must be one of: low, high")
+    sampling_policy = sampling_policy.strip().lower()
+    if sampling_policy not in {"fixed", "provider_default"}:
+        raise typer.BadParameter("sampling-policy must be one of: fixed, provider_default")
+    model_name = _canonicalize_model_name_or_raise(model_name)
 
     runner = BaselineRunner()
 
@@ -679,10 +1011,21 @@ def baseline(
         store = RunStore(base / "data" / "mechanistic.db")
         registry = RegistrySet(base)
         model_family = get_model_family(model_name) or "unknown"
-        harness_hash = registry.bundle_hashes().get("prompt_bundle_hash", "")
+        harness_hash = registry.bundle_hashes(model_name=model_name).get("prompt_bundle_hash", "")
+        try:
+            resolved_eval_set = resolve_eval_set(
+                store=store,
+                requested_eval_set_id=eval_set_id,
+            )
+        except EvalSetResolutionError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        if resolved_eval_set.purpose == "leaderboard_holdout" and not allow_holdout:
+            raise typer.BadParameter(
+                "leaderboard_holdout eval sets are restricted to 'baseline-runset-official'"
+            )
 
         eval_run_id = store.create_eval_run(
-            eval_set_id=eval_set_id,
+            eval_set_id=str(resolved_eval_set.eval_set_id),
             run_group_name=BASELINE_GROUP_PREFIX,
             model=model_name,
             model_name=model_name,
@@ -692,12 +1035,16 @@ def baseline(
             status="running",
         )
 
-        cases = store.list_eval_set_cases(eval_set_id)
-        if len(cases) > max_cases:
-            cases = cases[:max_cases]
+        cases = select_eval_cases(
+            cases=resolved_eval_set.cases,
+            max_cases=max_cases,
+        )
+        resolved_case_ids = [str(item.get("case_id") or "") for item in cases if str(item.get("case_id") or "")]
+        resolved_case_ids_digest = case_ids_hash(resolved_case_ids)
 
         completed = 0
         failed = 0
+        prompt_hashes: List[str] = []
         for case in cases:
             case_id = str(case.get("case_id") or "")
             input_payload = case.get("input") or {}
@@ -719,11 +1066,17 @@ def baseline(
                     temperature_celsius=temperature,
                     ph=ph,
                     timeout=timeout,
+                    llm_seed=llm_seed,
+                    llm_temperature=(llm_temperature if sampling_policy == "fixed" else None),
+                    sampling_policy=sampling_policy,
                 )
                 graded = score_baseline_result(result, expected if expected else None)
                 score = float(graded["score"])
                 passed = bool(graded["passed"])
                 latency_ms = float(result.get("latency_ms") or 0.0)
+                prompt_hash = str(result.get("prompt_hash") or "")
+                if prompt_hash:
+                    prompt_hashes.append(prompt_hash)
                 summary: Dict[str, Any] = {
                     "score": score,
                     "passed": passed,
@@ -732,6 +1085,20 @@ def baseline(
                     "scoring_breakdown": graded.get("scoring_breakdown", {}),
                     "error": graded.get("error"),
                     "eval_mode": "baseline",
+                    "run_metadata": {
+                        "eval_set_id": resolved_eval_set.eval_set_id,
+                        "eval_set_purpose": resolved_eval_set.purpose,
+                        "eval_case_ids_hash": resolved_case_ids_digest,
+                        "case_id": case_id,
+                        "model": model_name,
+                        "thinking_level": thinking_level,
+                        "llm_seed": llm_seed,
+                        "llm_temperature": (llm_temperature if sampling_policy == "fixed" else None),
+                        "sampling_policy": sampling_policy,
+                        "prompt_hash": result.get("prompt_hash"),
+                        "prompt_system_hash": result.get("prompt_system_hash"),
+                        "prompt_user_hash": result.get("prompt_user_hash"),
+                    },
                     "subagent_scores": {
                         "full_mechanism_baseline": {
                             "quality_score": score,
@@ -773,12 +1140,23 @@ def baseline(
             "thinking_level": thinking_level,
             "completed": completed,
             "failed": failed,
+            "eval_set_id": resolved_eval_set.eval_set_id,
+            "eval_set_purpose": resolved_eval_set.purpose,
+            "eval_case_ids_hash": resolved_case_ids_digest,
+            "llm_seed": llm_seed,
+            "llm_temperature": (llm_temperature if sampling_policy == "fixed" else None),
+            "sampling_policy": sampling_policy,
+            "prompt_hashes": sorted(set(prompt_hashes))[:20],
         }
         if json_output:
             typer.echo(json.dumps(result_obj, indent=2))
         else:
             typer.echo(f"\nBaseline eval complete: {completed} passed, {failed} failed")
             typer.echo(f"Eval run ID: {eval_run_id}")
+            typer.echo(
+                f"Resolved eval set: {resolved_eval_set.eval_set_id} ({resolved_eval_set.purpose}) "
+                f"case_ids_hash={resolved_case_ids_digest}"
+            )
 
     else:
         # ---- Single-case mode ----
@@ -792,6 +1170,9 @@ def baseline(
             temperature_celsius=temperature,
             ph=ph,
             timeout=timeout,
+            llm_seed=llm_seed,
+            llm_temperature=(llm_temperature if sampling_policy == "fixed" else None),
+            sampling_policy=sampling_policy,
         )
         graded = score_baseline_result(result, None)
         output = {
@@ -805,6 +1186,14 @@ def baseline(
             "passed": graded["passed"],
             "error": result.get("error"),
             "latency_ms": round(result.get("latency_ms") or 0.0, 1),
+            "run_metadata": {
+                "llm_seed": llm_seed,
+                "llm_temperature": (llm_temperature if sampling_policy == "fixed" else None),
+                "sampling_policy": sampling_policy,
+                "prompt_hash": result.get("prompt_hash"),
+                "prompt_system_hash": result.get("prompt_system_hash"),
+                "prompt_user_hash": result.get("prompt_user_hash"),
+            },
         }
         if json_output:
             typer.echo(json.dumps(output, indent=2))
@@ -816,8 +1205,77 @@ def baseline(
             typer.echo(f"Score: {graded['score']:.3f}")
             typer.echo(f"Passed: {graded['passed']}")
             typer.echo(f"Latency: {round(result.get('latency_ms') or 0, 1)} ms")
+            typer.echo(
+                f"Run metadata: seed={llm_seed} sampling_policy={sampling_policy} "
+                f"prompt_hash={str(result.get('prompt_hash') or '')[:12]}"
+            )
             if result.get("error"):
                 typer.echo(f"Error: {result['error']}")
+
+
+@app.command(name="baseline-runset-official")
+def baseline_runset_official_cmd(
+    eval_set_id: Optional[str] = typer.Option(
+        None,
+        "--eval-set-id",
+        help="Optional holdout eval set id (defaults to latest purpose=leaderboard_holdout).",
+    ),
+    allow_non_holdout: bool = typer.Option(
+        False,
+        "--allow-non-holdout",
+        help="Explicit opt-in to run non-holdout eval sets from this command.",
+    ),
+    model_name: str = typer.Option(
+        get_default_model(),
+        "--model-name",
+        "--model",
+        help="Model identifier (e.g. gpt-5.4, claude-opus-4.6)",
+    ),
+    thinking_level: Optional[str] = typer.Option(
+        None, "--thinking-level", "--reasoning", help="Thinking level: low or high"
+    ),
+    temperature: float = typer.Option(25.0, "--temperature", help="Reaction temperature in Celsius"),
+    ph: Optional[float] = typer.Option(None, "--ph", help="Observed reaction pH (optional)"),
+    max_cases: int = typer.Option(200, "--max-cases", help="Max cases when running an eval set"),
+    timeout: float = typer.Option(300.0, "--timeout", help="Per-case timeout in seconds"),
+    llm_seed: int = typer.Option(42, "--llm-seed", help="Deterministic seed hint for providers that support it"),
+    llm_temperature: float = typer.Option(0.0, "--llm-temperature", help="Sampling temperature when using fixed policy"),
+    sampling_policy: str = typer.Option(
+        "fixed",
+        "--sampling-policy",
+        help="LLM sampling policy: fixed or provider_default",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
+) -> None:
+    """Run the official holdout-only baseline eval (one-shot mode)."""
+    base = Path.cwd()
+    store = RunStore(base / "data" / "mechanistic.db")
+    try:
+        resolved_eval_set = resolve_eval_set(
+            store=store,
+            requested_eval_set_id=eval_set_id,
+            require_purpose=(None if allow_non_holdout else "leaderboard_holdout"),
+            default_purpose=("leaderboard_holdout" if not eval_set_id else None),
+        )
+    except EvalSetResolutionError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    baseline(
+        starting=None,
+        products=None,
+        eval_set_id=str(resolved_eval_set.eval_set_id),
+        model_name=model_name,
+        thinking_level=thinking_level,
+        temperature=temperature,
+        ph=ph,
+        max_cases=max_cases,
+        timeout=timeout,
+        llm_seed=llm_seed,
+        llm_temperature=llm_temperature,
+        sampling_policy=sampling_policy,
+        json_output=json_output,
+        allow_holdout=True,
+    )
 
 
 @app.command(name="seed-simulated")
@@ -845,6 +1303,88 @@ def seed_simulated(
         )
         typer.echo(f"Inserted {result.get('inserted_eval_run_count', 0)} simulated eval runs")
         typer.echo(result.get("note", ""))
+
+
+@app.command(name="compare-eval-runs")
+def compare_eval_runs(
+    run_a: str = typer.Option(..., "--run-a", help="First eval_run id"),
+    run_b: str = typer.Option(..., "--run-b", help="Second eval_run id"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON comparison"),
+) -> None:
+    """Compare reproducibility metadata between two eval runs."""
+    base = Path.cwd()
+    store = RunStore(base / "data" / "mechanistic.db")
+
+    def _run_summary(eval_run_id: str) -> Dict[str, Any]:
+        row = store.get_eval_run(eval_run_id)
+        if row is None:
+            raise typer.BadParameter(f"Eval run not found: {eval_run_id}")
+        results = store.list_eval_run_results(eval_run_id)
+        ordered_case_ids = [str(item.get("case_id") or "") for item in results if str(item.get("case_id") or "")]
+        summary_meta = []
+        prompt_hashes: set[str] = set()
+        for result in results:
+            summary = result.get("summary") or {}
+            if not isinstance(summary, dict):
+                continue
+            run_meta = summary.get("run_metadata") or {}
+            if isinstance(run_meta, dict):
+                summary_meta.append(run_meta)
+                prompt_hash = str(run_meta.get("prompt_hash") or "")
+                if prompt_hash:
+                    prompt_hashes.add(prompt_hash)
+        first_meta = summary_meta[0] if summary_meta else {}
+        return {
+            "eval_run_id": eval_run_id,
+            "eval_set_id": str(row.get("eval_set_id") or ""),
+            "model": str(row.get("model_name") or row.get("model") or ""),
+            "thinking_level": str(row.get("thinking_level") or ""),
+            "case_count": len(ordered_case_ids),
+            "case_ids_hash": case_ids_hash(ordered_case_ids),
+            "metadata_case_ids_hash": str(first_meta.get("eval_case_ids_hash") or ""),
+            "prompt_hashes": sorted(prompt_hashes),
+            "sampling_policy": first_meta.get("sampling_policy"),
+            "llm_seed": first_meta.get("llm_seed"),
+            "llm_temperature": first_meta.get("llm_temperature"),
+        }
+
+    a = _run_summary(run_a)
+    b = _run_summary(run_b)
+    comparison = {
+        "run_a": a,
+        "run_b": b,
+        "same_eval_set_id": a["eval_set_id"] == b["eval_set_id"],
+        "same_case_ids_hash": a["case_ids_hash"] == b["case_ids_hash"],
+        "same_metadata_case_ids_hash": a["metadata_case_ids_hash"] == b["metadata_case_ids_hash"],
+        "same_model": a["model"] == b["model"],
+        "same_thinking_level": a["thinking_level"] == b["thinking_level"],
+    }
+
+    if json_output:
+        typer.echo(json.dumps(comparison, indent=2))
+        return
+
+    typer.echo(f"Run A: {a['eval_run_id']}")
+    typer.echo(
+        f"  eval_set_id={a['eval_set_id']} case_ids_hash={a['case_ids_hash']} "
+        f"model={a['model']} thinking={a['thinking_level'] or 'none'}"
+    )
+    typer.echo(f"  sampling_policy={a['sampling_policy']} llm_seed={a['llm_seed']} llm_temperature={a['llm_temperature']}")
+    typer.echo(f"  prompt_hashes={', '.join(a['prompt_hashes'][:3]) or 'none'}")
+    typer.echo(f"Run B: {b['eval_run_id']}")
+    typer.echo(
+        f"  eval_set_id={b['eval_set_id']} case_ids_hash={b['case_ids_hash']} "
+        f"model={b['model']} thinking={b['thinking_level'] or 'none'}"
+    )
+    typer.echo(f"  sampling_policy={b['sampling_policy']} llm_seed={b['llm_seed']} llm_temperature={b['llm_temperature']}")
+    typer.echo(f"  prompt_hashes={', '.join(b['prompt_hashes'][:3]) or 'none'}")
+    typer.echo(
+        "Comparison: "
+        f"same_eval_set_id={comparison['same_eval_set_id']} "
+        f"same_case_ids_hash={comparison['same_case_ids_hash']} "
+        f"same_model={comparison['same_model']} "
+        f"same_thinking_level={comparison['same_thinking_level']}"
+    )
 
 
 @app.command(name="import-eval-set")
@@ -1061,9 +1601,9 @@ def leaderboard(
         lines = []
         includes_cost = any("total_cost" in row for row in items)
         header = (
-            f"{'Rank':<5} {'Model':<25} {'Thinking':<8} {'Type':<8} {'Quality':<8} {'Pass':<7} {'Cases':<6} {'Cost':<8} {'Group'}"
+            f"{'Rank':<5} {'Model':<25} {'Thinking':<8} {'Type':<8} {'Score':<10} {'Outcome':<7} {'Pass':<7} {'Cases':<6} {'Cost':<8} {'Group'}"
             if includes_cost
-            else f"{'Rank':<5} {'Model':<25} {'Thinking':<8} {'Type':<8} {'Quality':<8} {'Pass':<7} {'Cases':<6} {'Group'}"
+            else f"{'Rank':<5} {'Model':<25} {'Thinking':<8} {'Type':<8} {'Score':<10} {'Outcome':<7} {'Pass':<7} {'Cases':<6} {'Group'}"
         )
         lines.append(header)
         lines.append("-" * len(header))
@@ -1074,7 +1614,9 @@ def leaderboard(
                 model = model[:22] + "..."
             thinking = row.get("thinking_level") or "none"
             run_type = "Baseline" if row.get("is_baseline") else "Harness"
-            quality = f"{float(row.get('weighted_quality_score') or row.get('mean_quality_score') or 0):.3f}"
+            pts = _leaderboard_row_to_pts(row)
+            score_display = f"{pts['total']}/1000"
+            outcome = pts["outcome"]
             pass_rate = f"{float(row.get('weighted_pass_rate') or row.get('deterministic_pass_rate') or 0) * 100:.1f}%"
             case_count = str(row.get("case_count") or 0)
             group = row.get("run_group_name") or "n/a"
@@ -1082,12 +1624,15 @@ def leaderboard(
                 total_cost = float(row.get("total_cost") or 0)
                 cost_display = f"${total_cost:.3f}" if total_cost > 0 else "$0.000"
                 lines.append(
-                    f"{i:<5} {model:<25} {thinking:<8} {run_type:<8} {quality:<8} {pass_rate:<7} {case_count:<6} {cost_display:<8} {group}"
+                    f"{i:<5} {model:<25} {thinking:<8} {run_type:<8} {score_display:<10} {outcome:<7} {pass_rate:<7} {case_count:<6} {cost_display:<8} {group}"
                 )
             else:
                 lines.append(
-                    f"{i:<5} {model:<25} {thinking:<8} {run_type:<8} {quality:<8} {pass_rate:<7} {case_count:<6} {group}"
+                    f"{i:<5} {model:<25} {thinking:<8} {run_type:<8} {score_display:<10} {outcome:<7} {pass_rate:<7} {case_count:<6} {group}"
                 )
+        if HARNESS_SPEED_CALIBRATION_MS <= 0:
+            lines.append("")
+            lines.append("  [!] Speed uncalibrated — HARNESS_SPEED_CALIBRATION_MS=0 in main.py (speed shown as 100 pts)")
         content = "\n".join(lines)
 
     if output_path is not None:
@@ -1116,23 +1661,18 @@ def leaderboard_official(
     """Print leaderboard rows for the official holdout suite."""
     base = Path.cwd()
     store = RunStore(base / "data" / "mechanistic.db")
-    resolved_eval_set_id = eval_set_id
-    if resolved_eval_set_id:
-        row = store.get_eval_set(resolved_eval_set_id)
-        if row is None:
-            raise typer.BadParameter(f"Eval set not found: {resolved_eval_set_id}")
-        if str(row.get("purpose") or "general") != "leaderboard_holdout":
-            raise typer.BadParameter("eval-set-id must point to purpose=leaderboard_holdout")
-    else:
-        holdouts = store.list_eval_sets(purpose="leaderboard_holdout")
-        if not holdouts:
-            raise typer.BadParameter("No purpose=leaderboard_holdout eval set found")
-        resolved_eval_set_id = str(holdouts[0].get("id") or "")
-        if not resolved_eval_set_id:
-            raise typer.BadParameter("Unable to resolve holdout eval set id")
+    try:
+        resolved = resolve_eval_set(
+            store=store,
+            requested_eval_set_id=eval_set_id,
+            require_purpose="leaderboard_holdout",
+            default_purpose=("leaderboard_holdout" if not eval_set_id else None),
+        )
+    except EvalSetResolutionError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     leaderboard(
-        eval_set_id=resolved_eval_set_id,
+        eval_set_id=str(resolved.eval_set_id),
         limit=limit,
         json_output=json_output,
         markdown_output=markdown_output,
@@ -1302,6 +1842,7 @@ def eval_cmd(
         thinking_level = thinking_level.strip().lower()
         if thinking_level not in {"low", "high"}:
             raise typer.BadParameter("thinking-level must be one of: low, high")
+    model_name = _canonicalize_model_name_or_raise(model_name)
 
     if tier and tier not in {"easy", "medium", "hard"}:
         raise typer.BadParameter("tier must be one of: easy, medium, hard")
@@ -1311,10 +1852,15 @@ def eval_cmd(
     registry = RegistrySet(base)
     model_family = get_model_family(model_name) or "unknown"
     internal_reasoning = to_internal_reasoning_level(thinking_level)
-    eval_set = store.get_eval_set(eval_set_id)
-    if eval_set is None:
-        raise typer.BadParameter(f"Eval set not found: {eval_set_id}")
-    is_holdout = str(eval_set.get("purpose") or "general") == "leaderboard_holdout"
+    try:
+        resolved_eval_set = resolve_eval_set(
+            store=store,
+            requested_eval_set_id=eval_set_id,
+        )
+    except EvalSetResolutionError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    resolved_eval_set_id = str(resolved_eval_set.eval_set_id)
+    is_holdout = resolved_eval_set.purpose == "leaderboard_holdout"
     if is_holdout and not allow_holdout:
         raise typer.BadParameter(
             "leaderboard_holdout eval sets are restricted to 'eval-runset-official'"
@@ -1332,7 +1878,7 @@ def eval_cmd(
 
     hashes = registry.bundle_hashes(model_name=model_name)
     eval_run_id = store.create_eval_run(
-        eval_set_id=eval_set_id,
+        eval_set_id=resolved_eval_set_id,
         run_group_name=run_group or f"cli_eval_{harness}",
         model=model_name,
         model_name=model_name,
@@ -1342,32 +1888,37 @@ def eval_cmd(
         status="running",
     )
 
-    all_cases = store.list_eval_set_cases(eval_set_id)
+    all_cases = list(resolved_eval_set.cases)
     if not all_cases:
-        typer.echo(f"No cases found for eval set {eval_set_id}")
+        typer.echo(f"No cases found for eval set {resolved_eval_set_id}")
         store.set_eval_run_status(eval_run_id, "failed")
         raise typer.Exit(code=1)
 
     # Case selection
-    if case_ids:
-        id_set = set(case_ids)
-        selected = [c for c in all_cases if str(c.get("case_id", "")) in id_set]
-    elif tier_case_ids is not None:
-        id_set = {str(cid) for cid in tier_case_ids}
-        selected = [c for c in all_cases if str(c.get("case_id", "")) in id_set]
-    else:
-        selected = all_cases[:max_cases]
+    selected = select_eval_cases(
+        cases=all_cases,
+        case_ids=case_ids,
+        tier_case_ids=tier_case_ids,
+        max_cases=max_cases,
+    )
 
     if not selected:
         typer.echo("No cases matched the selection criteria")
         store.set_eval_run_status(eval_run_id, "failed")
         raise typer.Exit(code=1)
 
-    typer.echo(f"Running {len(selected)} cases with model={model_name} harness={harness}")
+    selected_case_ids = [str(item.get("case_id") or "") for item in selected if str(item.get("case_id") or "")]
+    selected_case_ids_digest = case_ids_hash(selected_case_ids)
+    typer.echo(
+        f"Running {len(selected)} cases with model={model_name} harness={harness} "
+        f"eval_set_id={resolved_eval_set_id} case_ids_hash={selected_case_ids_digest}"
+    )
 
     coordinator = RunCoordinator(store)
     completed = 0
     failed = 0
+    all_graded: List[Dict[str, Any]] = []
+    all_latencies: List[float] = []
     for case in selected:
         case_id = str(case.get("case_id") or "")
         input_payload = case.get("input") or {}
@@ -1395,7 +1946,7 @@ def eval_cmd(
                 input_payload={
                     "starting_materials": sm,
                     "products": prods,
-                    "temperature_celsius": float(input_payload.get("temperature_celsius", 25.0)),
+                    "temperature_celsius": float(input_payload.get("temperature_celsius") or 25.0),
                     "ph": input_payload.get("ph"),
                 },
                 config={
@@ -1416,7 +1967,10 @@ def eval_cmd(
                 **hashes,
             )
 
+            _t0 = time.monotonic()
             coordinator.execute_run(run_id, threading.Event())
+            case_latency_ms = (time.monotonic() - _t0) * 1000.0
+            all_latencies.append(case_latency_ms)
 
             snapshot = store.get_run_snapshot(run_id) or {}
             step_outputs = snapshot.get("step_outputs", [])
@@ -1424,6 +1978,7 @@ def eval_cmd(
             graded = score_snapshot_against_known(snapshot, expected) if expected else {"score": 0.0, "passed": False}
             score = float(graded.get("score", 0.0))
             passed = bool(graded.get("passed", False))
+            all_graded.append(graded)
 
             subagent_scores: Dict[str, Any] = {}
             try:
@@ -1435,15 +1990,15 @@ def eval_cmd(
             cost_summary = snapshot.get("cost_summary") or {}
             run_cost = cost_summary.get("total_cost") or {}
 
-            summary: Dict[str, Any] = {
-                "score": score,
-                "passed": passed,
-                "step_count": len([s for s in step_outputs if s.get("step_name") == "mechanism_synthesis"]),
-                "n_mechanistic_steps": case_step_count,
-                "error": graded.get("error"),
-                "eval_mode": "harness",
-                "subagent_scores": subagent_scores,
-            }
+            summary = _build_eval_case_summary(
+                snapshot=snapshot,
+                score=score,
+                passed=passed,
+                step_outputs=step_outputs,
+                case_step_count=case_step_count,
+                subagent_scores=subagent_scores,
+                scored_error=graded.get("error"),
+            )
             store.record_eval_run_result(
                 eval_run_id=eval_run_id,
                 case_id=case_id,
@@ -1451,13 +2006,24 @@ def eval_cmd(
                 score=score,
                 passed=passed,
                 cost=run_cost,
-                latency_ms=0.0,
+                latency_ms=case_latency_ms,
                 summary=summary,
             )
             completed += 1
             total_cost = run_cost.get("total_cost", 0.0)
-            typer.echo(f"  [{completed + failed}] {case_id}: score={score:.3f} passed={passed} cost=${total_cost:.3f}")
+            typer.echo(
+                _format_eval_case_result_line(
+                    index=completed + failed,
+                    case_id=case_id,
+                    score=score,
+                    passed=passed,
+                    total_cost=total_cost,
+                    latency_ms=case_latency_ms,
+                    summary=summary,
+                )
+            )
         except Exception as exc:
+            all_latencies.append(0.0)
             store.record_eval_run_result(
                 eval_run_id=eval_run_id,
                 case_id=case_id or uuid.uuid4().hex,
@@ -1470,8 +2036,40 @@ def eval_cmd(
             )
             failed += 1
             typer.echo(f"  [{completed + failed}] {case_id}: FAILED ({exc})")
+            all_graded.append({"score": 0.0, "passed": False, "final_product_reached": False,
+                                "known_alignment_component": 0.0, "step_validity_component": 0.0})
 
     store.set_eval_run_status(eval_run_id, "completed")
+
+    # Clawdiators-style aggregate score summary
+    if all_graded and not json_output:
+        pts = _graded_to_clawdiators_pts(all_graded, all_latencies)
+        sep = "=" * 60
+        typer.echo("")
+        typer.echo(sep)
+        typer.echo(f"  Score Summary (harness eval) — {model_name}")
+        typer.echo(sep)
+        typer.echo(f"  Product Accuracy     : {pts['n_product_hit']:2}/{pts['n_total']} reached   → {pts['product']:3} pts  (30%)")
+        typer.echo(f"  Pathway Coverage     : avg {pts['pathway']/300:.3f}           → {pts['pathway']:3} pts  (30%)")
+        typer.echo(f"  Electron Push Quality: avg {pts['push']/200:.3f}           → {pts['push']:3} pts  (20%)")
+        typer.echo(f"  Speed                : avg {pts['avg_latency_ms']/1000:.1f}s/case       → {pts['speed']:3} pts  (10%)")
+        typer.echo(f"  Methodology          : present              → {pts['methodology']:3} pts  (10%)")
+        typer.echo(sep)
+        typer.echo(f"  TOTAL            : {pts['total']:4} / 1000")
+        typer.echo(f"  PREDICTED OUTCOME: {pts['outcome']}  (win ≥700 / draw 400-699 / loss <400)")
+        typer.echo(sep)
+        typer.echo("")
+        if HARNESS_SPEED_CALIBRATION_MS <= 0:
+            typer.echo("  NOTE: HARNESS_SPEED_CALIBRATION_MS not set — speed is uncalibrated (100 pts).")
+            typer.echo("        Run opus-4.6 dry-run and set constant in main.py to enable live speed scoring.")
+        else:
+            typer.echo(f"  Speed calibration: {HARNESS_SPEED_CALIBRATION_MS}ms/case (opus-4.6 benchmark = 75 pts)")
+        typer.echo("  Harness proxy mapping:")
+        typer.echo("    Product Accuracy  ← final_product_reached (harness path score)")
+        typer.echo("    Pathway Coverage  ← known_alignment_component (step alignment avg)")
+        typer.echo("    Push Quality      ← step_validity_component (validation+mapping avg)")
+        typer.echo(sep)
+
     result_obj = {
         "eval_run_id": eval_run_id,
         "model": model_name,
@@ -1479,13 +2077,15 @@ def eval_cmd(
         "harness": harness,
         "completed": completed,
         "failed": failed,
+        "eval_set_id": resolved_eval_set_id,
+        "eval_case_ids_hash": selected_case_ids_digest,
     }
     if json_output:
         typer.echo(json.dumps(result_obj, indent=2))
     else:
         typer.echo(f"\nEval complete: {completed} completed, {failed} failed")
         typer.echo(f"Eval run ID: {eval_run_id}")
-        typer.echo(f"View results: python main.py leaderboard --eval-set-id {eval_set_id}")
+        typer.echo(f"View results: python main.py leaderboard --eval-set-id {resolved_eval_set_id}")
 
 
 @app.command(name="eval-runset-official")
@@ -1494,6 +2094,11 @@ def eval_runset_official_cmd(
         None,
         "--eval-set-id",
         help="Optional holdout eval set id (defaults to latest purpose=leaderboard_holdout).",
+    ),
+    allow_non_holdout: bool = typer.Option(
+        False,
+        "--allow-non-holdout",
+        help="Explicit opt-in to run a non-holdout eval set from this command.",
     ),
     model_name: str = typer.Option(
         get_default_model(), "--model-name", "--model",
@@ -1515,29 +2120,26 @@ def eval_runset_official_cmd(
     """Run the official holdout-only leaderboard eval."""
     base = Path.cwd()
     store = RunStore(base / "data" / "mechanistic.db")
-    resolved_eval_set_id = eval_set_id
-    if resolved_eval_set_id:
-        row = store.get_eval_set(resolved_eval_set_id)
-        if row is None:
-            raise typer.BadParameter(f"Eval set not found: {resolved_eval_set_id}")
-        if str(row.get("purpose") or "general") != "leaderboard_holdout":
-            raise typer.BadParameter("eval-set-id must point to purpose=leaderboard_holdout")
-    else:
-        holdouts = store.list_eval_sets(purpose="leaderboard_holdout")
-        if not holdouts:
-            raise typer.BadParameter("No purpose=leaderboard_holdout eval set found")
-        resolved_eval_set_id = str(holdouts[0].get("id") or "")
-        if not resolved_eval_set_id:
-            raise typer.BadParameter("Unable to resolve holdout eval set id")
+    try:
+        resolved = resolve_eval_set(
+            store=store,
+            requested_eval_set_id=eval_set_id,
+            require_purpose=(None if allow_non_holdout else "leaderboard_holdout"),
+            default_purpose=("leaderboard_holdout" if not eval_set_id else None),
+        )
+    except EvalSetResolutionError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     eval_cmd(
-        eval_set_id=resolved_eval_set_id,
+        eval_set_id=str(resolved.eval_set_id),
         model_name=model_name,
         thinking_level=thinking_level,
         tier=None,
         case_ids=case_ids,
         harness=harness,
-        run_group=run_group or "official_holdout_harness",
+        run_group=run_group or (
+            "official_holdout_harness" if resolved.purpose == "leaderboard_holdout" else "official_compare_harness"
+        ),
         max_cases=max_cases,
         max_steps=max_steps,
         max_runtime=max_runtime,
