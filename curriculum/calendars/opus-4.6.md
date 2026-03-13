@@ -12,4 +12,4 @@ Week 1 starts on March 11, 2026.
 - Saturday, March 14: No scheduled release. [Documented update](../updates/opus-4.6/2026-03-14.md)
 - Sunday, March 15: No scheduled release. [Documented update](../updates/opus-4.6/2026-03-15.md)
 - Monday, March 16: Monday lesson. [Documented update](../updates/opus-4.6/2026-03-16.md)
-- Tuesday, March 17: Tuesday lesson. [Documented update](../updates/opus-4.6/2026-03-17.md)
+- Tuesday, March 17: Tuesday lesson. Documented update to start March 16 instead. [Documented update](../updates/opus-4.6/2026-03-17.md)

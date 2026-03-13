@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 from functools import lru_cache
@@ -37,7 +38,12 @@ from .model_registry import (
     get_model_family,
 )
 from .prompt_assets import compose_system_prompt, format_few_shot_block
-from .smiles_utils import remove_mapping_and_canonicalize
+from .smiles_utils import (
+    assess_target_product_state,
+    canonicalize_capture_error,
+    canonicalize_if_valid,
+    remove_mapping_and_canonicalize,
+)
 from .tool_schemas import (
     ASSESS_CONDITIONS_TOOL,
     ATOM_MAPPING_TOOL,
@@ -52,6 +58,8 @@ from .core.reaction_type_templates import (
     list_reaction_type_choices,
     load_reaction_type_catalog_for_runtime,
 )
+from .core.chemistry_backend import execute_chemistry_check
+from .core.chemistry_backend import ChemistryBackendConfig, resolve_rdkit_cli_command
 from .core.mechanism_moves import (
     extract_mechanism_moves,
     implied_bond_deltas,
@@ -213,6 +221,253 @@ def _get_user_api_key_for_model(model_name: str) -> Optional[str]:
         return None
 
 
+def _canonicalize_constraint_smiles(smiles: Optional[str]) -> Optional[str]:
+    """Canonicalize a species token for runtime constraint checks."""
+
+    if not isinstance(smiles, str) or not smiles.strip():
+        return None
+    corrected, _ = _apply_smiles_correction(smiles)
+    stripped = remove_mapping_and_canonicalize(corrected)
+    canonical = canonicalize_if_valid(stripped)
+    return canonical or str(stripped or corrected).strip() or None
+
+
+def _unique_species(items: Iterable[Optional[str]]) -> List[str]:
+    """Return canonical species preserving first-seen order."""
+
+    ordered: List[str] = []
+    seen: set[str] = set()
+    for item in items:
+        canonical = _canonicalize_constraint_smiles(item)
+        if not canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        ordered.append(canonical)
+    return ordered
+
+
+def _species_heavy_atom_count(smiles: str) -> int:
+    canonical = _canonicalize_constraint_smiles(smiles)
+    if not canonical:
+        return 0
+    if Chem is None:
+        return sum(1 for ch in canonical if ch.isalpha() and ch.isupper())
+    mol = Chem.MolFromSmiles(canonical)
+    if mol is None:
+        return 0
+    return sum(1 for atom in mol.GetAtoms() if atom.GetAtomicNum() > 1)
+
+
+def _is_counterion_like_species(smiles: str) -> bool:
+    canonical = _canonicalize_constraint_smiles(smiles)
+    if not canonical:
+        return False
+    return canonical in {
+        "[Cl-]",
+        "[Br-]",
+        "[I-]",
+        "[F-]",
+        "[Na+]",
+        "[K+]",
+        "[Li+]",
+        "[Mg+2]",
+        "[Ca+2]",
+        "[Zn+2]",
+        "[NH4+]",
+    }
+
+
+def _normalise_condition_support_species(items: Any) -> List[str]:
+    supports: List[str] = []
+    if not isinstance(items, (list, tuple)):
+        return supports
+    for item in items:
+        if isinstance(item, Mapping):
+            canonical = _canonicalize_constraint_smiles(item.get("smiles"))
+            if canonical:
+                supports.append(canonical)
+        elif isinstance(item, str):
+            canonical = _canonicalize_constraint_smiles(item)
+            if canonical:
+                supports.append(canonical)
+    return _unique_species(supports)
+
+
+def _build_species_registry_and_constraints(
+    *,
+    starting_materials: Sequence[str],
+    products: Sequence[str],
+    conditions_context: Optional[Mapping[str, Any]],
+    missing_reactants: Sequence[str],
+    missing_products: Sequence[str],
+) -> Dict[str, Any]:
+    """Build deterministic participant roles and proposal constraints."""
+
+    canonical_starting = _unique_species(starting_materials)
+    canonical_products = _unique_species(products)
+    canonical_missing_reactants = _unique_species(missing_reactants)
+    canonical_missing_products = _unique_species(missing_products)
+
+    env = str((conditions_context or {}).get("environment") or "unknown").strip().lower() or "unknown"
+    acid_supports = _normalise_condition_support_species((conditions_context or {}).get("acid_candidates"))
+    base_supports = _normalise_condition_support_species((conditions_context or {}).get("base_candidates"))
+    water = _canonicalize_constraint_smiles("O") or "O"
+    hydronium = _canonicalize_constraint_smiles("[OH3+]") or "[OH3+]"
+    hydroxide = _canonicalize_constraint_smiles("[OH-]") or "[OH-]"
+
+    entries: List[Dict[str, Any]] = []
+    index_by_species: Dict[str, int] = {}
+
+    def _ensure_entry(species: str) -> Dict[str, Any]:
+        canonical = _canonicalize_constraint_smiles(species)
+        if not canonical:
+            canonical = str(species).strip()
+        if canonical in index_by_species:
+            return entries[index_by_species[canonical]]
+        entry = {
+            "species": canonical,
+            "roles": [],
+            "tags": [],
+            "sources": [],
+        }
+        index_by_species[canonical] = len(entries)
+        entries.append(entry)
+        return entry
+
+    def _add_role(entry: Dict[str, Any], role: str) -> None:
+        if role not in entry["roles"]:
+            entry["roles"].append(role)
+
+    def _add_tag(entry: Dict[str, Any], tag: str) -> None:
+        if tag not in entry["tags"]:
+            entry["tags"].append(tag)
+
+    def _add_source(entry: Dict[str, Any], source: str) -> None:
+        if source not in entry["sources"]:
+            entry["sources"].append(source)
+
+    for idx, species in enumerate(canonical_starting):
+        entry = _ensure_entry(species)
+        _add_source(entry, "starting_materials")
+        if species in acid_supports:
+            _add_role(entry, "acid")
+            _add_role(entry, "catalyst")
+            _add_tag(entry, "persistent")
+            _add_tag(entry, "eligible_now")
+        elif species in base_supports:
+            _add_role(entry, "base")
+            _add_role(entry, "catalyst")
+            _add_tag(entry, "persistent")
+            _add_tag(entry, "eligible_now")
+        elif _is_counterion_like_species(species):
+            _add_role(entry, "counterion")
+            _add_role(entry, "spectator")
+            _add_tag(entry, "persistent")
+            _add_tag(entry, "eligible_now")
+        elif idx == 0 or _species_heavy_atom_count(species) >= 4:
+            _add_role(entry, "substrate")
+            _add_tag(entry, "eligible_now")
+        else:
+            _add_role(entry, "coreactant")
+            _add_tag(entry, "eligible_now")
+
+    for species in acid_supports:
+        entry = _ensure_entry(species)
+        _add_source(entry, "conditions")
+        _add_role(entry, "acid")
+        _add_role(entry, "catalyst")
+        _add_tag(entry, "persistent")
+        _add_tag(entry, "eligible_now")
+
+    for species in base_supports:
+        entry = _ensure_entry(species)
+        _add_source(entry, "conditions")
+        _add_role(entry, "base")
+        _add_role(entry, "catalyst")
+        _add_tag(entry, "persistent")
+        _add_tag(entry, "eligible_now")
+
+    for species in canonical_missing_reactants:
+        entry = _ensure_entry(species)
+        _add_source(entry, "missing_reactants")
+        if species in acid_supports:
+            _add_role(entry, "acid")
+            _add_role(entry, "catalyst")
+            _add_tag(entry, "persistent")
+        elif species in base_supports:
+            _add_role(entry, "base")
+            _add_role(entry, "catalyst")
+            _add_tag(entry, "persistent")
+        elif _is_counterion_like_species(species):
+            _add_role(entry, "counterion")
+            _add_role(entry, "spectator")
+            _add_tag(entry, "persistent")
+        else:
+            _add_role(entry, "coreactant")
+            _add_tag(entry, "consumed_on_use")
+        _add_tag(entry, "eligible_now")
+
+    for species in canonical_missing_products:
+        entry = _ensure_entry(species)
+        _add_source(entry, "missing_products")
+        _add_role(entry, "byproduct")
+        _add_tag(entry, "forbidden_until_generated")
+
+    persistent_species = _unique_species(
+        entry["species"]
+        for entry in entries
+        if "persistent" in entry["tags"] or "catalyst" in entry["roles"] or "spectator" in entry["roles"]
+    )
+    spectator_species = _unique_species(
+        entry["species"] for entry in entries if "spectator" in entry["roles"]
+    )
+    counterion_species = _unique_species(
+        entry["species"] for entry in entries if "counterion" in entry["roles"]
+    )
+    eligible_reactants = _unique_species(
+        canonical_starting + canonical_missing_reactants + acid_supports + base_supports
+    )
+    allowed_generated_species = _unique_species(canonical_missing_products)
+    forbidden_new_species: List[str] = []
+    conjugate_pairs: List[Dict[str, str]] = []
+    if env == "acidic":
+        forbidden_new_species = _unique_species([hydroxide])
+        conjugate_pairs.append({"left": hydronium, "right": water, "role": "proton_shuttle"})
+        allowed_generated_species = _unique_species(allowed_generated_species + [water])
+    elif env == "basic":
+        forbidden_new_species = _unique_species([hydronium])
+        conjugate_pairs.append({"left": hydroxide, "right": water, "role": "proton_shuttle"})
+        allowed_generated_species = _unique_species(allowed_generated_species + [water])
+
+    return {
+        "species_registry": entries,
+        "proposal_constraints": {
+            "registry_version": "v1",
+            "environment": env,
+            "eligible_reactants": eligible_reactants,
+            "persistent_species": persistent_species,
+            "spectator_species": spectator_species,
+            "counterion_species": counterion_species,
+            "condition_support_species": _unique_species(acid_supports + base_supports),
+            "allowed_generated_species": allowed_generated_species,
+            "forbidden_new_species": forbidden_new_species,
+            "canonical_byproducts": canonical_missing_products,
+            "conjugate_pairs": conjugate_pairs,
+            "roles_by_species": {
+                str(entry["species"]): list(entry["roles"])
+                for entry in entries
+                if entry.get("species")
+            },
+        },
+        "participant_summary": {
+            "starting_materials": canonical_starting,
+            "products": canonical_products,
+            "missing_reactants": canonical_missing_reactants,
+            "missing_products": canonical_missing_products,
+        },
+    }
+
+
 @dataclass(frozen=True)
 class ToolDescriptor:
     """Simple local descriptor for runtime tool registration."""
@@ -324,7 +579,7 @@ class BondElectronDelta:
         }
 
 
-def _parse_dbe_entries(entries: str, *, enforce_conservation: bool = True) -> List[BondElectronDelta]:
+def _parse_dbe_entries_python(entries: str, *, enforce_conservation: bool = True) -> List[BondElectronDelta]:
     if not entries:
         raise BondElectronFormatError("dbe metadata block is empty")
     parsed: List[BondElectronDelta] = []
@@ -352,6 +607,102 @@ def _parse_dbe_entries(entries: str, *, enforce_conservation: bool = True) -> Li
     if enforce_conservation and total_delta != 0:
         raise BondElectronFormatError(f"Bond-electron deltas must sum to zero (observed {total_delta}).")
     return parsed
+
+
+def _parse_dbe_entries(
+    entries: str,
+    *,
+    enforce_conservation: bool = True,
+    backend_config: Any = None,
+) -> List[BondElectronDelta]:
+    """Parse DBE entries through chemistry backend with Python fallback."""
+
+    def _python_path() -> List[BondElectronDelta]:
+        return _parse_dbe_entries_python(entries, enforce_conservation=enforce_conservation)
+
+    def _python_signature(values: List[BondElectronDelta]) -> Tuple[Any, ...]:
+        rows = tuple((item.map_i, item.map_j, item.delta) for item in values)
+        return rows
+
+    def _cli_signature(output: Dict[str, Any]) -> Tuple[Any, ...]:
+        checks = output.get("checks")
+        if not isinstance(checks, list):
+            return tuple()
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            if str(check.get("name") or "") != "dbe_metadata":
+                continue
+            details = check.get("details")
+            if not isinstance(details, dict):
+                continue
+            entries_payload = details.get("entries")
+            if not isinstance(entries_payload, list):
+                continue
+            rows: List[Tuple[int, int, int]] = []
+            for item in entries_payload:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    rows.append((int(item.get("map_i")), int(item.get("map_j")), int(item.get("delta"))))
+                except Exception:
+                    continue
+            rows.sort()
+            return tuple(rows)
+        return tuple()
+
+    def _cli_to_result(output: Dict[str, Any]) -> List[BondElectronDelta]:
+        if not bool(output.get("overall_pass")):
+            failed = output.get("failed_checks")
+            if isinstance(failed, list) and failed:
+                first = failed[0] if isinstance(failed[0], dict) else {}
+                if isinstance(first, dict):
+                    message = str(first.get("message") or output.get("summary") or "DBE parse failed")
+                    raise BondElectronFormatError(message)
+            raise BondElectronFormatError(str(output.get("summary") or "DBE parse failed"))
+
+        checks = output.get("checks")
+        if not isinstance(checks, list):
+            raise BondElectronFormatError("DBE parse failed: missing checks payload")
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            if str(check.get("name") or "") != "dbe_metadata":
+                continue
+            details = check.get("details")
+            if not isinstance(details, dict):
+                continue
+            entries_payload = details.get("entries")
+            if not isinstance(entries_payload, list):
+                continue
+            parsed: List[BondElectronDelta] = []
+            for item in entries_payload:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    parsed.append(
+                        BondElectronDelta(
+                            map_i=int(item.get("map_i")),
+                            map_j=int(item.get("map_j")),
+                            delta=int(item.get("delta")),
+                        )
+                    )
+                except Exception as exc:
+                    raise BondElectronFormatError(f"Invalid DBE entry payload: {item}") from exc
+            if parsed:
+                return parsed
+        raise BondElectronFormatError("DBE parse failed: no parsed entries returned")
+
+    result, _backend_meta = execute_chemistry_check(
+        mode="dbe",
+        payload={"dbe": str(entries or ""), "strict": bool(enforce_conservation)},
+        config=backend_config,
+        python_callable=_python_path,
+        cli_to_result=_cli_to_result,
+        python_signature=_python_signature,
+        cli_signature=_cli_signature,
+    )
+    return result
 
 
 def _extract_dbe_or_infer(expression: str, *, electron_pushes: Any) -> Tuple[str, List[BondElectronDelta], Dict[str, Any]]:
@@ -1015,7 +1366,107 @@ def _normalise_charged_brackets(smiles: str) -> Optional[str]:
     return normalised_smiles if changed else None
 
 
-def _canonicalise_candidate_smiles(smiles: str) -> Tuple[Optional[str], Dict[str, Any]]:
+def _attempt_repair_smiles_via_rdkit_cli(smiles: str, *, backend_config: Any = None) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Try `rdkit_cli repair-smiles` and return canonical output when available."""
+
+    metadata: Dict[str, Any] = {
+        "requested": True,
+        "command": None,
+        "available": False,
+        "timeout_seconds": 5.0,
+    }
+
+    command_value = "rdkit_cli"
+    timeout_value = 5.0
+    if isinstance(backend_config, dict):
+        command_value = str(backend_config.get("rdkit_cli_command") or command_value)
+        try:
+            timeout_value = float(backend_config.get("rdkit_cli_timeout_seconds") or timeout_value)
+        except Exception:
+            timeout_value = 5.0
+    else:
+        command_value = str(getattr(backend_config, "rdkit_cli_command", command_value) or command_value)
+        try:
+            timeout_value = float(getattr(backend_config, "rdkit_cli_timeout_seconds", timeout_value) or timeout_value)
+        except Exception:
+            timeout_value = 5.0
+
+    timeout_value = max(0.5, timeout_value)
+    metadata["command"] = command_value
+    metadata["timeout_seconds"] = timeout_value
+
+    cfg = ChemistryBackendConfig.from_config(
+        {
+            "chemistry_backend": "rdkit_cli",
+            "rdkit_cli_command": command_value,
+            "rdkit_cli_timeout_seconds": timeout_value,
+        }
+    )
+    resolution = resolve_rdkit_cli_command(cfg)
+    command_parts = list(resolution.command_parts or [])
+    metadata["resolution_source"] = resolution.source
+    metadata["resolution_warning"] = resolution.warning
+    metadata["resolution_rejected"] = bool(resolution.rejected)
+    metadata["resolution_reason"] = resolution.rejection_reason
+
+    metadata["available"] = bool(command_parts)
+    if not command_parts:
+        if resolution.rejected:
+            metadata["error"] = str(
+                resolution.rejection_reason or "rdkit_cli command rejected by source policy"
+            )
+        else:
+            metadata["error"] = "rdkit_cli command not found"
+        return None, metadata
+
+    payload = {"input": str(smiles or "")}
+    cmd = command_parts + ["repair-smiles", "--json", json.dumps(payload)]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_value,
+            check=False,
+        )
+    except Exception as exc:
+        metadata["error"] = f"repair-smiles subprocess failed: {exc}"
+        return None, metadata
+
+    metadata["returncode"] = proc.returncode
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+    if stderr:
+        metadata["stderr"] = stderr
+    if proc.returncode != 0 and not stdout:
+        metadata["error"] = f"repair-smiles failed: {stderr or f'exit_code={proc.returncode}'}"
+        return None, metadata
+
+    parsed: Optional[Dict[str, Any]] = None
+    if stdout:
+        try:
+            loaded = json.loads(stdout)
+            if isinstance(loaded, dict):
+                parsed = loaded
+        except Exception as exc:
+            metadata["error"] = f"repair-smiles emitted invalid JSON: {exc}"
+            return None, metadata
+    if not parsed:
+        metadata["error"] = "repair-smiles returned no JSON object"
+        return None, metadata
+
+    metadata["response"] = parsed
+    candidate = parsed.get("canonical_smiles") or parsed.get("repaired_smiles")
+    if isinstance(candidate, str) and candidate.strip():
+        metadata["used"] = True
+        return candidate.strip(), metadata
+
+    metadata["used"] = False
+    metadata["error"] = str(parsed.get("error") or "repair-smiles produced no canonical output")
+    return None, metadata
+
+
+def _canonicalise_candidate_smiles_python(smiles: str, *, backend_config: Any = None) -> Tuple[Optional[str], Dict[str, Any]]:
     """Try to validate a SMILES string, applying gentle normalisations and recovery when helpful."""
 
     details: Dict[str, Any] = {"raw": smiles}
@@ -1035,7 +1486,16 @@ def _canonicalise_candidate_smiles(smiles: str) -> Tuple[Optional[str], Dict[str
         return None, details
 
     if not _looks_like_smiles(base_cleaned):
-        details["error"] = f"Invalid SMILES string: {base_cleaned}"
+        details["precheck_error"] = f"Invalid SMILES string: {base_cleaned}"
+        repaired, repair_meta = _attempt_repair_smiles_via_rdkit_cli(base_cleaned, backend_config=backend_config)
+        details["repair_smiles"] = repair_meta
+        if repaired:
+            details["validated"] = True
+            details["repair_smiles_applied"] = True
+            details["validated_from"] = "rdkit_cli:repair-smiles"
+            details["canonical"] = repaired
+            return repaired, details
+        details["error"] = details["precheck_error"]
         return None, details
 
     attempts: List[str] = [base_cleaned]
@@ -1076,11 +1536,123 @@ def _canonicalise_candidate_smiles(smiles: str) -> Tuple[Optional[str], Dict[str
         return canonical, details
 
     details["cleaned"] = base_cleaned
+    repaired, repair_meta = _attempt_repair_smiles_via_rdkit_cli(base_cleaned, backend_config=backend_config)
+    details["repair_smiles"] = repair_meta
+    if repaired:
+        details["validated"] = True
+        details["repair_smiles_applied"] = True
+        details["validated_from"] = "rdkit_cli:repair-smiles"
+        details["canonical"] = repaired
+        return repaired, details
     if last_error:
         details["error"] = last_error
     else:
         details["error"] = "Unable to validate SMILES string"
     return None, details
+
+
+def _canonicalise_candidate_smiles(smiles: str, *, backend_config: Any = None) -> Tuple[Optional[str], Dict[str, Any]]:
+    """Validate/canonicalise SMILES via configured chemistry backend with fallback."""
+
+    def _python_path() -> Tuple[Optional[str], Dict[str, Any]]:
+        return _canonicalise_candidate_smiles_python(smiles, backend_config=backend_config)
+
+    def _signature_from_python(result: Tuple[Optional[str], Dict[str, Any]]) -> Tuple[Any, ...]:
+        canonical, details = result
+        info = details if isinstance(details, dict) else {}
+        return (
+            bool(canonical),
+            str(canonical or ""),
+            str(info.get("error_code") or ""),
+            str(info.get("error") or ""),
+        )
+
+    def _signature_from_cli(output: Dict[str, Any]) -> Tuple[Any, ...]:
+        failed = tuple(sorted(str(x) for x in (output.get("failed_check_names") or [])))
+        return (bool(output.get("overall_pass")), failed)
+
+    def _cli_to_result(output: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any]]:
+        details: Dict[str, Any] = {
+            "raw": smiles,
+            "backend": "rdkit_cli",
+            "validated": bool(output.get("overall_pass")),
+            "failed_checks": list(output.get("failed_check_names") or []),
+            "fix_suggestions": list(output.get("fix_suggestions") or []),
+        }
+        diagnostics = output.get("diagnostics")
+        if isinstance(diagnostics, dict):
+            details["diagnostics"] = diagnostics
+
+        canonical: Optional[str] = None
+        for check in output.get("checks") or []:
+            if not isinstance(check, dict):
+                continue
+            if str(check.get("name") or "") != "canonicalization":
+                continue
+            if not bool(check.get("pass")):
+                continue
+            check_details = check.get("details") if isinstance(check.get("details"), dict) else {}
+            maybe_canonical = check.get("canonical_smiles") or check_details.get("canonical_smiles")
+            if isinstance(maybe_canonical, str) and maybe_canonical.strip():
+                canonical = maybe_canonical.strip()
+                break
+
+        if canonical is None and bool(output.get("overall_pass")):
+            corrected = output.get("corrected_values")
+            if isinstance(corrected, dict):
+                for key in ("alias_correction", "artifact_strip", "charge_reorder", "bare_ion_bracketing"):
+                    value = corrected.get(key)
+                    if isinstance(value, str) and value.strip():
+                        canonical = value.strip()
+                        break
+
+        if canonical is None and bool(output.get("overall_pass")):
+            if isinstance(diagnostics, dict):
+                for key in ("working_smiles", "hardened", "raw_cleaned"):
+                    value = diagnostics.get(key)
+                    if isinstance(value, str) and value.strip():
+                        canonical = value.strip()
+                        break
+
+        if canonical:
+            details["canonical"] = canonical
+            details["validated_from"] = canonical
+            return canonical, details
+
+        repaired, repair_meta = _attempt_repair_smiles_via_rdkit_cli(smiles, backend_config=backend_config)
+        details["repair_smiles"] = repair_meta
+        if repaired:
+            details["canonical"] = repaired
+            details["validated_from"] = "rdkit_cli:repair-smiles"
+            details["repair_smiles_applied"] = True
+            return repaired, details
+
+        details["error"] = str(output.get("summary") or "Unable to validate SMILES string")
+        failed = output.get("failed_checks")
+        if isinstance(failed, list) and failed:
+            first = failed[0] if isinstance(failed[0], dict) else {}
+            if isinstance(first, dict):
+                if isinstance(first.get("error_code"), str):
+                    details["error_code"] = first.get("error_code")
+                if isinstance(first.get("message"), str):
+                    details["error"] = first.get("message")
+        return None, details
+
+    result, backend_meta = execute_chemistry_check(
+        mode="smiles",
+        payload={"smiles": str(smiles or "")},
+        config=backend_config,
+        python_callable=_python_path,
+        cli_to_result=_cli_to_result,
+        python_signature=_signature_from_python,
+        cli_signature=_signature_from_cli,
+    )
+    canonical, details = result if isinstance(result, tuple) else (None, {"raw": smiles, "error": "smiles_backend_invalid_result"})
+    details = dict(details or {})
+    details["chemistry_backend"] = backend_meta
+    if backend_meta.get("rdkit_cli_error") and "error" not in details:
+        details["error"] = str(backend_meta.get("rdkit_cli_error"))
+    return canonical, details
 
 
 def validate_proposed_reagents(
@@ -1168,23 +1740,33 @@ def validate_proposed_reagents(
     # Check atomic balance with the new molecules
     extended_starting_materials = starting_materials + valid_reactants
     extended_products = products + valid_products
-    
-    start_counts = _atom_counter_with_hydrogens(extended_starting_materials)
-    product_counts = _atom_counter_with_hydrogens(extended_products)
-    
-    # Calculate remaining deficits and surpluses
-    deficit: Counter = Counter()
-    surplus: Counter = Counter()
-    
-    for element, amount in product_counts.items():
-        deficit[element] = max(amount - start_counts.get(element, 0), 0)
-    
-    for element, amount in start_counts.items():
-        surplus[element] = max(amount - product_counts.get(element, 0), 0)
-    
-    # Check if reaction is now balanced
-    is_balanced = not any(deficit.values()) and not any(surplus.values())
-    
+    from mechanistic_agent.balance import assess_balance_diagnostics
+
+    diagnostics = assess_balance_diagnostics(
+        extended_starting_materials,
+        extended_products,
+        include_hydrogens=True,
+        left_label="reactants",
+        right_label="products",
+    )
+    if diagnostics.get("classification") == "invalid_species":
+        return _serialise({
+            "status": "failed",
+            "is_balanced": False,
+            "valid_reactants": valid_reactants,
+            "valid_products": valid_products,
+            "valid_reagents": valid_reactants + valid_products,
+            "invalid_reagents": invalid_molecules,
+            "remaining_deficit": {},
+            "remaining_surplus": {},
+            "balance_diagnostics": diagnostics,
+            "reason": str(diagnostics.get("error") or "Invalid species for atom balance"),
+            "validation_details": "Atom balance could not be assessed because species remain invalid after repair",
+        })
+    deficit = diagnostics.get("deficit", {})
+    surplus = diagnostics.get("surplus", {})
+    is_balanced = bool(diagnostics.get("balanced"))
+
     return _serialise({
         "status": "success" if is_balanced else "partial",
         "is_balanced": is_balanced,
@@ -1192,8 +1774,9 @@ def validate_proposed_reagents(
         "valid_products": valid_products,
         "valid_reagents": valid_reactants + valid_products,  # For backward compatibility
         "invalid_reagents": invalid_molecules,
-        "remaining_deficit": dict({k: v for k, v in deficit.items() if v > 0}),
-        "remaining_surplus": dict({k: v for k, v in surplus.items() if v > 0}),
+        "remaining_deficit": dict(deficit),
+        "remaining_surplus": dict(surplus),
+        "balance_diagnostics": diagnostics,
         "validation_details": "All molecules passed SMILES validation" if not invalid_molecules else f"{len(invalid_molecules)} molecules failed validation"
     })
 
@@ -1314,6 +1897,678 @@ def _validate_smiles_with_rdkit(smiles: str, *, field_name: str) -> Optional[str
     return text
 
 
+def _normalise_chemistry_error_code(error_text: str) -> str:
+    text = str(error_text or "").strip()
+    if not text:
+        return "unknown"
+    lowered = text.lower()
+    if "explicit valence" in lowered and "greater than permitted" in lowered:
+        return "explicit_valence"
+    if "can't kekulize" in lowered or "unkekulized" in lowered:
+        return "kekulize_fail"
+    if "non-ring atom" in lowered and "aromatic" in lowered:
+        return "aromatic_non_ring"
+    if "unclosed ring" in lowered:
+        return "unclosed_ring"
+    if (
+        "smiles parse error" in lowered
+        or "failed parsing smiles" in lowered
+        or "could not parse" in lowered
+    ):
+        return "smiles_parse"
+    if "invalid smiles" in lowered:
+        return "smiles_parse"
+    return "unknown"
+
+
+def _validate_smiles_with_diagnostics(
+    smiles: Any,
+    *,
+    field_name: str,
+) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
+    text = str(smiles or "").strip()
+    if not text:
+        return None, {
+            "field": field_name,
+            "code": "empty",
+            "message": f"{field_name} is empty",
+            "input": text,
+        }
+
+    corrected, _ = _apply_smiles_correction(text)
+    text = corrected
+    if not _looks_like_smiles(text):
+        return None, {
+            "field": field_name,
+            "code": "not_smiles_like",
+            "message": f"{field_name} is not SMILES-like: {text}",
+            "input": text,
+        }
+
+    canonical, error = canonicalize_capture_error(text)
+    if canonical:
+        return canonical, None
+
+    message = str(error or f"Invalid SMILES string: {text}")
+    return None, {
+        "field": field_name,
+        "code": _normalise_chemistry_error_code(message),
+        "message": message,
+        "input": text,
+    }
+
+
+def _is_degenerate_intermediate_smiles(smiles: str) -> Tuple[bool, str]:
+    text = str(smiles or "").strip()
+    if not text:
+        return True, "intermediate_empty"
+    if "." in text:
+        return True, "intermediate_disconnected_species"
+
+    degenerate_exact = {
+        "Cl",
+        "Br",
+        "F",
+        "I",
+        "[Cl-]",
+        "[Br-]",
+        "[F-]",
+        "[I-]",
+        "[OH-]",
+        "[H+]",
+        "[Na+]",
+        "[K+]",
+        "[Li+]",
+        "[Mg+2]",
+        "[Ca+2]",
+        "[Zn+2]",
+        "[HH]",
+        "[O]",
+    }
+    if text in degenerate_exact:
+        return True, "intermediate_degenerate_species"
+
+    if Chem is None:
+        return False, ""
+    try:
+        mol = _mol_from_smiles(text)
+    except Exception:
+        return True, "intermediate_invalid_smiles"
+
+    atom_count = int(mol.GetNumAtoms())
+    heavy_atoms = sum(1 for atom in mol.GetAtoms() if atom.GetAtomicNum() > 1)
+    if atom_count <= 1 or heavy_atoms <= 1:
+        return True, "intermediate_degenerate_species"
+    return False, ""
+
+
+def _validate_reaction_smirks_payload_python(reaction_smirks: Any) -> Tuple[bool, Optional[Dict[str, str]]]:
+    text = str(reaction_smirks or "").strip()
+    if not text:
+        return False, {
+            "field": "reaction_smirks",
+            "code": "reaction_smirks_missing",
+            "message": "reaction_smirks is missing",
+            "input": text,
+        }
+
+    core, _ = split_cxsmiles_metadata(text)
+    if ">>" not in core:
+        return False, {
+            "field": "reaction_smirks",
+            "code": "reaction_smirks_missing_arrow",
+            "message": "reaction_smirks must contain '>>'",
+            "input": text,
+        }
+
+    reactants, products = core.split(">>", 1)
+    side_map = {
+        "reactants": reactants,
+        "products": products,
+    }
+    for side_name, side_text in side_map.items():
+        species_list = [str(item).strip() for item in str(side_text or "").split(".") if str(item).strip()]
+        if not species_list:
+            return False, {
+                "field": "reaction_smirks",
+                "code": f"reaction_smirks_{side_name}_empty",
+                "message": f"reaction_smirks {side_name} side is empty",
+                "input": text,
+            }
+        for species in species_list:
+            unmapped = remove_mapping_and_canonicalize(species)
+            canonical, diag = _validate_smiles_with_diagnostics(
+                unmapped,
+                field_name=f"reaction_smirks_{side_name}_species",
+            )
+            if not canonical:
+                failure = dict(diag or {})
+                failure["field"] = "reaction_smirks"
+                failure["code"] = str(failure.get("code") or "reaction_smirks_invalid")
+                failure["message"] = (
+                    f"reaction_smirks {side_name} species invalid: {species}; "
+                    f"{failure.get('message') or 'RDKit parse failure'}"
+                )
+                failure["input"] = species
+                return False, failure
+    return True, None
+
+
+def _validate_reaction_smirks_payload(
+    reaction_smirks: Any,
+    *,
+    backend_config: Any = None,
+) -> Tuple[bool, Optional[Dict[str, str]]]:
+    """Validate reaction_smirks using configured chemistry backend with Python fallback."""
+
+    text = str(reaction_smirks or "").strip()
+
+    def _python_path() -> Tuple[bool, Optional[Dict[str, str]]]:
+        return _validate_reaction_smirks_payload_python(text)
+
+    def _signature_from_python(result: Tuple[bool, Optional[Dict[str, str]]]) -> Tuple[Any, ...]:
+        ok, diag = result
+        if not isinstance(diag, dict):
+            return (bool(ok), "", "")
+        return (bool(ok), str(diag.get("code") or ""), str(diag.get("message") or ""))
+
+    def _signature_from_cli(output: Dict[str, Any]) -> Tuple[Any, ...]:
+        first_code = ""
+        failed = output.get("failed_checks")
+        if isinstance(failed, list) and failed:
+            first = failed[0] if isinstance(failed[0], dict) else {}
+            if isinstance(first, dict):
+                first_code = str(first.get("error_code") or "")
+        return (bool(output.get("overall_pass")), first_code, str(output.get("summary") or ""))
+
+    def _cli_to_result(output: Dict[str, Any]) -> Tuple[bool, Optional[Dict[str, str]]]:
+        if bool(output.get("overall_pass")):
+            return True, None
+
+        code = "reaction_smirks_invalid"
+        message = str(output.get("summary") or "reaction_smirks validation failed")
+        failed = output.get("failed_checks")
+        if isinstance(failed, list) and failed:
+            first = failed[0] if isinstance(failed[0], dict) else {}
+            if isinstance(first, dict):
+                first_code = first.get("error_code")
+                first_message = first.get("message")
+                if isinstance(first_code, str) and first_code.strip():
+                    code = first_code.strip()
+                if isinstance(first_message, str) and first_message.strip():
+                    message = first_message.strip()
+
+        diag: Dict[str, Any] = {
+            "field": "reaction_smirks",
+            "code": code,
+            "message": message,
+            "input": text,
+            "failed_checks": list(output.get("failed_check_names") or []),
+            "fix_suggestions": list(output.get("fix_suggestions") or []),
+        }
+        return False, diag  # type: ignore[return-value]
+
+    result, backend_meta = execute_chemistry_check(
+        mode="smirks",
+        payload={"smirks": text},
+        config=backend_config,
+        python_callable=_python_path,
+        cli_to_result=_cli_to_result,
+        python_signature=_signature_from_python,
+        cli_signature=_signature_from_cli,
+    )
+    ok, diag = result if isinstance(result, tuple) else (False, {"field": "reaction_smirks", "code": "reaction_smirks_invalid", "message": "invalid backend result", "input": text})
+    if isinstance(diag, dict):
+        payload_diag = dict(diag)
+        payload_diag["chemistry_backend"] = backend_meta
+        return bool(ok), payload_diag  # type: ignore[return-value]
+    return bool(ok), diag
+
+
+_RDKIT_CLI_ALLOWED_COMMANDS = {
+    "repair-smiles",
+    "edit",
+    "check",
+    "balance",
+    "rings",
+    "schema",
+}
+_RDKIT_CLI_ALLOWED_RUN_ON = {"initial", "retry"}
+_RDKIT_CLI_EDIT_OPERATIONS = {"neutralize", "strip-maps", "sanitize", "add-h", "remove-h"}
+
+
+def _validate_rdkit_cli_command_args(command: str, args: Any) -> Dict[str, Any]:
+    if not isinstance(args, dict):
+        raise ValueError("rdkit_cli command args must be a JSON object")
+    payload = dict(args)
+    cmd = str(command or "").strip().lower()
+    if cmd == "repair-smiles":
+        if not any(isinstance(payload.get(key), str) and str(payload.get(key)).strip() for key in ("input", "smiles")):
+            molecules = payload.get("molecules")
+            if not (isinstance(molecules, list) and any(isinstance(item, str) and item.strip() for item in molecules)):
+                raise ValueError("repair-smiles args must include input|smiles string or molecules[]")
+    elif cmd == "edit":
+        smiles = payload.get("smiles")
+        operation = str(payload.get("operation") or "").strip().lower()
+        if not isinstance(smiles, str) or not smiles.strip():
+            raise ValueError("edit args must include smiles")
+        if operation not in _RDKIT_CLI_EDIT_OPERATIONS:
+            raise ValueError("edit args operation must be one of neutralize|strip-maps|sanitize|add-h|remove-h")
+    elif cmd == "balance":
+        reactants = payload.get("reactants")
+        products = payload.get("products")
+        if not (isinstance(reactants, list) and isinstance(products, list)):
+            raise ValueError("balance args must include reactants[] and products[]")
+    elif cmd == "rings":
+        has_smiles = isinstance(payload.get("smiles"), str) and str(payload.get("smiles")).strip()
+        has_molecules = isinstance(payload.get("molecules"), list) and bool(payload.get("molecules"))
+        if not has_smiles and not has_molecules:
+            raise ValueError("rings args must include smiles or molecules[]")
+    elif cmd == "schema":
+        requested = payload.get("command")
+        if requested is not None:
+            requested_name = str(requested).strip()
+            if requested_name and requested_name not in _RDKIT_CLI_ALLOWED_COMMANDS:
+                raise ValueError("schema args command must be one of allowed rdkit_cli commands")
+    elif cmd == "check":
+        # check accepts several payload modes; require a non-empty dict at minimum.
+        if not payload:
+            raise ValueError("check args cannot be empty")
+    else:
+        raise ValueError(f"Unsupported rdkit_cli command: {command}")
+    return payload
+
+
+class RdkitCliCommandSpec(BaseModel):
+    """Validated LLM-returned rdkit_cli command plan."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    command: Literal["repair-smiles", "edit", "check", "balance", "rings", "schema"]
+    args: Dict[str, Any] = Field(default_factory=dict)
+    run_on: Literal["initial", "retry"] = "retry"
+    apply_to: Optional[str] = None
+    reason: Optional[str] = None
+
+    @field_validator("args")
+    @classmethod
+    def _validate_args(cls, value: Dict[str, Any], info: Any) -> Dict[str, Any]:
+        command = info.data.get("command") if isinstance(info.data, dict) else None
+        if not command:
+            return dict(value or {})
+        return _validate_rdkit_cli_command_args(str(command), value)
+
+
+_RDKIT_CLI_AVAILABLE_COMMANDS: Optional[set[str]] = None
+
+
+def _run_rdkit_cli_command(
+    *,
+    command: str,
+    args: Dict[str, Any],
+    backend_config: Any = None,
+    timeout_seconds: Optional[float] = None,
+) -> Dict[str, Any]:
+    trace: Dict[str, Any] = {
+        "command": command,
+        "args": dict(args or {}),
+        "status": "failed",
+    }
+    cfg = ChemistryBackendConfig.from_config(
+        {
+            "chemistry_backend": "rdkit_cli",
+            "rdkit_cli_command": (
+                backend_config.get("rdkit_cli_command")
+                if isinstance(backend_config, dict)
+                else getattr(backend_config, "rdkit_cli_command", "rdkit_cli")
+            ),
+            "rdkit_cli_timeout_seconds": (
+                backend_config.get("rdkit_cli_timeout_seconds")
+                if isinstance(backend_config, dict)
+                else getattr(backend_config, "rdkit_cli_timeout_seconds", 5.0)
+            ),
+        }
+    )
+    resolution = resolve_rdkit_cli_command(cfg)
+    trace["resolution_source"] = resolution.source
+    trace["resolution_warning"] = resolution.warning
+    trace["resolution_rejected"] = bool(resolution.rejected)
+    trace["resolution_reason"] = resolution.rejection_reason
+    if not resolution.command_parts:
+        trace["error"] = str(resolution.rejection_reason or "rdkit_cli command unavailable")
+        return trace
+
+    timeout = (
+        max(0.5, float(timeout_seconds))
+        if timeout_seconds is not None
+        else max(0.5, float(cfg.rdkit_cli_timeout_seconds))
+    )
+    cmd = list(resolution.command_parts) + [command, "--json", json.dumps(args)]
+    trace["invocation"] = cmd
+    trace["timeout_seconds"] = timeout
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except Exception as exc:
+        trace["error"] = f"rdkit_cli subprocess failed: {exc}"
+        return trace
+
+    trace["returncode"] = proc.returncode
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
+    if stderr:
+        trace["stderr"] = stderr
+    parsed: Optional[Dict[str, Any]] = None
+    if stdout:
+        try:
+            loaded = json.loads(stdout)
+            if isinstance(loaded, dict):
+                parsed = loaded
+        except Exception:
+            trace["stdout"] = stdout
+    if parsed is not None:
+        trace["output"] = parsed
+
+    if proc.returncode in (0, 1):
+        # validation commands may return 1 for expected failures while still returning structured JSON
+        if parsed is not None:
+            trace["status"] = "ok"
+            return trace
+        if proc.returncode == 0:
+            trace["error"] = "rdkit_cli returned empty output"
+            return trace
+
+    trace["error"] = stderr or stdout or f"exit_code={proc.returncode}"
+    return trace
+
+
+def _load_rdkit_cli_available_commands(*, backend_config: Any = None) -> set[str]:
+    global _RDKIT_CLI_AVAILABLE_COMMANDS
+    if _RDKIT_CLI_AVAILABLE_COMMANDS is not None:
+        return set(_RDKIT_CLI_AVAILABLE_COMMANDS)
+    trace = _run_rdkit_cli_command(command="schema", args={}, backend_config=backend_config)
+    commands: set[str] = set()
+    output = trace.get("output")
+    if isinstance(output, dict):
+        listed = output.get("available_schemas")
+        if isinstance(listed, list):
+            commands = {str(item).strip() for item in listed if str(item).strip()}
+    _RDKIT_CLI_AVAILABLE_COMMANDS = commands
+    return set(commands)
+
+
+def _extract_repaired_smiles(output: Dict[str, Any]) -> Optional[str]:
+    for key in ("canonical_smiles", "repaired_smiles", "result_smiles"):
+        value = output.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    best = output.get("best_candidate")
+    if isinstance(best, dict):
+        for key in ("canonical_smiles", "candidate"):
+            value = best.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _apply_cli_value_to_path(
+    *,
+    container: Dict[str, Any],
+    apply_to: str,
+    value: str,
+) -> Optional[Dict[str, str]]:
+    text = str(apply_to or "").strip()
+    if not text:
+        return None
+    if text == "intermediate_smiles":
+        before = str(container.get("intermediate_smiles") or "")
+        container["intermediate_smiles"] = value
+        return {"apply_to": text, "before": before, "after": value}
+    if text == "reaction_smirks":
+        before = str(container.get("reaction_smirks") or "")
+        container["reaction_smirks"] = value
+        return {"apply_to": text, "before": before, "after": value}
+    state_match = re.fullmatch(r"resulting_state\[(\d+)\]", text)
+    if state_match:
+        idx = int(state_match.group(1))
+        state = list(container.get("resulting_state") or [])
+        if 0 <= idx < len(state):
+            before = str(state[idx])
+            state[idx] = value
+            container["resulting_state"] = state
+            return {"apply_to": text, "before": before, "after": value}
+    return None
+
+
+def _execute_rdkit_cli_plan_for_candidate(
+    *,
+    candidate: Dict[str, Any],
+    run_on: str,
+    backend_config: Any = None,
+) -> Dict[str, Any]:
+    traces: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+    applied_fixes: List[Dict[str, str]] = []
+    raw_specs = candidate.get("rdkit_cli_commands")
+    if not isinstance(raw_specs, list):
+        return {
+            "executed_cli_commands": traces,
+            "cli_failures": failures,
+            "cli_applied_fixes": applied_fixes,
+        }
+
+    available_commands = _load_rdkit_cli_available_commands(backend_config=backend_config)
+    for index, raw_spec in enumerate(raw_specs):
+        try:
+            spec = (
+                raw_spec
+                if isinstance(raw_spec, RdkitCliCommandSpec)
+                else RdkitCliCommandSpec.model_validate(raw_spec)
+            )
+        except ValidationError as exc:
+            failure = {
+                "index": index,
+                "status": "failed",
+                "error": _summarise_validation_error(exc),
+            }
+            traces.append(failure)
+            failures.append(failure)
+            continue
+        if spec.run_on != run_on:
+            continue
+        if available_commands and spec.command not in available_commands:
+            failure = {
+                "index": index,
+                "command": spec.command,
+                "run_on": spec.run_on,
+                "status": "failed",
+                "error": "command_not_supported_by_cli",
+            }
+            traces.append(failure)
+            failures.append(failure)
+            continue
+
+        trace = _run_rdkit_cli_command(
+            command=spec.command,
+            args=dict(spec.args or {}),
+            backend_config=backend_config,
+        )
+        trace["index"] = index
+        trace["run_on"] = spec.run_on
+        trace["apply_to"] = spec.apply_to
+        if spec.reason:
+            trace["reason"] = spec.reason
+        traces.append(trace)
+        if trace.get("status") != "ok":
+            failures.append(trace)
+            continue
+
+        output = trace.get("output") if isinstance(trace.get("output"), dict) else {}
+        if spec.command in {"repair-smiles", "edit"} and output:
+            fixed = _extract_repaired_smiles(output)
+            target = str(spec.apply_to or "").strip()
+            if fixed and target:
+                applied = _apply_cli_value_to_path(container=candidate, apply_to=target, value=fixed)
+                if applied:
+                    applied["command"] = spec.command
+                    applied_fixes.append(applied)
+
+    return {
+        "executed_cli_commands": traces,
+        "cli_failures": failures,
+        "cli_applied_fixes": applied_fixes,
+    }
+
+
+def _apply_cli_value_to_reagents(
+    *,
+    reactants: List[str],
+    products: List[str],
+    apply_to: str,
+    value: str,
+) -> Optional[Dict[str, str]]:
+    target = str(apply_to or "").strip()
+    if not target:
+        return None
+    reactant_match = re.fullmatch(r"missing_reactants\[(\d+)\]", target)
+    if reactant_match:
+        idx = int(reactant_match.group(1))
+        if 0 <= idx < len(reactants):
+            before = str(reactants[idx])
+            reactants[idx] = value
+            return {"apply_to": target, "before": before, "after": value}
+        return None
+    product_match = re.fullmatch(r"missing_products\[(\d+)\]", target)
+    if product_match:
+        idx = int(product_match.group(1))
+        if 0 <= idx < len(products):
+            before = str(products[idx])
+            products[idx] = value
+            return {"apply_to": target, "before": before, "after": value}
+        return None
+    return None
+
+
+def _execute_rdkit_cli_plan_for_reagents(
+    *,
+    specs: List[Any],
+    run_on: str,
+    reactants: List[str],
+    products: List[str],
+    backend_config: Any = None,
+) -> Dict[str, Any]:
+    traces: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+    applied_fixes: List[Dict[str, str]] = []
+    available_commands = _load_rdkit_cli_available_commands(backend_config=backend_config)
+
+    for index, raw_spec in enumerate(specs):
+        try:
+            spec = (
+                raw_spec
+                if isinstance(raw_spec, RdkitCliCommandSpec)
+                else RdkitCliCommandSpec.model_validate(raw_spec)
+            )
+        except ValidationError as exc:
+            failure = {
+                "index": index,
+                "status": "failed",
+                "error": _summarise_validation_error(exc),
+            }
+            traces.append(failure)
+            failures.append(failure)
+            continue
+        if spec.run_on != run_on:
+            continue
+        if available_commands and spec.command not in available_commands:
+            failure = {
+                "index": index,
+                "command": spec.command,
+                "run_on": spec.run_on,
+                "status": "failed",
+                "error": "command_not_supported_by_cli",
+            }
+            traces.append(failure)
+            failures.append(failure)
+            continue
+
+        trace = _run_rdkit_cli_command(
+            command=spec.command,
+            args=dict(spec.args or {}),
+            backend_config=backend_config,
+        )
+        trace["index"] = index
+        trace["run_on"] = spec.run_on
+        trace["apply_to"] = spec.apply_to
+        if spec.reason:
+            trace["reason"] = spec.reason
+        traces.append(trace)
+        if trace.get("status") != "ok":
+            failures.append(trace)
+            continue
+
+        output = trace.get("output") if isinstance(trace.get("output"), dict) else {}
+        if spec.command in {"repair-smiles", "edit"} and output:
+            fixed = _extract_repaired_smiles(output)
+            target = str(spec.apply_to or "").strip()
+            if fixed and target:
+                applied = _apply_cli_value_to_reagents(
+                    reactants=reactants,
+                    products=products,
+                    apply_to=target,
+                    value=fixed,
+                )
+                if applied:
+                    applied["command"] = spec.command
+                    applied_fixes.append(applied)
+
+    return {
+        "executed_cli_commands": traces,
+        "cli_failures": failures,
+        "cli_applied_fixes": applied_fixes,
+    }
+
+
+def _auto_repair_smiles_with_cli(
+    smiles: str,
+    *,
+    backend_config: Any = None,
+) -> Tuple[Optional[str], List[Dict[str, Any]], List[Dict[str, str]]]:
+    traces: List[Dict[str, Any]] = []
+    applied: List[Dict[str, str]] = []
+
+    repair_trace = _run_rdkit_cli_command(
+        command="repair-smiles",
+        args={"input": str(smiles or "")},
+        backend_config=backend_config,
+    )
+    traces.append(repair_trace)
+    if repair_trace.get("status") == "ok" and isinstance(repair_trace.get("output"), dict):
+        repaired = _extract_repaired_smiles(repair_trace["output"])
+        if repaired:
+            applied.append({"command": "repair-smiles", "before": str(smiles or ""), "after": repaired})
+            return repaired, traces, applied
+
+    edit_trace = _run_rdkit_cli_command(
+        command="edit",
+        args={"smiles": str(smiles or ""), "operation": "sanitize"},
+        backend_config=backend_config,
+    )
+    traces.append(edit_trace)
+    if edit_trace.get("status") == "ok" and isinstance(edit_trace.get("output"), dict):
+        sanitized = _extract_repaired_smiles(edit_trace["output"])
+        if sanitized:
+            applied.append({"command": "edit", "before": str(smiles or ""), "after": sanitized})
+            return sanitized, traces, applied
+
+    return None, traces, applied
+
+
 class ConditionCandidatePayload(BaseModel):
     """Structured candidate entry returned by condition assessment."""
 
@@ -1353,6 +2608,7 @@ class MissingReagentsPayload(BaseModel):
 
     missing_reactants: List[str] = Field(default_factory=list)
     missing_products: List[str] = Field(default_factory=list)
+    rdkit_cli_commands: List[RdkitCliCommandSpec] = Field(default_factory=list)
     verification: Optional[Dict[str, Any]] = None
     notes: Optional[str] = None
 
@@ -1956,6 +3212,24 @@ def predict_missing_reagents(
         "suggested_reagents": [],
     }
 
+    def _attach_constraint_metadata(reactants: Sequence[str], products_out: Sequence[str]) -> None:
+        bundle = _build_species_registry_and_constraints(
+            starting_materials=starting_materials,
+            products=products,
+            conditions_context=conditions_context,
+            missing_reactants=reactants,
+            missing_products=products_out,
+        )
+        report.update(bundle)
+        report["missing_reactants"] = list(bundle["participant_summary"]["missing_reactants"])
+        report["missing_products"] = list(bundle["participant_summary"]["missing_products"])
+        report["suggested_reactants"] = list(bundle["participant_summary"]["missing_reactants"])
+        report["suggested_products"] = list(bundle["participant_summary"]["missing_products"])
+        report["suggested_reagents"] = (
+            list(bundle["participant_summary"]["missing_reactants"])
+            + list(bundle["participant_summary"]["missing_products"])
+        )
+
     if conditions_context:
         report["conditions_guidance"] = conditions_context
     if conditions_source:
@@ -1964,6 +3238,7 @@ def predict_missing_reagents(
         report["conditions_guidance_parse_error"] = conditions_guidance_parse_error
 
     if not deficit_atoms and not surplus_atoms:
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "balanced",
@@ -2069,6 +3344,7 @@ def predict_missing_reagents(
     api_key = get_model_api_key(reagent_model, user_key=_reagent_user_key)
     if not api_key:
         provider_label = get_provider_label(reagent_model)
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "failed",
@@ -2110,6 +3386,7 @@ def predict_missing_reagents(
         raw_response = extract_text_content(ai_message)
         _reagent_usage = getattr(ai_message, "usage", None)
     except Exception as exc:
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "failed",
@@ -2138,6 +3415,7 @@ def predict_missing_reagents(
     if data is None:
         # Text-based fallback (OLMo, Gemini, or tool call extraction failed)
         if raw_response is None:
+            _attach_constraint_metadata([], [])
             report.update(
                 {
                     "status": "no_response",
@@ -2162,6 +3440,7 @@ def predict_missing_reagents(
 
     parsed_reactants: List[str] = []
     parsed_products: List[str] = []
+    parsed_cli_command_specs: List[Any] = []
 
     if isinstance(data, dict):
         data_dict = dict(data)
@@ -2189,6 +3468,9 @@ def predict_missing_reagents(
             parsed_products = [
                 str(item).strip() for item in missing_products if isinstance(item, str) and str(item).strip()
             ]
+        commands = data_dict.get("rdkit_cli_commands")
+        if isinstance(commands, list):
+            parsed_cli_command_specs = list(commands)
         
         # Backward compatibility: check for old "missing_reagents" format
         if not parsed_reactants and not parsed_products:
@@ -2222,6 +3504,7 @@ def predict_missing_reagents(
     
     if total_molecules == 0 and not parse_error:
         # LLM returned empty lists - this is valid when no molecules are needed
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "success",
@@ -2231,6 +3514,7 @@ def predict_missing_reagents(
         )
         return _serialise(report)
     elif total_molecules == 0:
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "failed",
@@ -2240,10 +3524,24 @@ def predict_missing_reagents(
         return _serialise(report)
 
     # Store the parsed molecules for reporting
-    report["suggested_reactants"] = parsed_reactants
-    report["suggested_products"] = parsed_products
-    # For backward compatibility, combine into suggested_reagents
-    report["suggested_reagents"] = parsed_reactants + parsed_products
+    _attach_constraint_metadata(parsed_reactants, parsed_products)
+
+    executed_cli_commands: List[Dict[str, Any]] = []
+    cli_failures: List[Dict[str, Any]] = []
+    cli_applied_fixes: List[Dict[str, str]] = []
+
+    if parsed_cli_command_specs:
+        initial_cli = _execute_rdkit_cli_plan_for_reagents(
+            specs=parsed_cli_command_specs,
+            run_on="initial",
+            reactants=parsed_reactants,
+            products=parsed_products,
+            backend_config={"chemistry_backend": "rdkit_cli"},
+        )
+        executed_cli_commands.extend(initial_cli.get("executed_cli_commands") or [])
+        cli_failures.extend(initial_cli.get("cli_failures") or [])
+        cli_applied_fixes.extend(initial_cli.get("cli_applied_fixes") or [])
+        _attach_constraint_metadata(parsed_reactants, parsed_products)
 
     # Validate proposed reagents with one retry opportunity.
     # If the first attempt fails due to invalid SMILES, re-prompt the LLM
@@ -2257,6 +3555,7 @@ def predict_missing_reagents(
                 validate_proposed_reagents(parsed_reactants, parsed_products, starting_materials, products)
             )
         except Exception as exc:
+            _attach_constraint_metadata(parsed_reactants, parsed_products)
             report.update(
                 {
                     "status": "failed",
@@ -2276,31 +3575,127 @@ def predict_missing_reagents(
                     "message": "Proposed reagents validated and reaction is now balanced.",
                 }
             )
+            _attach_constraint_metadata(parsed_reactants, parsed_products)
             if _reagent_attempt > 0:
                 report["reagent_retries"] = _reagent_attempt
+            if executed_cli_commands:
+                report["executed_cli_commands"] = executed_cli_commands
+            if cli_failures:
+                report["cli_failures"] = cli_failures
+            if cli_applied_fixes:
+                report["cli_applied_fixes"] = cli_applied_fixes
             return _serialise(report)
 
         # Check if a retry with error feedback could help.
         invalid_reagents = validation_payload.get("invalid_reagents", [])
+        imbalance_detected = not bool(validation_payload.get("is_balanced"))
         can_retry = (
             _reagent_attempt < _MAX_REAGENT_RETRIES - 1
-            and invalid_reagents
             and _use_forced_tools
+            and (bool(invalid_reagents) or imbalance_detected)
         )
         if can_retry:
-            # Build error feedback for the LLM.
-            error_details = []
-            for inv in invalid_reagents:
-                mol = inv.get("molecule") or inv.get("cleaned_molecule") or "unknown"
-                err = inv.get("error", "validation failed")
-                error_details.append(f"  - '{mol}': {err}")
-
-            retry_addendum = (
-                "\n\nYour previous response contained invalid SMILES strings:\n"
-                + "\n".join(error_details)
-                + "\n\nPlease correct these. Remember: water='O' (not '[H2O]'), "
-                "HCl='Cl', H2SO4='OS(=O)(=O)O'. Return RDKit-parseable SMILES only."
+            retry_cli = _execute_rdkit_cli_plan_for_reagents(
+                specs=parsed_cli_command_specs,
+                run_on="retry",
+                reactants=parsed_reactants,
+                products=parsed_products,
+                backend_config={"chemistry_backend": "rdkit_cli"},
             )
+            executed_cli_commands.extend(retry_cli.get("executed_cli_commands") or [])
+            cli_failures.extend(retry_cli.get("cli_failures") or [])
+            cli_applied_fixes.extend(retry_cli.get("cli_applied_fixes") or [])
+
+            balance_trace: Optional[Dict[str, Any]] = None
+            if imbalance_detected:
+                balance_trace = _run_rdkit_cli_command(
+                    command="balance",
+                    args={
+                        "reactants": list(starting_materials) + list(parsed_reactants),
+                        "products": list(products) + list(parsed_products),
+                    },
+                    backend_config={"chemistry_backend": "rdkit_cli"},
+                )
+                executed_cli_commands.append(balance_trace)
+                if balance_trace.get("status") != "ok":
+                    cli_failures.append(balance_trace)
+
+            # Retry-first policy: apply deterministic auto-repair before asking the LLM again.
+            repaired_any = False
+            for inv in invalid_reagents:
+                if not isinstance(inv, dict):
+                    continue
+                molecule = str(inv.get("cleaned_molecule") or inv.get("molecule") or "").strip()
+                if not molecule:
+                    continue
+                repaired, auto_traces, auto_applied = _auto_repair_smiles_with_cli(
+                    molecule,
+                    backend_config={"chemistry_backend": "rdkit_cli"},
+                )
+                executed_cli_commands.extend(auto_traces)
+                if repaired:
+                    # Apply to first matching reagent occurrence.
+                    applied = False
+                    for i, current in enumerate(parsed_reactants):
+                        if str(current).strip() == molecule:
+                            parsed_reactants[i] = repaired
+                            applied = True
+                            break
+                    if not applied:
+                        for i, current in enumerate(parsed_products):
+                            if str(current).strip() == molecule:
+                                parsed_products[i] = repaired
+                                applied = True
+                                break
+                    if applied:
+                        repaired_any = True
+                        cli_applied_fixes.extend(
+                            [{"command": item.get("command", "auto"), "before": item.get("before", molecule), "after": item.get("after", repaired)} for item in auto_applied]
+                            or [{"command": "auto-repair", "before": molecule, "after": repaired}]
+                        )
+
+            if repaired_any:
+                _attach_constraint_metadata(parsed_reactants, parsed_products)
+                continue
+
+            # Build retry feedback for the LLM.
+            retry_feedback_sections: List[str] = []
+            if invalid_reagents:
+                error_details: List[str] = []
+                for inv in invalid_reagents:
+                    mol = inv.get("molecule") or inv.get("cleaned_molecule") or "unknown"
+                    err = inv.get("error", "validation failed")
+                    error_details.append(f"  - '{mol}': {err}")
+                retry_feedback_sections.append(
+                    "Your previous response contained invalid SMILES strings:\n"
+                    + "\n".join(error_details)
+                    + "\nPlease correct these. Remember: water='O' (not '[H2O]'), "
+                    "HCl='Cl', H2SO4='OS(=O)(=O)O'. Return RDKit-parseable SMILES only."
+                )
+
+            if imbalance_detected:
+                remaining_deficit = validation_payload.get("remaining_deficit", {})
+                remaining_surplus = validation_payload.get("remaining_surplus", {})
+                balance_guidance = {
+                    "remaining_deficit": remaining_deficit if isinstance(remaining_deficit, dict) else {},
+                    "remaining_surplus": remaining_surplus if isinstance(remaining_surplus, dict) else {},
+                }
+                if balance_trace and isinstance(balance_trace.get("output"), dict):
+                    report["balance_retry_diagnostics"] = balance_trace["output"]
+                    rendered = json.dumps(balance_trace["output"], sort_keys=True)
+                    if len(rendered) > 1600:
+                        rendered = rendered[:1600] + "...(truncated)"
+                    retry_feedback_sections.append(
+                        "rdkit_cli balance diagnostics (use this to adjust missing_reactants/missing_products):\n"
+                        + rendered
+                    )
+                else:
+                    retry_feedback_sections.append(
+                        "Current stoichiometry remains imbalanced. Remaining atom deltas:\n"
+                        + json.dumps(balance_guidance, sort_keys=True)
+                    )
+
+            retry_addendum = "\n\n" + "\n\n".join(section for section in retry_feedback_sections if section)
             retry_human = human_prompt + retry_addendum
             report["reagent_retry_attempted"] = True
 
@@ -2344,9 +3739,10 @@ def predict_missing_reagents(
                         str(item).strip() for item in retry_dict.get("missing_products", [])
                         if isinstance(item, str) and str(item).strip()
                     ]
-                    report["suggested_reactants"] = parsed_reactants
-                    report["suggested_products"] = parsed_products
-                    report["suggested_reagents"] = parsed_reactants + parsed_products
+                    retry_commands = retry_dict.get("rdkit_cli_commands")
+                    if isinstance(retry_commands, list):
+                        parsed_cli_command_specs = list(retry_commands)
+                    _attach_constraint_metadata(parsed_reactants, parsed_products)
                     continue  # Re-validate with corrected molecules.
             except Exception as retry_exc:
                 report["reagent_retry_error"] = str(retry_exc)
@@ -2366,6 +3762,7 @@ def predict_missing_reagents(
             ),
         }
     )
+    _attach_constraint_metadata(parsed_reactants, parsed_products)
     if _reagent_attempt > 0:
         report["reagent_retries"] = _reagent_attempt
 
@@ -2390,6 +3787,13 @@ def predict_missing_reagents(
     if validation_payload.get("invalid_reagents"):
         report["invalid_reagents"] = validation_payload["invalid_reagents"]
 
+    if executed_cli_commands:
+        report["executed_cli_commands"] = executed_cli_commands
+    if cli_failures:
+        report["cli_failures"] = cli_failures
+    if cli_applied_fixes:
+        report["cli_applied_fixes"] = cli_applied_fixes
+
     return _serialise(report)
 
 
@@ -2405,11 +3809,18 @@ def predict_missing_reagents_for_candidate(
     This delegates to ``predict_missing_reagents`` using the candidate step's
     ``current_state -> resulting_state`` transition as the balancing problem.
     """
-    from mechanistic_agent.smiles_utils import sanitize_smiles_list
+    from mechanistic_agent.balance import assess_balance_diagnostics
 
-    sanitized_current, invalid_current = sanitize_smiles_list(current_state)
-    sanitized_resulting, invalid_resulting = sanitize_smiles_list(resulting_state)
-    invalid_species = list(invalid_current) + list(invalid_resulting)
+    balance_diagnostics = assess_balance_diagnostics(
+        current_state,
+        resulting_state,
+        include_hydrogens=True,
+        left_label="current_state",
+        right_label="resulting_state",
+    )
+    sanitized_current = [str(item) for item in balance_diagnostics.get("sanitized_left", [])]
+    sanitized_resulting = [str(item) for item in balance_diagnostics.get("sanitized_right", [])]
+    invalid_species = list(balance_diagnostics.get("invalid_species", []))
     if invalid_species or not sanitized_current or not sanitized_resulting:
         return _serialise(
             {
@@ -2418,6 +3829,7 @@ def predict_missing_reagents_for_candidate(
                 "invalid_species": invalid_species,
                 "sanitized_current": sanitized_current,
                 "sanitized_resulting": sanitized_resulting,
+                "balance_diagnostics": balance_diagnostics,
                 "add_reactants": [],
                 "add_products": [],
             }
@@ -2432,6 +3844,7 @@ def predict_missing_reagents_for_candidate(
                     "rescue_mode": True,
                     "failed_checks": list(failed_checks or []),
                     "validation_details": dict(validation_details or {}),
+                    "balance_diagnostics": balance_diagnostics,
                 }
             ),
         )
@@ -2551,6 +3964,7 @@ def predict_missing_reagents_for_candidate(
             "add_reactants": add_reactants,
             "add_products": add_products,
             "dropped_additions": dropped_additions,
+            "balance_diagnostics": balance_diagnostics,
             "rescue_caps": {"reactants": 2, "products": 2},
             "dbe_adjustment_hint": hint,
             "source": "predict_missing_reagents",
@@ -2577,11 +3991,26 @@ def attempt_atom_mapping_for_step(
     if not isinstance(mapped_atoms, list):
         mapped_atoms = []
     compact = []
+    lineage_by_species: Dict[str, Dict[str, Any]] = {}
     for item in mapped_atoms[:12]:
         if not isinstance(item, dict):
             continue
         product_atom = item.get("product_atom")
         src = item.get("source") if isinstance(item.get("source"), dict) else {}
+        product_species = str(product_atom or "").split("#", 1)[0] if product_atom else ""
+        source_species = str(src.get("smiles") or "").strip()
+        if product_species:
+            summary = lineage_by_species.setdefault(
+                product_species,
+                {
+                    "product_species": product_species,
+                    "source_species": [],
+                    "mapped_atom_count": 0,
+                },
+            )
+            if source_species and source_species not in summary["source_species"]:
+                summary["source_species"].append(source_species)
+            summary["mapped_atom_count"] += 1
         compact.append(
             {
                 "product_atom": product_atom,
@@ -2597,7 +4026,10 @@ def attempt_atom_mapping_for_step(
             "status": parsed.get("status", "success"),
             "confidence": confidence,
             "raw_confidence": raw_confidence,
+            "current_state": list(current_state),
+            "resulting_state": list(resulting_state),
             "compact_mapped_atoms": compact,
+            "species_lineage_summary": list(lineage_by_species.values()),
             "unmapped_atoms": parsed.get("llm_response", {}).get("unmapped_atoms", []),
             "raw": parsed,
         }
@@ -3114,8 +4546,8 @@ FUNCTIONAL_GROUPS = [
         True,
     ),
 
-    # halides / boron
-    ("alkyl_halide", ("[CX4][F,Cl,Br,I]",), True),
+    # halides / boron — alkyl_halide: consume=False so C-Br matches when C is shared with alcohol (e.g. CC(O)Br)
+    ("alkyl_halide", ("[CX4][F,Cl,Br,I]",), False),
     ("boronic_acid", ("[BX3]([OX2H])[OX2H]",), True),
     ("boronate_ester", ("[BX3]([OX2][#6])[OX2][#6]",), True),
 
@@ -3643,6 +5075,7 @@ class MechanismStepCandidate(BaseModel):
     reaction_smirks: Optional[str] = None
     electron_pushes: List[Dict[str, object]] = Field(default_factory=list)
     resulting_state: Optional[List[str]] = None
+    rdkit_cli_commands: List[RdkitCliCommandSpec] = Field(default_factory=list)
     confidence: Optional[Literal["high", "medium", "low"]] = None
     template_alignment: Optional[Literal["aligned", "partial", "not_aligned", "unknown"]] = None
     template_alignment_reason: Optional[str] = None
@@ -3978,6 +5411,13 @@ def propose_intermediates(
 
     guidance_payload: Dict[str, Any] = dict(template_guidance or {})
     low_risk_mode = bool(guidance_payload.get("low_risk_mode"))
+    retry_mode = bool(
+        low_risk_mode
+        or guidance_payload.get("smiles_error_context")
+        or guidance_payload.get("incomplete_payload_reasons")
+        or guidance_payload.get("avoid_failed_checks")
+        or guidance_payload.get("retry_mode")
+    )
     template_guidance_text = _compact_json_context(
         guidance_payload,
         label="template_guidance",
@@ -4006,7 +5446,7 @@ def propose_intermediates(
             )
         if not low_risk_mode:
             human_prompt += (
-                "Optional reaction-type template guidance (advisory only, do NOT force-fit chemistry):\n"
+                "Optional deterministic harness guidance (advisory only, do NOT force-fit chemistry):\n"
                 f"{guidance_blurb}\n"
                 f"{template_guidance_text}\n\n"
             )
@@ -4390,7 +5830,133 @@ def propose_intermediates(
         rejected_candidates: List[Dict[str, Any]] = []
         # Track ranked candidates from the new multi-candidate schema.
         ranked_candidates: List[Dict[str, Any]] = []
+        executed_cli_commands: List[Dict[str, Any]] = []
+        cli_failures: List[Dict[str, Any]] = []
+        cli_applied_fixes: List[Dict[str, str]] = []
+
+        def _record_cli_payload(payload: Dict[str, Any]) -> None:
+            executed_cli_commands.extend(payload.get("executed_cli_commands") or [])
+            cli_failures.extend(payload.get("cli_failures") or [])
+            cli_applied_fixes.extend(payload.get("cli_applied_fixes") or [])
+
         def _candidate_ready_for_execution_payload(item: Dict[str, Any]) -> Tuple[bool, str]:
+            plan_run_on = "retry" if retry_mode else "initial"
+            _record_cli_payload(
+                _execute_rdkit_cli_plan_for_candidate(
+                    candidate=item,
+                    run_on=plan_run_on,
+                    backend_config={"chemistry_backend": "rdkit_cli"},
+                )
+            )
+
+            canonical_intermediate, intermediate_diag = _validate_smiles_with_diagnostics(
+                item.get("intermediate_smiles"),
+                field_name="candidate.intermediate_smiles",
+            )
+            if not canonical_intermediate and retry_mode:
+                diag_code = (
+                    str(intermediate_diag.get("code"))
+                    if isinstance(intermediate_diag, dict)
+                    else "smiles_parse"
+                )
+                source_smiles = str(item.get("intermediate_smiles") or "")
+                repaired, auto_traces, auto_applied = _auto_repair_smiles_with_cli(
+                    source_smiles,
+                    backend_config={"chemistry_backend": "rdkit_cli"},
+                )
+                executed_cli_commands.extend(auto_traces)
+                if repaired:
+                    item["intermediate_smiles"] = repaired
+                    for applied in auto_applied:
+                        cli_applied_fixes.append(
+                            {
+                                "command": str(applied.get("command") or "auto-repair"),
+                                "apply_to": "intermediate_smiles",
+                                "before": str(applied.get("before") or source_smiles),
+                                "after": str(applied.get("after") or repaired),
+                            }
+                        )
+                    canonical_intermediate, intermediate_diag = _validate_smiles_with_diagnostics(
+                        repaired,
+                        field_name="candidate.intermediate_smiles",
+                    )
+                if diag_code in {"kekulize_fail", "aromatic_non_ring", "unclosed_ring"}:
+                    ring_trace = _run_rdkit_cli_command(
+                        command="rings",
+                        args={"smiles": source_smiles},
+                        backend_config={"chemistry_backend": "rdkit_cli"},
+                    )
+                    executed_cli_commands.append(ring_trace)
+                    if ring_trace.get("status") != "ok":
+                        cli_failures.append(ring_trace)
+            if not canonical_intermediate:
+                item["validation_error"] = intermediate_diag
+                item["chemistry_error_code"] = (
+                    intermediate_diag.get("code") if isinstance(intermediate_diag, dict) else "smiles_parse"
+                )
+                return False, "intermediate_smiles_invalid"
+            is_degenerate, degenerate_reason = _is_degenerate_intermediate_smiles(canonical_intermediate)
+            if is_degenerate:
+                item["chemistry_error_code"] = degenerate_reason
+                item["validation_error"] = {
+                    "field": "candidate.intermediate_smiles",
+                    "code": degenerate_reason,
+                    "message": f"Degenerate intermediate rejected: {canonical_intermediate}",
+                    "input": canonical_intermediate,
+                }
+                return False, degenerate_reason
+            item["intermediate_smiles"] = canonical_intermediate
+
+            resulting_state_raw = item.get("resulting_state")
+            if resulting_state_raw is not None:
+                if not isinstance(resulting_state_raw, list):
+                    item["validation_error"] = {
+                        "field": "candidate.resulting_state",
+                        "code": "resulting_state_not_list",
+                        "message": "resulting_state must be an array of SMILES",
+                        "input": str(resulting_state_raw),
+                    }
+                    item["chemistry_error_code"] = "resulting_state_not_list"
+                    return False, "resulting_state_invalid"
+                validated_state: List[str] = []
+                seen_state: set[str] = set()
+                for idx, species in enumerate(resulting_state_raw):
+                    canonical_species, species_diag = _validate_smiles_with_diagnostics(
+                        species,
+                        field_name=f"candidate.resulting_state[{idx}]",
+                    )
+                    if not canonical_species and retry_mode:
+                        repaired_species, auto_traces, auto_applied = _auto_repair_smiles_with_cli(
+                            str(species or ""),
+                            backend_config={"chemistry_backend": "rdkit_cli"},
+                        )
+                        executed_cli_commands.extend(auto_traces)
+                        if repaired_species:
+                            for applied in auto_applied:
+                                cli_applied_fixes.append(
+                                    {
+                                        "command": str(applied.get("command") or "auto-repair"),
+                                        "apply_to": f"resulting_state[{idx}]",
+                                        "before": str(applied.get("before") or species),
+                                        "after": str(applied.get("after") or repaired_species),
+                                    }
+                                )
+                            canonical_species, species_diag = _validate_smiles_with_diagnostics(
+                                repaired_species,
+                                field_name=f"candidate.resulting_state[{idx}]",
+                            )
+                    if not canonical_species:
+                        item["validation_error"] = species_diag
+                        item["chemistry_error_code"] = (
+                            species_diag.get("code") if isinstance(species_diag, dict) else "smiles_parse"
+                        )
+                        return False, "resulting_state_invalid"
+                    if canonical_species in seen_state:
+                        continue
+                    seen_state.add(canonical_species)
+                    validated_state.append(canonical_species)
+                item["resulting_state"] = validated_state
+
             repaired, repair_reason = repair_candidate_reaction_smirks(
                 reaction_smirks=item.get("reaction_smirks"),
                 electron_pushes=item.get("electron_pushes"),
@@ -4400,6 +5966,19 @@ def propose_intermediates(
             item["reaction_smirks"] = repaired
             if repair_reason:
                 item["mechanism_move_repair"] = repair_reason
+            # Proposal-time filtering should only reject malformed SMIRKS payloads.
+            # Full mechanism-step progression checks happen later in deterministic
+            # validation, where current/resulting state context is available.
+            reaction_ok, reaction_diag = _validate_reaction_smirks_payload(
+                repaired,
+                backend_config={"chemistry_backend": "python"},
+            )
+            if not reaction_ok:
+                item["validation_error"] = reaction_diag
+                item["chemistry_error_code"] = (
+                    reaction_diag.get("code") if isinstance(reaction_diag, dict) else "reaction_smirks_invalid"
+                )
+                return False, "reaction_smirks_invalid"
             dbe_entries = synthesize_dbe_entries(item.get("electron_pushes"))
             if dbe_entries:
                 item["dbe_repair"] = "synthesized_dbe_from_electron_pushes"
@@ -4408,6 +5987,37 @@ def propose_intermediates(
             valid_pushes = normalize_electron_pushes(item.get("electron_pushes"))
             if not valid_pushes:
                 return False, "invalid_electron_pushes"
+
+            if retry_mode:
+                resulting_for_check = list(item.get("resulting_state") or [])
+                if not resulting_for_check and canonical_intermediate:
+                    resulting_for_check = list(current_state)
+                    if canonical_intermediate not in resulting_for_check:
+                        resulting_for_check.append(canonical_intermediate)
+                dbe_payload = str(item.get("inferred_dbe") or "")
+                check_trace = _run_rdkit_cli_command(
+                    command="check",
+                    args={
+                        "mechanism_step": True,
+                        "current_state": list(current_state),
+                        "resulting_state": resulting_for_check,
+                        "resulting_state_changed": bool(resulting_for_check != list(current_state)),
+                        "unchanged_starting_materials_detected": False,
+                        "bond_electron_validation": {"valid": True, "message": "retry_preflight"},
+                        "dbe": dbe_payload,
+                    },
+                    backend_config={"chemistry_backend": "rdkit_cli"},
+                )
+                executed_cli_commands.append(check_trace)
+                if check_trace.get("status") != "ok":
+                    cli_failures.append(check_trace)
+                else:
+                    output = check_trace.get("output")
+                    if isinstance(output, dict) and output.get("overall_pass") is False:
+                        item["cli_retry_check"] = {
+                            "failed_check_names": list(output.get("failed_check_names") or []),
+                            "fix_suggestions": list(output.get("fix_suggestions") or []),
+                        }
             return True, ""
         if structured_payload:
             # New schema: candidates[] with rank, intermediate_smiles, reaction_description
@@ -4428,6 +6038,8 @@ def propose_intermediates(
                                 "reason": reject_reason,
                                 "mechanism_move_repair": item.get("mechanism_move_repair"),
                                 "dbe_repair": item.get("dbe_repair"),
+                                "chemistry_error_code": item.get("chemistry_error_code"),
+                                "validation_error": item.get("validation_error"),
                             }
                         )
                         continue
@@ -4448,6 +6060,8 @@ def propose_intermediates(
                             "mechanism_move_repair": item.get("mechanism_move_repair"),
                             "dbe_repair": item.get("dbe_repair"),
                             "inferred_dbe": item.get("inferred_dbe"),
+                            "rdkit_cli_commands": item.get("rdkit_cli_commands"),
+                            "cli_retry_check": item.get("cli_retry_check"),
                             "source": "model_json",
                         }
                     )
@@ -4601,6 +6215,12 @@ def propose_intermediates(
             "executable_candidate_count": executable_candidate_count,
             "has_executable_candidates": has_executable_candidates,
         }
+        if executed_cli_commands:
+            result["executed_cli_commands"] = executed_cli_commands
+        if cli_failures:
+            result["cli_failures"] = cli_failures
+        if cli_applied_fixes:
+            result["cli_applied_fixes"] = cli_applied_fixes
 
         # Include ranked candidates from multi-candidate schema.
         if ranked_candidates:
@@ -4671,6 +6291,9 @@ def propose_intermediates(
                     _mol_from_smiles(str(smiles_value)), canonical=True
                 )
             except Exception:
+                return
+            is_degenerate, _degenerate_reason = _is_degenerate_intermediate_smiles(canonical)
+            if is_degenerate:
                 return
             if canonical in seen:
                 return
@@ -4957,7 +6580,13 @@ def predict_mechanistic_step(
     if not resulting_state_changed:
         is_unchanged_starting_materials = True
 
-    contains_products = any(product in resulting_state for product in target_products)
+    target_state = assess_target_product_state(
+        current_state=current_state,
+        resulting_state=resulting_state,
+        target_products=target_products,
+        starting_materials=starting_materials,
+    )
+    contains_products = bool(target_state["contains_target_product"])
 
     raw_reaction_smirks: Optional[str] = None
     reaction_smirks_core: Optional[str] = None
@@ -5018,6 +6647,11 @@ def predict_mechanistic_step(
         "predicted_intermediate": predicted_intermediate,
         "electron_pushes": cleaned_pushes,
         "contains_target_product": contains_products,
+        "matched_target_products": list(target_state["matched_target_products"]),
+        "matched_primary_target_products": list(target_state["matched_primary_target_products"]),
+        "primary_target_products": list(target_state["primary_target_products"]),
+        "productive_target_products": list(target_state["productive_target_products"]),
+        "spectator_target_products": list(target_state["spectator_target_products"]),
         "reverse_reaction_detected": is_reverse,
         "unchanged_starting_materials_detected": is_unchanged_starting_materials,
         "resulting_state_changed": resulting_state_changed,

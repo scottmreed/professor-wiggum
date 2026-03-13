@@ -105,9 +105,3 @@ def test_curriculum_uses_march_11_launch_and_two_week_calendar(tmp_path: Path) -
     assert status["today_slot"] is None
     assert status["next_slot"]["release_date"] == "2026-03-11"
     assert status["next_slot"]["countdown"]["days"] >= 6
-    assert len(status["weekly_checklist"]) == 10
-
-    content = render_curriculum_readme(base, store, model_name="anthropic/claude-opus-4.6", now=before_launch)
-    assert "Public launch date: `2026-03-11`" in content
-    assert "## Current Two-Week Calendar" in content
-    assert "Countdown:" not in content

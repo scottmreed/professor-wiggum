@@ -1,0 +1,8 @@
+{
+  "name": "professor-wiggum",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "rdkit_cli": "^0.1.0"
+  }
+}

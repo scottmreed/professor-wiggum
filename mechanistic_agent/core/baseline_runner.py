@@ -20,7 +20,11 @@ from mechanistic_agent.llm import (
     adapter_supports_forced_tools,
     extract_text_content,
     get_chat_model,
+    is_anthropic_model,
+    is_gemini_model,
+    is_openrouter_model,
 )
+from mechanistic_agent.smiles_utils import assess_target_product_state
 from mechanistic_agent.tool_schemas import PREDICT_FULL_MECHANISM_TOOL, build_tool_choice
 
 # Sentinel group name for baseline runs – checked by leaderboard() to set is_baseline.
@@ -129,12 +133,14 @@ def _steps_to_synthetic_snapshot(
         predicted = str(step.get("predicted_intermediate") or "").strip() or None
         contains_product = bool(step.get("contains_target_product", False))
 
-        # If the model didn't set contains_target_product, infer from products overlap.
         if not contains_product:
-            for p in products:
-                if p in resulting_state:
-                    contains_product = True
-                    break
+            target_state = assess_target_product_state(
+                current_state=current_state,
+                resulting_state=resulting_state,
+                target_products=products,
+                starting_materials=starting_materials,
+            )
+            contains_product = bool(target_state["contains_target_product"])
 
         events.append(
             {
@@ -179,6 +185,66 @@ def _steps_to_synthetic_snapshot(
     }
 
 
+def _resolve_user_api_key_for_model(model: str, api_keys: Optional[Dict[str, str]]) -> Optional[str]:
+    """Select the correct provider API key from a mixed key dictionary."""
+    if not api_keys:
+        return None
+
+    def _first(*names: str) -> Optional[str]:
+        for name in names:
+            value = api_keys.get(name)
+            if value:
+                return str(value)
+        return None
+
+    if is_gemini_model(model):
+        return _first(
+            "google_api_key",
+            "GOOGLE_API_KEY",
+            "gemini_api_key",
+            "GEMINI_API_KEY",
+            "vertex_api_key",
+            "VERTEX_API_KEY",
+        )
+    if is_anthropic_model(model):
+        return _first("anthropic_api_key", "ANTHROPIC_API_KEY")
+    if is_openrouter_model(model):
+        # Compatibility: when users only configure ANTHROPIC_API_KEY for OpenRouter-routed
+        # Anthropic models, keep that as fallback.
+        return _first(
+            "openrouter_api_key",
+            "OPENROUTER_API_KEY",
+            "anthropic_api_key",
+            "ANTHROPIC_API_KEY",
+        )
+    return _first("openai_api_key", "OPENAI_API_KEY")
+
+
+def _normalise_baseline_reasoning_payload(model: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Clamp reasoning payload to provider-supported options for baseline calls."""
+    normalized = dict(payload or {})
+    if not normalized:
+        return normalized
+
+    effort_value = normalized.get("effort")
+    if isinstance(effort_value, str):
+        effort_map = {
+            "max": "xhigh",
+            "lowest": "none",
+            "disabled": "none",
+            "off": "none",
+        }
+        normalized["effort"] = effort_map.get(effort_value.strip().lower(), effort_value.strip().lower())
+
+    # OpenRouter baseline calls are most stable with effort-only controls.
+    if is_openrouter_model(model) and isinstance(normalized.get("thinking"), dict):
+        thinking_type = str(normalized["thinking"].get("type") or "").strip().lower()
+        if thinking_type in {"disabled", "none", "off"}:
+            normalized["effort"] = "none"
+        normalized.pop("thinking", None)
+    return normalized
+
+
 class BaselineRunner:
     """Single-shot harness-free mechanism evaluator.
 
@@ -218,11 +284,20 @@ class BaselineRunner:
         start_ts = time.time()
 
         model_kwargs: Dict[str, Any] = {}
+        from mechanistic_agent.model_registry import (
+            build_reasoning_payload,
+            get_default_reasoning_level,
+            to_internal_reasoning_level,
+        )
+        effective_level: Optional[str] = None
         if thinking_level:
-            from mechanistic_agent.model_registry import to_internal_reasoning_level
-            internal = to_internal_reasoning_level(thinking_level)
-            if internal:
-                model_kwargs["reasoning_effort"] = internal
+            effective_level = to_internal_reasoning_level(thinking_level)
+        if not effective_level:
+            effective_level = get_default_reasoning_level(model)
+        if effective_level:
+            payload = build_reasoning_payload(model, effective_level)
+            if payload:
+                model_kwargs.update(_normalise_baseline_reasoning_payload(model, payload))
         policy = str(sampling_policy or "fixed").strip().lower()
         if policy not in {"fixed", "provider_default"}:
             policy = "fixed"
@@ -231,13 +306,7 @@ class BaselineRunner:
             model_kwargs["seed"] = int(requested_seed)
         requested_temperature = float(llm_temperature) if (policy == "fixed" and llm_temperature is not None) else None
 
-        user_key: Optional[str] = None
-        if api_keys:
-            for k in ("openai_api_key", "OPENAI_API_KEY", "google_api_key", "GOOGLE_API_KEY",
-                      "openrouter_api_key", "OPENROUTER_API_KEY"):
-                if api_keys.get(k):
-                    user_key = api_keys[k]
-                    break
+        user_key = _resolve_user_api_key_for_model(model, api_keys)
 
         system_prompt = _load_baseline_system_prompt()
         user_message = _build_user_message(

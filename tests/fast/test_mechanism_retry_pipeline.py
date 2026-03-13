@@ -124,6 +124,38 @@ def test_loop_requests_reproposal_for_incomplete_candidate_payload() -> None:
     assert state.step_index == 0
 
 
+def test_empty_candidate_payload_fails_as_incomplete_loop() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=5.0)
+    state.run_config.max_reproposals_per_step = 1
+    coordinator._record_step = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+
+    class _EmptyIntermediateAgent:
+        def run(self, _state: RunState) -> StepResult:
+            return StepResult(
+                step_name="mechanism_step_proposal",
+                tool_name="propose_mechanism_step",
+                output={
+                    "status": "fallback",
+                    "non_executable_fallback": True,
+                    "candidates": [],
+                    "analysis": "No executable candidates",
+                },
+                source="llm",
+            )
+
+    coordinator.intermediate_agent = _EmptyIntermediateAgent()  # type: ignore[assignment]
+    coordinator._run_mechanism_loop(state, threading.Event())
+
+    requested = [ev for ev in store.events if ev["event_type"] == "mechanism_reproposal_requested"]
+    assert requested
+    assert requested[-1]["payload"]["reason"] == "incomplete_candidate_payload"
+    failed = [ev for ev in store.events if ev["event_type"] == "run_failed"]
+    assert failed
+    assert failed[-1]["payload"]["reason"] == "proposal_incomplete_loop"
+
+
 def test_candidate_ready_for_execution_accepts_modern_electron_push_schema() -> None:
     candidate = {
         "rank": 1,

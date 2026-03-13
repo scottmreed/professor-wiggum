@@ -85,7 +85,11 @@ from mechanistic_agent.prompt_assets import (
     unified_prompt_diff,
 )
 from mechanistic_agent.prompt_trace_validator import validate_evidence_for_calls
-from mechanistic_agent.smiles_utils import strip_atom_mapping_list, strip_atom_mapping_optional
+from mechanistic_agent.smiles_utils import (
+    normalize_species_for_matching,
+    strip_atom_mapping_list,
+    strip_atom_mapping_optional,
+)
 from mechanistic_agent.tools import classify_functional_group_transformation, predict_mechanistic_step
 from mechanistic_agent.core.validators import validate_mechanism_step_output
 
@@ -1067,8 +1071,8 @@ def _grade_eval_snapshot(snapshot: Dict[str, Any], expected: Dict[str, Any]) -> 
 
 def _find_known_expected_for_snapshot(store: RunStore, snapshot: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     payload = snapshot.get("input_payload") or {}
-    starting = sorted([str(x).strip() for x in payload.get("starting_materials") or [] if str(x).strip()])
-    products = sorted([str(x).strip() for x in payload.get("products") or [] if str(x).strip()])
+    starting = sorted(normalize_species_for_matching([str(x) for x in payload.get("starting_materials") or []]))
+    products = sorted(normalize_species_for_matching([str(x) for x in payload.get("products") or []]))
     if not starting or not products:
         return None
 
@@ -1078,8 +1082,12 @@ def _find_known_expected_for_snapshot(store: RunStore, snapshot: Dict[str, Any])
             continue
         for case in store.list_eval_set_cases(eval_set_id):
             input_payload = case.get("input") or {}
-            case_starting = sorted([str(x).strip() for x in input_payload.get("starting_materials") or [] if str(x).strip()])
-            case_products = sorted([str(x).strip() for x in input_payload.get("products") or [] if str(x).strip()])
+            case_starting = sorted(
+                normalize_species_for_matching([str(x) for x in input_payload.get("starting_materials") or []])
+            )
+            case_products = sorted(
+                normalize_species_for_matching([str(x) for x in input_payload.get("products") or []])
+            )
             if case_starting == starting and case_products == products:
                 expected = case.get("expected")
                 if isinstance(expected, dict):
@@ -1370,6 +1378,10 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         arrow_push_annotation_enabled: bool,
         adaptive_harness_mode: str,
         dbe_policy: str,
+        chemistry_backend: str = "auto",
+        chemistry_backend_parity: bool = False,
+        rdkit_cli_command: str | None = None,
+        rdkit_cli_timeout_seconds: float = 5.0,
         reaction_template_policy: str,
         reaction_template_confidence_threshold: float,
         reaction_template_margin_threshold: float,
@@ -1433,6 +1445,10 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 "arrow_push_annotation_enabled": arrow_push_annotation_enabled,
                 "adaptive_harness_mode": resolved_adaptive_mode,
                 "dbe_policy": dbe_policy,
+                "chemistry_backend": str(chemistry_backend or "auto"),
+                "chemistry_backend_parity": bool(chemistry_backend_parity),
+                "rdkit_cli_command": str(rdkit_cli_command or "rdkit_cli"),
+                "rdkit_cli_timeout_seconds": float(rdkit_cli_timeout_seconds or 5.0),
                 "reaction_template_policy": reaction_template_policy,
                 "reaction_template_confidence_threshold": reaction_template_confidence_threshold,
                 "reaction_template_margin_threshold": reaction_template_margin_threshold,
@@ -1798,6 +1814,10 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             arrow_push_annotation_enabled=payload.arrow_push_annotation_enabled,
             adaptive_harness_mode=payload.adaptive_harness_mode,
             dbe_policy=payload.dbe_policy,
+            chemistry_backend=payload.chemistry_backend,
+            chemistry_backend_parity=payload.chemistry_backend_parity,
+            rdkit_cli_command=payload.rdkit_cli_command,
+            rdkit_cli_timeout_seconds=payload.rdkit_cli_timeout_seconds,
             reaction_template_policy=payload.reaction_template_policy,
             reaction_template_confidence_threshold=payload.reaction_template_confidence_threshold,
             reaction_template_margin_threshold=payload.reaction_template_margin_threshold,
@@ -1924,6 +1944,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         validation_obj = validate_mechanism_step_output(
             output,
             dbe_policy=str(cfg.get("dbe_policy") or "soft"),
+            run_config=cfg,
         )
         validation = validation_obj.as_dict()
         attempt = int(payload.step_index)
@@ -2150,6 +2171,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "latest_step_mapping": snapshot.get("latest_step_mapping"),
             "reaction_type_selection": snapshot.get("reaction_type_selection"),
             "template_guidance_state": snapshot.get("template_guidance_state"),
+            "overall_balance": snapshot.get("overall_balance"),
             "pending_verification": snapshot.get("pending_verification", []),
             "latest_pause": snapshot.get("latest_pause"),
             "ralph_attempts": snapshot.get("ralph_attempts", []),
@@ -3794,6 +3816,23 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             )
         )
         return results
+
+    @app.get("/api/examples/progress")
+    def list_example_progress(
+        model_name: str,
+        thinking_level: str | None = None,
+        model_family: str | None = None,
+    ) -> Dict[str, Any]:
+        resolved_model_name = _resolve_model_name(model_name, None)
+        normalized_thinking = str(thinking_level or "").strip().lower()
+        normalized_family = str(model_family or "").strip().lower() or None
+        items = store.list_case_attempt_history(
+            model_name=resolved_model_name,
+            thinking_level=normalized_thinking,
+            model_family=normalized_family,
+            case_ids=None,
+        )
+        return {"items": items}
 
     @app.post("/api/parse_smirks")
     def parse_smirks(payload: Dict[str, Any]) -> Dict[str, Any]:

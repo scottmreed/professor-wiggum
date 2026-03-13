@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -128,6 +129,38 @@ def test_predict_mechanistic_step_dedupes_resulting_state() -> None:
     assert payload["resulting_state"].count("CCCl") == 1
 
 
+def test_predict_mechanistic_step_requires_primary_target_not_small_byproduct() -> None:
+    raw = predict_mechanistic_step(
+        step_index=1,
+        current_state=["CCBr", "[Cl-]"],
+        target_products=["CCCl", "[Br-]"],
+        electron_pushes=[{"start_atom": "1", "end_atom": "2", "electrons": 2}],
+        predicted_intermediate="CC(Cl)Br",
+        resulting_state=["CC(Cl)Br", "[Br-]"],
+        starting_materials=["CCBr", "[Cl-]"],
+    )
+    payload = json.loads(raw)
+    assert payload["contains_target_product"] is False
+    assert payload["matched_target_products"] == ["[Br-]"]
+    assert payload["primary_target_products"] == ["CCCl"]
+
+
+def test_predict_mechanistic_step_ignores_target_spectators_present_from_start() -> None:
+    raw = predict_mechanistic_step(
+        step_index=1,
+        current_state=["F[P-](F)(F)(F)(F)F", "O=C(O)O"],
+        target_products=["CCC(=O)N", "F[P-](F)(F)(F)(F)F"],
+        electron_pushes=[{"start_atom": "1", "end_atom": "2", "electrons": 2}],
+        predicted_intermediate="CCOC(=O)N",
+        resulting_state=["CCOC(=O)N", "F[P-](F)(F)(F)(F)F"],
+        starting_materials=["F[P-](F)(F)(F)(F)F", "O=C(O)O"],
+    )
+    payload = json.loads(raw)
+    assert payload["contains_target_product"] is False
+    assert payload["spectator_target_products"] == ["F[P-](F)(F)(F)(F)F"]
+    assert payload["primary_target_products"] == ["CCC(N)=O"]
+
+
 def test_soft_dbe_policy_allows_warning_only_dbe_failure() -> None:
     payload = {
         "current_state": ["CCBr", "[Cl-]"],
@@ -140,6 +173,58 @@ def test_soft_dbe_policy_allows_warning_only_dbe_failure() -> None:
     soft = validate_mechanism_step_output(payload, dbe_policy="soft")
     assert strict.passed is False
     assert soft.passed is True
+
+
+def test_runtime_trace_logs_compact_candidate_and_smirks_without_full_response(capsys: Any) -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=0.02)
+    state.run_config.runtime_trace_enabled = True
+    state.run_config.runtime_trace_label = "flower_test_123"
+
+    coordinator._mark_step_started(
+        state,
+        step_name="mechanism_step_proposal",
+        tool_name="propose_mechanism_step",
+        attempt=1,
+        retry_index=0,
+    )
+    coordinator._record_step(
+        state,
+        StepResult(
+            step_name="mechanism_step_proposal",
+            tool_name="propose_mechanism_step",
+            output={
+                "analysis": "Very long hidden model reasoning that should not be printed verbatim.",
+                "candidates": [
+                    {
+                        "rank": 1,
+                        "intermediate_smiles": "CCCl",
+                        "reaction_smirks": "[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3] |dbe:2-3:-2;2-4:+2;3-3:+2;4-4:-2|",
+                        "electron_pushes": [{"start_atom": "2", "end_atom": "4", "electrons": 2}],
+                        "resulting_state": ["CCCl", "[Br-]"],
+                    }
+                ],
+                "rejected_candidates": [
+                    {
+                        "rank": 2,
+                        "intermediate_smiles": "bad",
+                    }
+                ],
+            },
+            attempt=1,
+            retry_index=0,
+            source="llm",
+        ),
+    )
+
+    captured = capsys.readouterr().out
+    assert "TRACE[flower_test_123 step=mechanism_step_proposal attempt=1 retry=0]" in captured
+    assert "tool=propose_mechanism_step" in captured
+    assert "smiles=CCCl" in captured
+    assert "smirks=[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3]" in captured
+    assert "rejected=1" in captured
+    assert "hidden model reasoning" not in captured
 
 
 def test_repeat_failure_requests_reproposal() -> None:
@@ -913,11 +998,84 @@ def test_proposal_empty_activates_low_risk_mode() -> None:
 
     assert state.run_config.coordination_topology == "sas"
     assert state.run_config.candidate_rescue_enabled is False
-    assert state.run_config.step_mapping_enabled is False
+    assert state.run_config.step_mapping_enabled is True
     assert state.adaptive_runtime_state["mode"] == "low_risk"
     changed_events = [ev for ev in store.events if ev["event_type"] == "adaptive_harness_mode_changed"]
     assert changed_events
     assert changed_events[-1]["payload"]["reason"] == "proposal_empty"
+    assert changed_events[-1]["payload"]["step_mapping_enabled"] is True
+
+
+def test_prevalidate_candidate_rejects_forbidden_species_in_acidic_mode() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state()
+
+    coordinator._build_proposal_constraint_guidance = lambda _state: {  # type: ignore[method-assign]
+        "proposal_constraints": {
+            "environment": "acidic",
+            "forbidden_new_species": ["[OH-]"],
+            "persistent_species": [],
+            "conjugate_pairs": [{"left": "[OH3+]", "right": "O", "role": "proton_shuttle"}],
+        }
+    }
+
+    candidate, violation = coordinator._prevalidate_candidate_against_constraints(
+        state,
+        {
+            "rank": 1,
+            "intermediate_smiles": "CCCl",
+            "resulting_state": ["CCCl", "[Br-]", "[OH-]"],
+        },
+    )
+
+    assert candidate["resulting_state"] == ["CCCl", "[Br-]", "[OH-]"]
+    assert violation is not None
+    assert violation["reason"] == "forbidden_new_species"
+    assert violation["species"] == ["[OH-]"]
+
+
+def test_prevalidate_candidate_repairs_persistent_counterion_and_merges_template_byproducts() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state()
+    state.current_state = ["CCBr", "[Cl-]", "[Na+]"]
+    state.selected_reaction_template = {"canonical_byproducts": ["O"]}
+
+    coordinator._latest_output_by_step = lambda _run_id, step_name: (  # type: ignore[method-assign]
+        {
+            "proposal_constraints": {
+                "environment": "basic",
+                "persistent_species": ["[Na+]"],
+                "spectator_species": ["[Na+]"],
+                "counterion_species": ["[Na+]"],
+                "allowed_generated_species": [],
+                "canonical_byproducts": [],
+                "conjugate_pairs": [{"left": "[OH-]", "right": "O", "role": "proton_shuttle"}],
+            },
+            "species_registry": [{"species": "[Na+]", "roles": ["counterion", "spectator"], "tags": ["persistent"]}],
+        }
+        if step_name == "missing_reagents"
+        else None
+    )
+
+    guidance = coordinator._build_proposal_constraint_guidance(state)
+    assert guidance is not None
+    assert "O" in guidance["proposal_constraints"]["canonical_byproducts"]
+    assert "O" in guidance["proposal_constraints"]["allowed_generated_species"]
+
+    repaired_candidate, violation = coordinator._prevalidate_candidate_against_constraints(
+        state,
+        {
+            "rank": 1,
+            "intermediate_smiles": "CCCl",
+            "resulting_state": ["CCCl", "[Br-]"],
+        },
+    )
+
+    assert violation is None
+    assert "[Na+]" in repaired_candidate["resulting_state"]
+    assert "constraint_repairs" in repaired_candidate
 
 
 def test_remaining_mechanism_fallback_candidate_is_reingested() -> None:
@@ -1103,3 +1261,135 @@ def test_candidate_execution_exception_is_structured_failure() -> None:
     assert result["status"] == "failed"
     assert result["reason"] == "candidate_execution_exception"
     assert any(ev["event_type"] == "mechanism_candidate_execution_exception" for ev in store.events)
+
+
+def test_candidate_rescue_skipped_when_runtime_guard_triggers() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=1.0)
+    state.run_config.retry_same_candidate_max = 1
+    state.run_config.candidate_rescue_enabled = True
+    coordinator._record_step = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+    coordinator._record_validation_checks = lambda *_args, **_kwargs: None  # type: ignore[method-assign]
+
+    class _FailingMechanismAgent:
+        def run(self, _state: RunState, _output: Dict[str, Any], *, retry_feedback: Optional[Dict[str, Any]] = None) -> StepResult:
+            return StepResult(
+                step_name="mechanism_synthesis",
+                tool_name="predict_mechanistic_step",
+                output={
+                    "current_state": ["CCBr", "[Cl-]"],
+                    "resulting_state": ["CCCl", "[Br-]", "O"],
+                    "reaction_smirks": "[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3] |dbe:2-3:-2;2-4:+2;3-3:+2;4-4:-2|",
+                    "electron_pushes": [{"start_atom": "2", "end_atom": "4", "electrons": 2}],
+                    "contains_target_product": False,
+                },
+                source="llm",
+            )
+
+    coordinator.mechanism_agent = _FailingMechanismAgent()  # type: ignore[assignment]
+
+    def _should_not_run_rescue(*_args: Any, **_kwargs: Any) -> StepResult:
+        raise AssertionError("candidate_rescue should be skipped when runtime guard triggers")
+
+    coordinator._attempt_candidate_rescue = _should_not_run_rescue  # type: ignore[method-assign]
+
+    candidate = {
+        "rank": 1,
+        "intermediate_smiles": "CCCl",
+        "reaction_smirks": "[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3] |dbe:2-3:-2;2-4:+2;3-3:+2;4-4:-2|",
+        "electron_pushes": [{"start_atom": "2", "end_atom": "4", "electrons": 2}],
+        "resulting_state": ["CCCl", "[Br-]", "O"],
+    }
+
+    result = coordinator._try_candidate_with_retries(
+        state,
+        candidate,
+        {"selected_candidate": candidate},
+        enabled_validators={"atom_balance_validation"},
+        loop_start=time.monotonic() - 0.95,
+    )
+    assert result["status"] == "failed"
+    assert any(ev["event_type"] == "candidate_rescue_skipped_runtime_guard" for ev in store.events)
+
+
+def test_step_mapping_skipped_when_runtime_guard_triggers() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(max_steps=1, max_runtime_seconds=1.0)
+    state.run_config.step_mapping_enabled = True
+
+    class _Reflection:
+        def run(self, _state: RunState, _latest_output: Dict[str, Any]) -> StepResult:
+            return StepResult(
+                step_name="reflection",
+                tool_name="reflection_agent",
+                output={"warnings": []},
+                source="deterministic",
+            )
+
+    class _Mapping:
+        def run_step_mapping(self, _state: RunState, *, current_state: List[str], resulting_state: List[str]) -> StepResult:
+            raise AssertionError("step mapping should be skipped when runtime guard triggers")
+
+    coordinator.reflection_agent = _Reflection()  # type: ignore[assignment]
+    coordinator.mapping_agent = _Mapping()  # type: ignore[assignment]
+
+    chosen = BranchCandidate(
+        rank=1,
+        intermediate_smiles="CCCl",
+        intermediate_output={"rank": 1, "intermediate_smiles": "CCCl"},
+        mechanism_output={
+            "current_state": ["CCBr", "[Cl-]"],
+            "resulting_state": ["CCCl", "[Br-]"],
+            "contains_target_product": False,
+        },
+        resulting_state=["CCCl", "[Br-]"],
+    )
+
+    coordinator._run_post_step_modules(
+        state,
+        chosen,
+        harness=None,
+        loop_start=time.monotonic() - 0.95,
+    )
+    assert any(ev["event_type"] == "step_mapping_skipped_runtime_guard" for ev in store.events)
+
+
+def test_proposal_quality_summary_reports_normalized_chemistry_error_codes() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    summary = coordinator._summarize_proposal_quality(
+        attempt=1,
+        candidates=[{"rank": 1, "intermediate_smiles": "CCCl"}],
+        rejected_candidate_count=0,
+        candidate_attempts=[
+            (
+                {"rank": 1, "intermediate_smiles": "CCCl"},
+                {
+                    "status": "failed",
+                    "reason": "validation_failed",
+                    "last_validation": {
+                        "checks": [
+                            {
+                                "name": "atom_balance",
+                                "passed": False,
+                                "details": {
+                                    "error": "Explicit valence for atom # 1 C, 5, is greater than permitted"
+                                },
+                            },
+                            {
+                                "name": "state_progress",
+                                "passed": False,
+                                "details": {"error": "Can't kekulize mol.  Unkekulized atoms: 18"},
+                            },
+                        ]
+                    },
+                },
+            )
+        ],
+    )
+
+    assert summary["chemistry_error_codes"]["explicit_valence"] == 1
+    assert summary["chemistry_error_codes"]["kekulize_fail"] == 1
+    assert summary["first_chemistry_error_code"] == "explicit_valence"

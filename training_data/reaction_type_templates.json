@@ -1,0 +1,3429 @@
+{
+  "meta": {
+    "generated_at": "2026-03-13T22:42:31.786162+00:00",
+    "source": "training_data/reaction_type_templates.json",
+    "count": 53
+  },
+  "templates": [
+    {
+      "type_id": "mt_001",
+      "label_exact": "DCC condensation",
+      "slug": "dcc_condensation",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 4,
+      "current_state_generic": [
+        "R-CO2H",
+        "R'-NH2",
+        "DCC"
+      ],
+      "resulting_state_generic": [
+        "R-CONHR'",
+        "DCU"
+      ],
+      "generic_notes": "Carbodiimide-mediated coupling template.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-CO2H.R'-NH2.DCC>>activated_O-acylurea |dbe:C-O:-2;C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R'-NH2:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Amine attack on activated acyl intermediate."
+            }
+          ],
+          "note": "Template stage 1/4 for DCC condensation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "activated_O-acylurea>>R-CONHR'.DCU |dbe:C-O:-2;C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R'-NH2:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Amine attack on activated acyl intermediate."
+            }
+          ],
+          "note": "Template stage 2/4 for DCC condensation."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "activated_O-acylurea>>R-CONHR'.DCU |dbe:C-O:-2;C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R'-NH2:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Amine attack on activated acyl intermediate."
+            }
+          ],
+          "note": "Template stage 3/4 for DCC condensation."
+        },
+        {
+          "step_index": 4,
+          "reaction_generic": "activated_O-acylurea>>R-CONHR'.DCU |dbe:C-O:-2;C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R'-NH2:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Amine attack on activated acyl intermediate."
+            }
+          ],
+          "note": "Template stage 4/4 for DCC condensation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_002",
+      "label_exact": "Nucleophilic attack to (thio)carbonyl",
+      "slug": "nucleophilic_attack_to_thio_carbonyl",
+      "canonical_group": "addition_attack",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R2C=O or R2C=S",
+        "Nu-"
+      ],
+      "resulting_state_generic": [
+        "R2C( Nu)(O-) or R2C(Nu)(S-)"
+      ],
+      "generic_notes": "General tetrahedral intermediate-forming addition.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R2C=E.Nu>>R2C(Nu)E- |dbe:C-E:+2;Nu-Nu:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "C=E",
+              "electrons": 2,
+              "description": "Nucleophile adds to heterocarbonyl carbon."
+            }
+          ],
+          "note": "Template stage 1/2 for Nucleophilic attack to (thio)carbonyl."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R2C=E.Nu>>R2C(Nu)E- |dbe:C-E:+2;Nu-Nu:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "C=E",
+              "electrons": 2,
+              "description": "Nucleophile adds to heterocarbonyl carbon."
+            }
+          ],
+          "note": "Template stage 2/2 for Nucleophilic attack to (thio)carbonyl."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_003",
+      "label_exact": "SN2 reaction",
+      "slug": "sn2_reaction",
+      "canonical_group": "substitution",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "R-Br",
+        "Cl-"
+      ],
+      "resulting_state_generic": [
+        "R-Cl",
+        "Br-"
+      ],
+      "generic_notes": "Canonical bimolecular substitution template.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-Br.Cl>>R-Cl.Br- |dbe:C-Br:-2;C-Cl:+2;Cl-Cl:-2;Br-Br:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Cl:lp",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Backside attack by chloride."
+            },
+            {
+              "start_atom": "C-Br",
+              "end_atom": "Br",
+              "electrons": 2,
+              "description": "C-Br bond breaks to bromide."
+            }
+          ],
+          "note": "Template stage 1/1 for SN2 reaction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_004",
+      "label_exact": "SN2 reaction with alcohol(thiol)",
+      "slug": "sn2_reaction_with_alcohol_thiol",
+      "canonical_group": "substitution",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "R-LG",
+        "RO-"
+      ],
+      "resulting_state_generic": [
+        "R-OR",
+        "LG-"
+      ],
+      "generic_notes": "Williamson-like substitution motif.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-LG.RO>>R-OR.LG- |dbe:C-LG:-2;C-O:+2;O-O:-2;LG-LG:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O:lp",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Alkoxide/thiolate attack."
+            },
+            {
+              "start_atom": "C-LG",
+              "end_atom": "LG",
+              "electrons": 2,
+              "description": "Leaving-group departure."
+            }
+          ],
+          "note": "Template stage 1/1 for SN2 reaction with alcohol(thiol)."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_005",
+      "label_exact": "Boc deprotection",
+      "slug": "boc_deprotection",
+      "canonical_group": "deprotection",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-NH-CO2-tBu",
+        "H+"
+      ],
+      "resulting_state_generic": [
+        "R-NH2",
+        "CO2",
+        "isobutene"
+      ],
+      "generic_notes": "Acidic Boc cleavage.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-NH-CO2-tBu.H+>>R-NH2.CO2.isobutene |dbe:N-C:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "carbamate O",
+              "end_atom": "tert-butyl C",
+              "electrons": 2,
+              "description": "Acid-promoted tert-butyl cleavage."
+            }
+          ],
+          "note": "Template stage 1/3 for Boc deprotection."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-NH-CO2-tBu.H+>>R-NH2.CO2.isobutene |dbe:N-C:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "carbamate O",
+              "end_atom": "tert-butyl C",
+              "electrons": 2,
+              "description": "Acid-promoted tert-butyl cleavage."
+            }
+          ],
+          "note": "Template stage 2/3 for Boc deprotection."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "R-NH-CO2-tBu.H+>>R-NH2.CO2.isobutene |dbe:N-C:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "carbamate O",
+              "end_atom": "tert-butyl C",
+              "electrons": 2,
+              "description": "Acid-promoted tert-butyl cleavage."
+            }
+          ],
+          "note": "Template stage 3/3 for Boc deprotection."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_006",
+      "label_exact": "Reductive amination",
+      "slug": "reductive_amination",
+      "canonical_group": "other",
+      "suitable_step_count": 4,
+      "current_state_generic": [
+        "R2C=O",
+        "R'NH2",
+        "[H]"
+      ],
+      "resulting_state_generic": [
+        "R2CH-NHR'"
+      ],
+      "generic_notes": "Condensation + selective reduction.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R2C=O.R'NH2>>imine/iminium |dbe:C-N:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Imine formation stage."
+            },
+            {
+              "start_atom": "H-",
+              "end_atom": "C=N+",
+              "electrons": 2,
+              "description": "Reduction stage."
+            }
+          ],
+          "note": "Template stage 1/4 for Reductive amination."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "imine/iminium>>R2CH-NHR' |dbe:C-N:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Imine formation stage."
+            },
+            {
+              "start_atom": "H-",
+              "end_atom": "C=N+",
+              "electrons": 2,
+              "description": "Reduction stage."
+            }
+          ],
+          "note": "Template stage 2/4 for Reductive amination."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "imine/iminium>>R2CH-NHR' |dbe:C-N:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Imine formation stage."
+            },
+            {
+              "start_atom": "H-",
+              "end_atom": "C=N+",
+              "electrons": 2,
+              "description": "Reduction stage."
+            }
+          ],
+          "note": "Template stage 3/4 for Reductive amination."
+        },
+        {
+          "step_index": 4,
+          "reaction_generic": "imine/iminium>>R2CH-NHR' |dbe:C-N:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Imine formation stage."
+            },
+            {
+              "start_atom": "H-",
+              "end_atom": "C=N+",
+              "electrons": 2,
+              "description": "Reduction stage."
+            }
+          ],
+          "note": "Template stage 4/4 for Reductive amination."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_007",
+      "label_exact": "Alcohol attack to carbonyl or sulfonyl",
+      "slug": "alcohol_attack_to_carbonyl_or_sulfonyl",
+      "canonical_group": "addition_attack",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "E(=O)-LG",
+        "ROH"
+      ],
+      "resulting_state_generic": [
+        "E(=O)-OR",
+        "LGH"
+      ],
+      "generic_notes": "Covers acyl/sulfonyl substitution by alcohols.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "E(=O)-LG.ROH>>tetrahedral |dbe:E-LG:-2;E-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ROH:lp",
+              "end_atom": "E=O center",
+              "electrons": 2,
+              "description": "Alcohol attack on electrophile."
+            }
+          ],
+          "note": "Template stage 1/2 for Alcohol attack to carbonyl or sulfonyl."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "tetrahedral>>E(=O)-OR.LGH |dbe:E-LG:-2;E-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ROH:lp",
+              "end_atom": "E=O center",
+              "electrons": 2,
+              "description": "Alcohol attack on electrophile."
+            }
+          ],
+          "note": "Template stage 2/2 for Alcohol attack to carbonyl or sulfonyl."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_008",
+      "label_exact": "Nucleophilic attack to iso(thio)cyanate",
+      "slug": "nucleophilic_attack_to_iso_thio_cyanate",
+      "canonical_group": "addition_attack",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-N=C=E",
+        "Nu-"
+      ],
+      "resulting_state_generic": [
+        "R-N(-)-C(=E)-Nu"
+      ],
+      "generic_notes": "Isocyanate/isothiocyanate addition.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-N=C=E.Nu>>R-N(-)-C(=E)-Nu |dbe:C-Nu:+2;Nu-Nu:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "N=C=E carbon",
+              "electrons": 2,
+              "description": "Nu attack on cumulene carbon."
+            }
+          ],
+          "note": "Template stage 1/2 for Nucleophilic attack to iso(thio)cyanate."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-N=C=E.Nu>>R-N(-)-C(=E)-Nu |dbe:C-Nu:+2;Nu-Nu:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "N=C=E carbon",
+              "electrons": 2,
+              "description": "Nu attack on cumulene carbon."
+            }
+          ],
+          "note": "Template stage 2/2 for Nucleophilic attack to iso(thio)cyanate."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_009",
+      "label_exact": "Carbonyl reduction",
+      "slug": "carbonyl_reduction",
+      "canonical_group": "reduction",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R2C=O",
+        "H-"
+      ],
+      "resulting_state_generic": [
+        "R2CHOH"
+      ],
+      "generic_notes": "General carbonyl hydride reduction.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R2C=O.H>>R2CHO- |dbe:C-O:+2;O-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Hydride attack."
+            }
+          ],
+          "note": "Template stage 1/2 for Carbonyl reduction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R2CHO->>R2CHOH |dbe:C-O:+2;O-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Hydride attack."
+            }
+          ],
+          "note": "Template stage 2/2 for Carbonyl reduction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_010",
+      "label_exact": "SNAr reaction (para)",
+      "slug": "snar_reaction_para",
+      "canonical_group": "substitution",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "Ar-LG",
+        "Nu-"
+      ],
+      "resulting_state_generic": [
+        "Ar-Nu",
+        "LG-"
+      ],
+      "generic_notes": "Addition-elimination aromatic substitution (para class).",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "Ar-LG.Nu>>Ar(Nu)(LG)- |dbe:Ar-LG:-2;Ar-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "Ar-ipso",
+              "electrons": 2,
+              "description": "Addition to aromatic ipso carbon."
+            },
+            {
+              "start_atom": "Ar-LG",
+              "end_atom": "LG",
+              "electrons": 2,
+              "description": "Elimination restores aromaticity."
+            }
+          ],
+          "note": "Template stage 1/2 for SNAr reaction (para)."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "Ar(Nu)(LG)->>Ar-Nu.LG- |dbe:Ar-LG:-2;Ar-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "Ar-ipso",
+              "electrons": 2,
+              "description": "Addition to aromatic ipso carbon."
+            },
+            {
+              "start_atom": "Ar-LG",
+              "end_atom": "LG",
+              "electrons": 2,
+              "description": "Elimination restores aromaticity."
+            }
+          ],
+          "note": "Template stage 2/2 for SNAr reaction (para)."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_011",
+      "label_exact": "Ester reduction",
+      "slug": "ester_reduction",
+      "canonical_group": "reduction",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-C(=O)-OR'",
+        "H-"
+      ],
+      "resulting_state_generic": [
+        "R-CH2OH",
+        "R'OH"
+      ],
+      "generic_notes": "Hydride reduction of esters to alcohols.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-C(=O)-OR'.H>>R-CH(OH)-OR' |dbe:C-O:+2;C-OR':-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Hydride transfer to carbonyl carbon."
+            },
+            {
+              "start_atom": "C-OR'",
+              "end_atom": "OR'",
+              "electrons": 2,
+              "description": "Collapse and OR' departure."
+            }
+          ],
+          "note": "Template stage 1/3 for Ester reduction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-CH(OH)-OR'>>R-CH2OH.R'OH |dbe:C-O:+2;C-OR':-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Hydride transfer to carbonyl carbon."
+            },
+            {
+              "start_atom": "C-OR'",
+              "end_atom": "OR'",
+              "electrons": 2,
+              "description": "Collapse and OR' departure."
+            }
+          ],
+          "note": "Template stage 2/3 for Ester reduction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "R-CH(OH)-OR'>>R-CH2OH.R'OH |dbe:C-O:+2;C-OR':-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Hydride transfer to carbonyl carbon."
+            },
+            {
+              "start_atom": "C-OR'",
+              "end_atom": "OR'",
+              "electrons": 2,
+              "description": "Collapse and OR' departure."
+            }
+          ],
+          "note": "Template stage 3/3 for Ester reduction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_012",
+      "label_exact": "Imine formation",
+      "slug": "imine_formation",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R2C=O",
+        "R'NH2"
+      ],
+      "resulting_state_generic": [
+        "R2C=NR'",
+        "H2O"
+      ],
+      "generic_notes": "Carbonyl condensation to imine.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R2C=O.R'NH2>>carbinolamine |dbe:C-N:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Nucleophilic addition."
+            }
+          ],
+          "note": "Template stage 1/2 for Imine formation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "carbinolamine>>R2C=NR'.H2O |dbe:C-N:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Nucleophilic addition."
+            }
+          ],
+          "note": "Template stage 2/2 for Imine formation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_013",
+      "label_exact": "O-demethylation",
+      "slug": "o_demethylation",
+      "canonical_group": "other",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "Ar-O-CH3",
+        "Nu"
+      ],
+      "resulting_state_generic": [
+        "Ar-OH",
+        "CH3-Nu"
+      ],
+      "generic_notes": "Demethylation of aryl methyl ethers.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "Ar-O-CH3.Nu>>Ar-O-.CH3-Nu |dbe:O-CH3:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "CH3",
+              "electrons": 2,
+              "description": "SN2 cleavage at methyl."
+            }
+          ],
+          "note": "Template stage 1/2 for O-demethylation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "Ar-O-.CH3-Nu>>Ar-OH |dbe:O-CH3:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "CH3",
+              "electrons": 2,
+              "description": "SN2 cleavage at methyl."
+            }
+          ],
+          "note": "Template stage 2/2 for O-demethylation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_014",
+      "label_exact": "Mitsunobu reaction",
+      "slug": "mitsunobu_reaction",
+      "canonical_group": "other",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "ROH",
+        "Nu-H",
+        "PPh3",
+        "DIAD/DEAD"
+      ],
+      "resulting_state_generic": [
+        "R-Nu",
+        "byproducts"
+      ],
+      "generic_notes": "Mitsunobu inversion/substitution template.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "ROH.NuH.PPh3.DIAD>>activated_oxyphosphonium |dbe:C-O:-2;C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu-",
+              "end_atom": "C*",
+              "electrons": 2,
+              "description": "Inverting substitution at activated alcohol center."
+            }
+          ],
+          "note": "Template stage 1/3 for Mitsunobu reaction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "activated_oxyphosphonium>>R-Nu |dbe:C-O:-2;C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu-",
+              "end_atom": "C*",
+              "electrons": 2,
+              "description": "Inverting substitution at activated alcohol center."
+            }
+          ],
+          "note": "Template stage 2/3 for Mitsunobu reaction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "activated_oxyphosphonium>>R-Nu |dbe:C-O:-2;C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu-",
+              "end_atom": "C*",
+              "electrons": 2,
+              "description": "Inverting substitution at activated alcohol center."
+            }
+          ],
+          "note": "Template stage 3/3 for Mitsunobu reaction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_015",
+      "label_exact": "Swern oxidation",
+      "slug": "swern_oxidation",
+      "canonical_group": "oxidation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-CH2OH",
+        "DMSO",
+        "(COCl)2",
+        "base"
+      ],
+      "resulting_state_generic": [
+        "R-CHO"
+      ],
+      "generic_notes": "Activated DMSO oxidation.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-CH2OH.DMSO.(COCl)2.base>>alkoxysulfonium |dbe:C-O:-2;C=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "base",
+              "end_atom": "alpha-H",
+              "electrons": 2,
+              "description": "Elimination to carbonyl."
+            }
+          ],
+          "note": "Template stage 1/3 for Swern oxidation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "alkoxysulfonium>>R-CHO |dbe:C-O:-2;C=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "base",
+              "end_atom": "alpha-H",
+              "electrons": 2,
+              "description": "Elimination to carbonyl."
+            }
+          ],
+          "note": "Template stage 2/3 for Swern oxidation."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "alkoxysulfonium>>R-CHO |dbe:C-O:-2;C=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "base",
+              "end_atom": "alpha-H",
+              "electrons": 2,
+              "description": "Elimination to carbonyl."
+            }
+          ],
+          "note": "Template stage 3/3 for Swern oxidation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_016",
+      "label_exact": "Aldol condensation",
+      "slug": "aldol_condensation",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "enolate",
+        "R-CHO"
+      ],
+      "resulting_state_generic": [
+        "alpha,beta-unsaturated carbonyl"
+      ],
+      "generic_notes": "Aldol plus elimination sequence.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "enolate.R-CHO>>beta-hydroxy carbonyl |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "enolate C:lp",
+              "end_atom": "aldehyde C",
+              "electrons": 2,
+              "description": "Aldol addition step."
+            },
+            {
+              "start_atom": "beta-O",
+              "end_atom": "alpha-beta",
+              "electrons": 2,
+              "description": "Dehydration to enone."
+            }
+          ],
+          "note": "Template stage 1/3 for Aldol condensation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "beta-hydroxy carbonyl>>enone + H2O |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "enolate C:lp",
+              "end_atom": "aldehyde C",
+              "electrons": 2,
+              "description": "Aldol addition step."
+            },
+            {
+              "start_atom": "beta-O",
+              "end_atom": "alpha-beta",
+              "electrons": 2,
+              "description": "Dehydration to enone."
+            }
+          ],
+          "note": "Template stage 2/3 for Aldol condensation."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "beta-hydroxy carbonyl>>enone + H2O |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "enolate C:lp",
+              "end_atom": "aldehyde C",
+              "electrons": 2,
+              "description": "Aldol addition step."
+            },
+            {
+              "start_atom": "beta-O",
+              "end_atom": "alpha-beta",
+              "electrons": 2,
+              "description": "Dehydration to enone."
+            }
+          ],
+          "note": "Template stage 3/3 for Aldol condensation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_017",
+      "label_exact": "SN1 reaction",
+      "slug": "sn1_reaction",
+      "canonical_group": "substitution",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-LG",
+        "Nu"
+      ],
+      "resulting_state_generic": [
+        "R-Nu",
+        "LG-"
+      ],
+      "generic_notes": "Unimolecular substitution via carbocation intermediate.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-LG.Nu>>R+.LG- |dbe:C-LG:-2;C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "C-LG",
+              "end_atom": "LG",
+              "electrons": 2,
+              "description": "Ionization to carbocation."
+            },
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "C+",
+              "electrons": 2,
+              "description": "Nucleophilic capture."
+            }
+          ],
+          "note": "Template stage 1/2 for SN1 reaction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R+.LG->>R-Nu |dbe:C-LG:-2;C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "C-LG",
+              "end_atom": "LG",
+              "electrons": 2,
+              "description": "Ionization to carbocation."
+            },
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "C+",
+              "electrons": 2,
+              "description": "Nucleophilic capture."
+            }
+          ],
+          "note": "Template stage 2/2 for SN1 reaction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_018",
+      "label_exact": "Cbz deprotection",
+      "slug": "cbz_deprotection",
+      "canonical_group": "deprotection",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-NH-CO2CH2Ph",
+        "[H]"
+      ],
+      "resulting_state_generic": [
+        "R-NH2",
+        "CO2",
+        "toluene/benzyl byproduct"
+      ],
+      "generic_notes": "Hydrogenolytic Cbz removal.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-NH-Cbz.[H]>>R-NH2.CO2.benzyl_fragment |dbe:N-C:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H2/Pd",
+              "end_atom": "benzyl C",
+              "electrons": 2,
+              "description": "Hydrogenolysis of benzylic C-O bond."
+            }
+          ],
+          "note": "Template stage 1/3 for Cbz deprotection."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-NH-Cbz.[H]>>R-NH2.CO2.benzyl_fragment |dbe:N-C:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H2/Pd",
+              "end_atom": "benzyl C",
+              "electrons": 2,
+              "description": "Hydrogenolysis of benzylic C-O bond."
+            }
+          ],
+          "note": "Template stage 2/3 for Cbz deprotection."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "R-NH-Cbz.[H]>>R-NH2.CO2.benzyl_fragment |dbe:N-C:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H2/Pd",
+              "end_atom": "benzyl C",
+              "electrons": 2,
+              "description": "Hydrogenolysis of benzylic C-O bond."
+            }
+          ],
+          "note": "Template stage 3/3 for Cbz deprotection."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_019",
+      "label_exact": "Carboxylic acid derivative hydrolysis or formation",
+      "slug": "carboxylic_acid_derivative_hydrolysis_or_formation",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "CARBOXYLIC_ACID_DERIVATIVE_HYDROLYSIS_OR_FORMATION_SUBSTRATE",
+        "GENERIC_REAGENT"
+      ],
+      "resulting_state_generic": [
+        "CARBOXYLIC_ACID_DERIVATIVE_HYDROLYSIS_OR_FORMATION_PRODUCT"
+      ],
+      "generic_notes": "Auto-generated generic template for Carboxylic acid derivative hydrolysis or formation.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "CARBOXYLIC_ACID_DERIVATIVE_HYDROLYSIS_OR_FORMATION_SUBSTRATE.GENERIC_REAGENT>>CARBOXYLIC_ACID_DERIVATIVE_HYDROLYSIS_OR_FORMATION_PRODUCT |dbe:X-Y:+2;X-X:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X",
+              "end_atom": "Y",
+              "electrons": 2,
+              "description": "Generic two-electron transformation for Carboxylic acid derivative hydrolysis or formation."
+            }
+          ],
+          "note": "Template stage 1/3 for Carboxylic acid derivative hydrolysis or formation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "CARBOXYLIC_ACID_DERIVATIVE_HYDROLYSIS_OR_FORMATION_SUBSTRATE.GENERIC_REAGENT>>CARBOXYLIC_ACID_DERIVATIVE_HYDROLYSIS_OR_FORMATION_PRODUCT |dbe:X-Y:+2;X-X:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X",
+              "end_atom": "Y",
+              "electrons": 2,
+              "description": "Generic two-electron transformation for Carboxylic acid derivative hydrolysis or formation."
+            }
+          ],
+          "note": "Template stage 2/3 for Carboxylic acid derivative hydrolysis or formation."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "CARBOXYLIC_ACID_DERIVATIVE_HYDROLYSIS_OR_FORMATION_SUBSTRATE.GENERIC_REAGENT>>CARBOXYLIC_ACID_DERIVATIVE_HYDROLYSIS_OR_FORMATION_PRODUCT |dbe:X-Y:+2;X-X:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X",
+              "end_atom": "Y",
+              "electrons": 2,
+              "description": "Generic two-electron transformation for Carboxylic acid derivative hydrolysis or formation."
+            }
+          ],
+          "note": "Template stage 3/3 for Carboxylic acid derivative hydrolysis or formation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_020",
+      "label_exact": "Jones oxidation",
+      "slug": "jones_oxidation",
+      "canonical_group": "oxidation",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-CH2OH",
+        "Cr(VI)"
+      ],
+      "resulting_state_generic": [
+        "R-CO2H"
+      ],
+      "generic_notes": "Strong oxidation of primary alcohols.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-CH2OH.Cr(VI)>>chromate_ester |dbe:C-O:-2;C=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O",
+              "end_atom": "Cr",
+              "electrons": 2,
+              "description": "Chromate ester formation/elimination sequence."
+            }
+          ],
+          "note": "Template stage 1/2 for Jones oxidation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "chromate_ester>>R-CO2H |dbe:C-O:-2;C=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O",
+              "end_atom": "Cr",
+              "electrons": 2,
+              "description": "Chromate ester formation/elimination sequence."
+            }
+          ],
+          "note": "Template stage 2/2 for Jones oxidation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_021",
+      "label_exact": "Nitrile reduction",
+      "slug": "nitrile_reduction",
+      "canonical_group": "reduction",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-C#N",
+        "4[H]"
+      ],
+      "resulting_state_generic": [
+        "R-CH2NH2"
+      ],
+      "generic_notes": "Stepwise nitrile reduction to primary amine.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-C#N.4[H]>>R-CH=NH |dbe:C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "nitrile C",
+              "electrons": 2,
+              "description": "Hydride/proton sequence reduces nitrile."
+            }
+          ],
+          "note": "Template stage 1/3 for Nitrile reduction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-CH=NH>>R-CH2NH2 |dbe:C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "nitrile C",
+              "electrons": 2,
+              "description": "Hydride/proton sequence reduces nitrile."
+            }
+          ],
+          "note": "Template stage 2/3 for Nitrile reduction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "R-CH=NH>>R-CH2NH2 |dbe:C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "nitrile C",
+              "electrons": 2,
+              "description": "Hydride/proton sequence reduces nitrile."
+            }
+          ],
+          "note": "Template stage 3/3 for Nitrile reduction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_022",
+      "label_exact": "Amide reduction",
+      "slug": "amide_reduction",
+      "canonical_group": "reduction",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-C(=O)-NR'R''",
+        "4[H]"
+      ],
+      "resulting_state_generic": [
+        "R-CH2-NR'R''"
+      ],
+      "generic_notes": "Strong-hydride reduction of amides to amines.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-C(=O)-NR'R''.4[H]>>R-CH2-NR'R'' |dbe:C-O:-2;C-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "amide carbonyl C",
+              "electrons": 2,
+              "description": "Hydride reduction of amide carbonyl."
+            }
+          ],
+          "note": "Template stage 1/3 for Amide reduction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-C(=O)-NR'R''.4[H]>>R-CH2-NR'R'' |dbe:C-O:-2;C-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "amide carbonyl C",
+              "electrons": 2,
+              "description": "Hydride reduction of amide carbonyl."
+            }
+          ],
+          "note": "Template stage 2/3 for Amide reduction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "R-C(=O)-NR'R''.4[H]>>R-CH2-NR'R'' |dbe:C-O:-2;C-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "amide carbonyl C",
+              "electrons": 2,
+              "description": "Hydride reduction of amide carbonyl."
+            }
+          ],
+          "note": "Template stage 3/3 for Amide reduction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_023",
+      "label_exact": "Base catalyzed ester hydrolysis",
+      "slug": "base_catalyzed_ester_hydrolysis",
+      "canonical_group": "hydrolysis",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-C(=O)-OR'",
+        "OH-"
+      ],
+      "resulting_state_generic": [
+        "R-C(=O)O-",
+        "R'OH"
+      ],
+      "generic_notes": "Saponification/acyl substitution template.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-C(=O)-OR'.OH>>tetrahedral |dbe:C-OR':-2;C-OH:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "OH:lp",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Hydroxide attack on carbonyl."
+            },
+            {
+              "start_atom": "C-OR'",
+              "end_atom": "OR'",
+              "electrons": 2,
+              "description": "Alkoxide leaving group departs."
+            }
+          ],
+          "note": "Template stage 1/3 for Base catalyzed ester hydrolysis."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "tetrahedral>>R-C(=O)O-.R'OH |dbe:C-OR':-2;C-OH:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "OH:lp",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Hydroxide attack on carbonyl."
+            },
+            {
+              "start_atom": "C-OR'",
+              "end_atom": "OR'",
+              "electrons": 2,
+              "description": "Alkoxide leaving group departs."
+            }
+          ],
+          "note": "Template stage 2/3 for Base catalyzed ester hydrolysis."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "tetrahedral>>R-C(=O)O-.R'OH |dbe:C-OR':-2;C-OH:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "OH:lp",
+              "end_atom": "C=O",
+              "electrons": 2,
+              "description": "Hydroxide attack on carbonyl."
+            },
+            {
+              "start_atom": "C-OR'",
+              "end_atom": "OR'",
+              "electrons": 2,
+              "description": "Alkoxide leaving group departs."
+            }
+          ],
+          "note": "Template stage 3/3 for Base catalyzed ester hydrolysis."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_024",
+      "label_exact": "Grignard reaction",
+      "slug": "grignard_reaction",
+      "canonical_group": "carbon_carbon_bond_formation",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-MgX",
+        "R'2C=O"
+      ],
+      "resulting_state_generic": [
+        "R'2C(OH)-R"
+      ],
+      "generic_notes": "Organomagnesium nucleophilic addition.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-MgX.R'2C=O>>alkoxide |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R- (from RMgX)",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Carbanion equivalent addition."
+            }
+          ],
+          "note": "Template stage 1/2 for Grignard reaction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "alkoxide>>alcohol |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R- (from RMgX)",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Carbanion equivalent addition."
+            }
+          ],
+          "note": "Template stage 2/2 for Grignard reaction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_025",
+      "label_exact": "SNAr reaction with alcohol (ortho)",
+      "slug": "snar_reaction_with_alcohol_ortho",
+      "canonical_group": "substitution",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "Ar-LG",
+        "RO-"
+      ],
+      "resulting_state_generic": [
+        "Ar-OR",
+        "LG-"
+      ],
+      "generic_notes": "Ortho-oriented nucleophilic aromatic substitution.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "Ar-LG.RO>>Ar(OR)(LG)- |dbe:Ar-LG:-2;Ar-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O:lp",
+              "end_atom": "Ar-ipso",
+              "electrons": 2,
+              "description": "Alkoxide addition at ipso carbon."
+            },
+            {
+              "start_atom": "Ar-LG",
+              "end_atom": "LG",
+              "electrons": 2,
+              "description": "LG elimination."
+            }
+          ],
+          "note": "Template stage 1/2 for SNAr reaction with alcohol (ortho)."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "Ar(OR)(LG)->>Ar-OR.LG- |dbe:Ar-LG:-2;Ar-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O:lp",
+              "end_atom": "Ar-ipso",
+              "electrons": 2,
+              "description": "Alkoxide addition at ipso carbon."
+            },
+            {
+              "start_atom": "Ar-LG",
+              "end_atom": "LG",
+              "electrons": 2,
+              "description": "LG elimination."
+            }
+          ],
+          "note": "Template stage 2/2 for SNAr reaction with alcohol (ortho)."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_026",
+      "label_exact": "Wittig reaction",
+      "slug": "wittig_reaction",
+      "canonical_group": "carbon_carbon_bond_formation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "ylide",
+        "R2C=O"
+      ],
+      "resulting_state_generic": [
+        "alkene",
+        "Ph3P=O"
+      ],
+      "generic_notes": "Phosphorus ylide olefination.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "Ph3P=CHR.R2C=O>>oxaphosphetane |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ylide C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Betain/oxaphosphetane formation."
+            }
+          ],
+          "note": "Template stage 1/3 for Wittig reaction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "oxaphosphetane>>alkene.Ph3P=O |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ylide C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Betain/oxaphosphetane formation."
+            }
+          ],
+          "note": "Template stage 2/3 for Wittig reaction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "oxaphosphetane>>alkene.Ph3P=O |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ylide C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Betain/oxaphosphetane formation."
+            }
+          ],
+          "note": "Template stage 3/3 for Wittig reaction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_027",
+      "label_exact": "Staudinger reaction",
+      "slug": "staudinger_reaction",
+      "canonical_group": "other",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R3P",
+        "R'-N3"
+      ],
+      "resulting_state_generic": [
+        "R'-NH2",
+        "R3P=O",
+        "N2"
+      ],
+      "generic_notes": "Azide reduction via phosphine.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R3P.R'-N3.H2O>>iminophosphorane |dbe:P-N:-2;P=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "P:lp",
+              "end_atom": "azide terminal N",
+              "electrons": 2,
+              "description": "Phosphine attack on azide."
+            }
+          ],
+          "note": "Template stage 1/3 for Staudinger reaction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "iminophosphorane>>R'-NH2.R3P=O.N2 |dbe:P-N:-2;P=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "P:lp",
+              "end_atom": "azide terminal N",
+              "electrons": 2,
+              "description": "Phosphine attack on azide."
+            }
+          ],
+          "note": "Template stage 2/3 for Staudinger reaction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "iminophosphorane>>R'-NH2.R3P=O.N2 |dbe:P-N:-2;P=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "P:lp",
+              "end_atom": "azide terminal N",
+              "electrons": 2,
+              "description": "Phosphine attack on azide."
+            }
+          ],
+          "note": "Template stage 3/3 for Staudinger reaction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_028",
+      "label_exact": "Hantzsch thiazole synthesis",
+      "slug": "hantzsch_thiazole_synthesis",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "alpha-haloketone",
+        "thioamide"
+      ],
+      "resulting_state_generic": [
+        "thiazole",
+        "HX",
+        "H2O"
+      ],
+      "generic_notes": "Hantzsch thiazole ring-forming condensation.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "alpha-haloketone.thioamide>>cyclization |dbe:C-S:+2;C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "thioamide S:lp",
+              "end_atom": "alpha-carbon",
+              "electrons": 2,
+              "description": "Nucleophilic substitution then cyclization."
+            }
+          ],
+          "note": "Template stage 1/3 for Hantzsch thiazole synthesis."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "cyclization>>thiazole |dbe:C-S:+2;C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "thioamide S:lp",
+              "end_atom": "alpha-carbon",
+              "electrons": 2,
+              "description": "Nucleophilic substitution then cyclization."
+            }
+          ],
+          "note": "Template stage 2/3 for Hantzsch thiazole synthesis."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "cyclization>>thiazole |dbe:C-S:+2;C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "thioamide S:lp",
+              "end_atom": "alpha-carbon",
+              "electrons": 2,
+              "description": "Nucleophilic substitution then cyclization."
+            }
+          ],
+          "note": "Template stage 3/3 for Hantzsch thiazole synthesis."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_029",
+      "label_exact": "(hemi)acetal (aminal) hydrolysis",
+      "slug": "hemi_acetal_aminal_hydrolysis",
+      "canonical_group": "hydrolysis",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "acetal/aminal",
+        "H2O",
+        "H+"
+      ],
+      "resulting_state_generic": [
+        "carbonyl",
+        "ROH/RNH2"
+      ],
+      "generic_notes": "Reverse of acetal/aminal formation.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "acetal.H2O.H+>>hemiacetal |dbe:C-O:-2;C=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H2O:lp",
+              "end_atom": "acetal C",
+              "electrons": 2,
+              "description": "Hydrolytic cleavage sequence."
+            }
+          ],
+          "note": "Template stage 1/3 for (hemi)acetal (aminal) hydrolysis."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "hemiacetal>>carbonyl + alcohol/amine |dbe:C-O:-2;C=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H2O:lp",
+              "end_atom": "acetal C",
+              "electrons": 2,
+              "description": "Hydrolytic cleavage sequence."
+            }
+          ],
+          "note": "Template stage 2/3 for (hemi)acetal (aminal) hydrolysis."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "hemiacetal>>carbonyl + alcohol/amine |dbe:C-O:-2;C=O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H2O:lp",
+              "end_atom": "acetal C",
+              "electrons": 2,
+              "description": "Hydrolytic cleavage sequence."
+            }
+          ],
+          "note": "Template stage 3/3 for (hemi)acetal (aminal) hydrolysis."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_030",
+      "label_exact": "Sulfide oxidation",
+      "slug": "sulfide_oxidation",
+      "canonical_group": "oxidation",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "R-S-R'",
+        "[O]"
+      ],
+      "resulting_state_generic": [
+        "R-S(=O)-R'"
+      ],
+      "generic_notes": "Sulfide to sulfoxide oxidation.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-S-R'.[O]>>R-S(=O)-R' |dbe:S-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "sulfide S:lp",
+              "end_atom": "O electrophile",
+              "electrons": 2,
+              "description": "O-transfer to sulfur."
+            }
+          ],
+          "note": "Template stage 1/1 for Sulfide oxidation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_031",
+      "label_exact": "Friedel Crafts acylation",
+      "slug": "friedel_crafts_acylation",
+      "canonical_group": "other",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "Ar-H",
+        "R-CO-LG",
+        "Lewis acid"
+      ],
+      "resulting_state_generic": [
+        "Ar-CO-R",
+        "H-LG"
+      ],
+      "generic_notes": "Electrophilic aromatic acylation.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "Ar-H.RCOX.AlX3>>sigma_complex |dbe:Ar-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Ar pi",
+              "end_atom": "acylium C",
+              "electrons": 2,
+              "description": "EAS C-C bond formation."
+            }
+          ],
+          "note": "Template stage 1/3 for Friedel Crafts acylation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "sigma_complex>>Ar-CO-R |dbe:Ar-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Ar pi",
+              "end_atom": "acylium C",
+              "electrons": 2,
+              "description": "EAS C-C bond formation."
+            }
+          ],
+          "note": "Template stage 2/3 for Friedel Crafts acylation."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "sigma_complex>>Ar-CO-R |dbe:Ar-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Ar pi",
+              "end_atom": "acylium C",
+              "electrons": 2,
+              "description": "EAS C-C bond formation."
+            }
+          ],
+          "note": "Template stage 3/3 for Friedel Crafts acylation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_032",
+      "label_exact": "Horner Wadsworth Emmons reaction",
+      "slug": "horner_wadsworth_emmons_reaction",
+      "canonical_group": "carbon_carbon_bond_formation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "phosphonate carbanion",
+        "R-CHO"
+      ],
+      "resulting_state_generic": [
+        "alkene",
+        "phosphate byproduct"
+      ],
+      "generic_notes": "HWE olefination template.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "(RO)2P(O)-CHR-.R-CHO>>betaine |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "alpha-C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Phosphonate carbanion attack."
+            }
+          ],
+          "note": "Template stage 1/3 for Horner Wadsworth Emmons reaction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "betaine>>alkene |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "alpha-C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Phosphonate carbanion attack."
+            }
+          ],
+          "note": "Template stage 2/3 for Horner Wadsworth Emmons reaction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "betaine>>alkene |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "alpha-C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Phosphonate carbanion attack."
+            }
+          ],
+          "note": "Template stage 3/3 for Horner Wadsworth Emmons reaction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_033",
+      "label_exact": "Primary amide dehydration",
+      "slug": "primary_amide_dehydration",
+      "canonical_group": "other",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-C(=O)-NH2",
+        "dehydrating agent"
+      ],
+      "resulting_state_generic": [
+        "R-C#N"
+      ],
+      "generic_notes": "Dehydrative conversion of primary amides to nitriles.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-C(=O)-NH2>>R-C#N + H2O |dbe:C-N:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "amide N lone pair",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Elimination-driven nitrile formation."
+            }
+          ],
+          "note": "Template stage 1/2 for Primary amide dehydration."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-C(=O)-NH2>>R-C#N + H2O |dbe:C-N:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "amide N lone pair",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Elimination-driven nitrile formation."
+            }
+          ],
+          "note": "Template stage 2/2 for Primary amide dehydration."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_034",
+      "label_exact": "Wolff Kishner reduction",
+      "slug": "wolff_kishner_reduction",
+      "canonical_group": "reduction",
+      "suitable_step_count": 4,
+      "current_state_generic": [
+        "R2C=O",
+        "NH2NH2",
+        "base",
+        "heat"
+      ],
+      "resulting_state_generic": [
+        "R2CH2",
+        "N2"
+      ],
+      "generic_notes": "Carbonyl deoxygenation via hydrazone pathway.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R2C=O.NH2NH2.base>>hydrazone |dbe:C-O:-2;C-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "hydrazone N",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Nitrogen extrusion with carbon reduction."
+            }
+          ],
+          "note": "Template stage 1/4 for Wolff Kishner reduction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "hydrazone>>R2CH2 + N2 |dbe:C-O:-2;C-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "hydrazone N",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Nitrogen extrusion with carbon reduction."
+            }
+          ],
+          "note": "Template stage 2/4 for Wolff Kishner reduction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "hydrazone>>R2CH2 + N2 |dbe:C-O:-2;C-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "hydrazone N",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Nitrogen extrusion with carbon reduction."
+            }
+          ],
+          "note": "Template stage 3/4 for Wolff Kishner reduction."
+        },
+        {
+          "step_index": 4,
+          "reaction_generic": "hydrazone>>R2CH2 + N2 |dbe:C-O:-2;C-H:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "hydrazone N",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Nitrogen extrusion with carbon reduction."
+            }
+          ],
+          "note": "Template stage 4/4 for Wolff Kishner reduction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_035",
+      "label_exact": "Acetal formation",
+      "slug": "acetal_formation",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R2C=O",
+        "2 ROH",
+        "H+"
+      ],
+      "resulting_state_generic": [
+        "R2C(OR)2",
+        "H2O"
+      ],
+      "generic_notes": "Acid-catalyzed acetalization.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R2C=O.2ROH.H+>>hemiacetal |dbe:C-O:+2;C=O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ROH:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Alcohol attack under acid catalysis."
+            }
+          ],
+          "note": "Template stage 1/3 for Acetal formation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "hemiacetal>>acetal + H2O |dbe:C-O:+2;C=O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ROH:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Alcohol attack under acid catalysis."
+            }
+          ],
+          "note": "Template stage 2/3 for Acetal formation."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "hemiacetal>>acetal + H2O |dbe:C-O:+2;C=O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ROH:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Alcohol attack under acid catalysis."
+            }
+          ],
+          "note": "Template stage 3/3 for Acetal formation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_036",
+      "label_exact": "Amine oxidation",
+      "slug": "amine_oxidation",
+      "canonical_group": "oxidation",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "R3N",
+        "[O]"
+      ],
+      "resulting_state_generic": [
+        "R3N->O or iminium"
+      ],
+      "generic_notes": "Tertiary amine oxidation to N-oxide/iminium manifold.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R3N.[O]>>R3N->O |dbe:N-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "amine N:lp",
+              "end_atom": "oxidant O",
+              "electrons": 2,
+              "description": "N-oxidation pathway."
+            }
+          ],
+          "note": "Template stage 1/1 for Amine oxidation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_037",
+      "label_exact": "Imine reduction",
+      "slug": "imine_reduction",
+      "canonical_group": "reduction",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R2C=NR'",
+        "H-"
+      ],
+      "resulting_state_generic": [
+        "R2CH-NHR'"
+      ],
+      "generic_notes": "Reduction of imine/iminium to amine.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R2C=NR'.H>>R2CH-NR' |dbe:C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "C=N",
+              "electrons": 2,
+              "description": "Hydride addition to imine carbon."
+            }
+          ],
+          "note": "Template stage 1/2 for Imine reduction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R2CH-NR'>>R2CH-NHR' |dbe:C-N:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "C=N",
+              "electrons": 2,
+              "description": "Hydride addition to imine carbon."
+            }
+          ],
+          "note": "Template stage 2/2 for Imine reduction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_038",
+      "label_exact": "Wittig reaction with ylide",
+      "slug": "wittig_reaction_with_ylide",
+      "canonical_group": "carbon_carbon_bond_formation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "stabilized ylide",
+        "R2C=O"
+      ],
+      "resulting_state_generic": [
+        "alkene",
+        "Ph3P=O"
+      ],
+      "generic_notes": "Explicit ylide-mediated olefination template.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "ylide.R2C=O>>oxaphosphetane |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ylide C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Ylide carbon addition."
+            }
+          ],
+          "note": "Template stage 1/3 for Wittig reaction with ylide."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "oxaphosphetane>>alkene.Ph3P=O |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ylide C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Ylide carbon addition."
+            }
+          ],
+          "note": "Template stage 2/3 for Wittig reaction with ylide."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "oxaphosphetane>>alkene.Ph3P=O |dbe:C-C:+2;C-O:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ylide C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Ylide carbon addition."
+            }
+          ],
+          "note": "Template stage 3/3 for Wittig reaction with ylide."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_039",
+      "label_exact": "Sulfide oxidation by peroxide",
+      "slug": "sulfide_oxidation_by_peroxide",
+      "canonical_group": "oxidation",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-S-R'",
+        "H2O2"
+      ],
+      "resulting_state_generic": [
+        "R-S(=O)-R' or R-S(=O)2-R'"
+      ],
+      "generic_notes": "Peroxide-driven oxidation to sulfoxide/sulfone.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-S-R'.H2O2>>R-S(=O)-R' |dbe:S-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "sulfide S:lp",
+              "end_atom": "peroxide O",
+              "electrons": 2,
+              "description": "Peroxide oxygen transfer to sulfur."
+            }
+          ],
+          "note": "Template stage 1/2 for Sulfide oxidation by peroxide."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-S(=O)-R'>>R-S(=O)2-R' |dbe:S-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "sulfide S:lp",
+              "end_atom": "peroxide O",
+              "electrons": 2,
+              "description": "Peroxide oxygen transfer to sulfur."
+            }
+          ],
+          "note": "Template stage 2/2 for Sulfide oxidation by peroxide."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_040",
+      "label_exact": "Mannich reaction",
+      "slug": "mannich_reaction",
+      "canonical_group": "other",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "enol/enolate donor",
+        "iminium electrophile"
+      ],
+      "resulting_state_generic": [
+        "beta-amino carbonyl"
+      ],
+      "generic_notes": "Mannich C-C bond forming addition.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "enol.iminium>>beta-amino carbonyl |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "enol C:pi",
+              "end_atom": "iminium C",
+              "electrons": 2,
+              "description": "C-C bond formation at iminium carbon."
+            }
+          ],
+          "note": "Template stage 1/3 for Mannich reaction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "enol.iminium>>beta-amino carbonyl |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "enol C:pi",
+              "end_atom": "iminium C",
+              "electrons": 2,
+              "description": "C-C bond formation at iminium carbon."
+            }
+          ],
+          "note": "Template stage 2/3 for Mannich reaction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "enol.iminium>>beta-amino carbonyl |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "enol C:pi",
+              "end_atom": "iminium C",
+              "electrons": 2,
+              "description": "C-C bond formation at iminium carbon."
+            }
+          ],
+          "note": "Template stage 3/3 for Mannich reaction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_041",
+      "label_exact": "Alkene epoxidation",
+      "slug": "alkene_epoxidation",
+      "canonical_group": "oxidation",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "RCH=CHR'",
+        "peracid"
+      ],
+      "resulting_state_generic": [
+        "epoxide"
+      ],
+      "generic_notes": "Peracid epoxidation of alkenes.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "RCH=CHR'.RCO3H>>epoxide + RCO2H |dbe:C-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "alkene pi",
+              "end_atom": "electrophilic O",
+              "electrons": 2,
+              "description": "Concerted oxygen transfer."
+            }
+          ],
+          "note": "Template stage 1/1 for Alkene epoxidation."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_042",
+      "label_exact": "Aldol addition",
+      "slug": "aldol_addition",
+      "canonical_group": "addition_attack",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "enolate",
+        "R-CHO"
+      ],
+      "resulting_state_generic": [
+        "beta-hydroxy carbonyl"
+      ],
+      "generic_notes": "Aldol C-C bond formation without dehydration.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "enolate.R-CHO>>beta-hydroxy carbonyl |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "enolate C:lp",
+              "end_atom": "aldehyde C",
+              "electrons": 2,
+              "description": "Carbon-carbon bond formation."
+            }
+          ],
+          "note": "Template stage 1/2 for Aldol addition."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "enolate.R-CHO>>beta-hydroxy carbonyl |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "enolate C:lp",
+              "end_atom": "aldehyde C",
+              "electrons": 2,
+              "description": "Carbon-carbon bond formation."
+            }
+          ],
+          "note": "Template stage 2/2 for Aldol addition."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_043",
+      "label_exact": "Fmoc deprotection",
+      "slug": "fmoc_deprotection",
+      "canonical_group": "deprotection",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-NH-CO2Fmoc",
+        "base"
+      ],
+      "resulting_state_generic": [
+        "R-NH2",
+        "dibenzofulvene adduct"
+      ],
+      "generic_notes": "Base-labile Fmoc cleavage.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-NH-Fmoc.base>>R-NH2.dibenzofulvene_adduct |dbe:N-C:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "base",
+              "end_atom": "Fmoc benzylic H",
+              "electrons": 2,
+              "description": "E1cb-like elimination."
+            }
+          ],
+          "note": "Template stage 1/2 for Fmoc deprotection."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-NH-Fmoc.base>>R-NH2.dibenzofulvene_adduct |dbe:N-C:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "base",
+              "end_atom": "Fmoc benzylic H",
+              "electrons": 2,
+              "description": "E1cb-like elimination."
+            }
+          ],
+          "note": "Template stage 2/2 for Fmoc deprotection."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_044",
+      "label_exact": "Alkynyl attack to carbonyl",
+      "slug": "alkynyl_attack_to_carbonyl",
+      "canonical_group": "addition_attack",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "RC#C-",
+        "R'2C=O"
+      ],
+      "resulting_state_generic": [
+        "propargyl alcohol"
+      ],
+      "generic_notes": "Acetylide addition to aldehydes/ketones.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "RC#C-.R'2C=O>>alkoxide |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "alkynyl C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Alkynyl nucleophilic addition."
+            }
+          ],
+          "note": "Template stage 1/2 for Alkynyl attack to carbonyl."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "alkoxide>>propargyl alcohol |dbe:C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "alkynyl C:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Alkynyl nucleophilic addition."
+            }
+          ],
+          "note": "Template stage 2/2 for Alkynyl attack to carbonyl."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_045",
+      "label_exact": "Weinreb ketone synthesis",
+      "slug": "weinreb_ketone_synthesis",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-C(=O)-N(OMe)Me",
+        "R'-M"
+      ],
+      "resulting_state_generic": [
+        "R-C(=O)-R'"
+      ],
+      "generic_notes": "Weinreb amide enables selective ketone formation.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "Weinreb_amide.R'-M>>chelated_tetrahedral |dbe:C-C:+2;C-N:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R'- (organometallic)",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Controlled single-addition acyl substitution."
+            }
+          ],
+          "note": "Template stage 1/2 for Weinreb ketone synthesis."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "chelated_tetrahedral>>ketone |dbe:C-C:+2;C-N:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R'- (organometallic)",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Controlled single-addition acyl substitution."
+            }
+          ],
+          "note": "Template stage 2/2 for Weinreb ketone synthesis."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_046",
+      "label_exact": "Methyl ester synthesis",
+      "slug": "methyl_ester_synthesis",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "R-CO2H",
+        "CH2N2"
+      ],
+      "resulting_state_generic": [
+        "R-CO2CH3",
+        "N2"
+      ],
+      "generic_notes": "Diazomethane methyl esterification template.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-CO2H.CH2N2>>R-CO2CH3 + N2 |dbe:O-CH3:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "carboxylate O:lp",
+              "end_atom": "CH2 (diazomethane)",
+              "electrons": 2,
+              "description": "O-alkylation by diazomethane."
+            }
+          ],
+          "note": "Template stage 1/1 for Methyl ester synthesis."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_047",
+      "label_exact": "Isothiocyanate synthesis",
+      "slug": "isothiocyanate_synthesis",
+      "canonical_group": "formation_condensation",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-NH2",
+        "thiocarbonyl transfer reagent"
+      ],
+      "resulting_state_generic": [
+        "R-N=C=S"
+      ],
+      "generic_notes": "Thiocarbamoyl intermediate to isothiocyanate elimination.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-NH2.CS_transfer>>R-N=C=S |dbe:N-C:+2;C=S:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "amine N:lp",
+              "end_atom": "thiocarbonyl C",
+              "electrons": 2,
+              "description": "Installation of N=C=S functionality."
+            }
+          ],
+          "note": "Template stage 1/2 for Isothiocyanate synthesis."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-NH2.CS_transfer>>R-N=C=S |dbe:N-C:+2;C=S:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "amine N:lp",
+              "end_atom": "thiocarbonyl C",
+              "electrons": 2,
+              "description": "Installation of N=C=S functionality."
+            }
+          ],
+          "note": "Template stage 2/2 for Isothiocyanate synthesis."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_048",
+      "label_exact": "Michael addition",
+      "slug": "michael_addition",
+      "canonical_group": "addition_attack",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "Nu- donor",
+        "alpha,beta-unsaturated acceptor"
+      ],
+      "resulting_state_generic": [
+        "1,4-addition product"
+      ],
+      "generic_notes": "Conjugate (1,4-) addition template.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "Nu-.C=C-C(=O)R>>1,4-addition product |dbe:C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "beta-C",
+              "electrons": 2,
+              "description": "Conjugate addition."
+            }
+          ],
+          "note": "Template stage 1/2 for Michael addition."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "Nu-.C=C-C(=O)R>>1,4-addition product |dbe:C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "beta-C",
+              "electrons": 2,
+              "description": "Conjugate addition."
+            }
+          ],
+          "note": "Template stage 2/2 for Michael addition."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_049",
+      "label_exact": "Lactone reduction",
+      "slug": "lactone_reduction",
+      "canonical_group": "reduction",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "lactone",
+        "H-"
+      ],
+      "resulting_state_generic": [
+        "diol/open-chain alcohol"
+      ],
+      "generic_notes": "Lactone reduction to diol-type products.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "lactone.H>>opened_hydroxy_ester |dbe:C-O:+2;C-O(ring):-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "lactone carbonyl C",
+              "electrons": 2,
+              "description": "Hydride opens/reduces lactone."
+            }
+          ],
+          "note": "Template stage 1/3 for Lactone reduction."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "opened_hydroxy_ester>>diol |dbe:C-O:+2;C-O(ring):-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "lactone carbonyl C",
+              "electrons": 2,
+              "description": "Hydride opens/reduces lactone."
+            }
+          ],
+          "note": "Template stage 2/3 for Lactone reduction."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "opened_hydroxy_ester>>diol |dbe:C-O:+2;C-O(ring):-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "H-",
+              "end_atom": "lactone carbonyl C",
+              "electrons": 2,
+              "description": "Hydride opens/reduces lactone."
+            }
+          ],
+          "note": "Template stage 3/3 for Lactone reduction."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_050",
+      "label_exact": "Intramolecular lactonization",
+      "slug": "intramolecular_lactonization",
+      "canonical_group": "other",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "HO-(CH2)n-CO2H"
+      ],
+      "resulting_state_generic": [
+        "lactone",
+        "H2O"
+      ],
+      "generic_notes": "Cyclization of hydroxy acids to lactones.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "HO-(CH2)n-CO2H>>cyclic_tetrahedral |dbe:C-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "intramolecular OH:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Ring-closing acyl substitution."
+            }
+          ],
+          "note": "Template stage 1/2 for Intramolecular lactonization."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "cyclic_tetrahedral>>lactone + H2O |dbe:C-O:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "intramolecular OH:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Ring-closing acyl substitution."
+            }
+          ],
+          "note": "Template stage 2/2 for Intramolecular lactonization."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_051",
+      "label_exact": "SN1 reaction with tosylate",
+      "slug": "sn1_reaction_with_tosylate",
+      "canonical_group": "substitution",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "R-OTs",
+        "Nu"
+      ],
+      "resulting_state_generic": [
+        "R-Nu",
+        "TsO-"
+      ],
+      "generic_notes": "SN1 substitution with tosylate leaving group.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-OTs.Nu>>R+ + TsO- |dbe:C-OTs:-2;C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "C-OTs",
+              "end_atom": "OTs",
+              "electrons": 2,
+              "description": "Tosylate departure to carbocation."
+            },
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "C+",
+              "electrons": 2,
+              "description": "Nucleophile captures carbocation."
+            }
+          ],
+          "note": "Template stage 1/2 for SN1 reaction with tosylate."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R+ + TsO->>R-Nu |dbe:C-OTs:-2;C-Nu:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "C-OTs",
+              "end_atom": "OTs",
+              "electrons": 2,
+              "description": "Tosylate departure to carbocation."
+            },
+            {
+              "start_atom": "Nu:lp",
+              "end_atom": "C+",
+              "electrons": 2,
+              "description": "Nucleophile captures carbocation."
+            }
+          ],
+          "note": "Template stage 2/2 for SN1 reaction with tosylate."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_052",
+      "label_exact": "Benzyne (aryne) mechanism",
+      "slug": "benzyne_aryne_mechanism",
+      "canonical_group": "other",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "BENZYNE_ARYNE_MECHANISM_SUBSTRATE",
+        "GENERIC_REAGENT"
+      ],
+      "resulting_state_generic": [
+        "BENZYNE_ARYNE_MECHANISM_PRODUCT"
+      ],
+      "generic_notes": "Auto-generated generic template for Benzyne (aryne) mechanism.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "BENZYNE_ARYNE_MECHANISM_SUBSTRATE.GENERIC_REAGENT>>BENZYNE_ARYNE_MECHANISM_PRODUCT |dbe:X-Y:+2;X-X:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X",
+              "end_atom": "Y",
+              "electrons": 2,
+              "description": "Generic two-electron transformation for Benzyne (aryne) mechanism."
+            }
+          ],
+          "note": "Template stage 1/2 for Benzyne (aryne) mechanism."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "BENZYNE_ARYNE_MECHANISM_SUBSTRATE.GENERIC_REAGENT>>BENZYNE_ARYNE_MECHANISM_PRODUCT |dbe:X-Y:+2;X-X:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X",
+              "end_atom": "Y",
+              "electrons": 2,
+              "description": "Generic two-electron transformation for Benzyne (aryne) mechanism."
+            }
+          ],
+          "note": "Template stage 2/2 for Benzyne (aryne) mechanism."
+        }
+      ]
+    },
+    {
+      "type_id": "mt_053",
+      "label_exact": "Nucleophilic vinylic substitution (addition-elimination)",
+      "slug": "nucleophilic_vinylic_substitution_addition_elimination",
+      "canonical_group": "addition_attack",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "NUCLEOPHILIC_VINYLIC_SUBSTITUTION_ADDITION_ELIMINATION_SUBSTRATE",
+        "GENERIC_REAGENT"
+      ],
+      "resulting_state_generic": [
+        "NUCLEOPHILIC_VINYLIC_SUBSTITUTION_ADDITION_ELIMINATION_PRODUCT"
+      ],
+      "generic_notes": "Auto-generated generic template for Nucleophilic vinylic substitution (addition-elimination).",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "NUCLEOPHILIC_VINYLIC_SUBSTITUTION_ADDITION_ELIMINATION_SUBSTRATE.GENERIC_REAGENT>>NUCLEOPHILIC_VINYLIC_SUBSTITUTION_ADDITION_ELIMINATION_PRODUCT |dbe:X-Y:+2;X-X:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X",
+              "end_atom": "Y",
+              "electrons": 2,
+              "description": "Generic two-electron transformation for Nucleophilic vinylic substitution (addition-elimination)."
+            }
+          ],
+          "note": "Template stage 1/2 for Nucleophilic vinylic substitution (addition-elimination)."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "NUCLEOPHILIC_VINYLIC_SUBSTITUTION_ADDITION_ELIMINATION_SUBSTRATE.GENERIC_REAGENT>>NUCLEOPHILIC_VINYLIC_SUBSTITUTION_ADDITION_ELIMINATION_PRODUCT |dbe:X-Y:+2;X-X:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X",
+              "end_atom": "Y",
+              "electrons": 2,
+              "description": "Generic two-electron transformation for Nucleophilic vinylic substitution (addition-elimination)."
+            }
+          ],
+          "note": "Template stage 2/2 for Nucleophilic vinylic substitution (addition-elimination)."
+        }
+      ]
+    }
+  ],
+  "example_mappings": [
+    {
+      "reaction_id": "flower_135501",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_024300",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_252433",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_160718",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_130926",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_054599",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_170958",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_085506",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_086646",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_188703",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_132807",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_060294",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_247575",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_223142",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_222822",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_096616",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_181059",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_127589",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_097191",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_225090",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_231447",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_238032",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_258725",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_078510",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_233521",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_033553",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_111638",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_051329",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_164651",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_131938",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_046045",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_106191",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_255222",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_123671",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_148091",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_155432",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_170594",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_058818",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_086602",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_180307",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_250269",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_081119",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_203797",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_151040",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_165127",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_128401",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_245088",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_000889",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_236372",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_105699",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_112037",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_210299",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_205636",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_093006",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_144138",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_060371",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_159336",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_011125",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_080554",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_259565",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_038967",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_242686",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_250688",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_070188",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_081613",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_009559",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_039712",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_109809",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_038370",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_030284",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_141616",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_025232",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_059272",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_149118",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_088181",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_247650",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_042208",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_245749",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_128170",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_044718",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_220695",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_059351",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_158884",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_139768",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_054531",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_043005",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_163600",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_135635",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_044303",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_066797",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_076305",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_096830",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_029113",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_018916",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_176648",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_081185",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_211476",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_076819",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_026466",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    },
+    {
+      "reaction_id": "flower_213848",
+      "mechanism_type_label": "SN2 reaction",
+      "mechanism_type_id": "mt_003",
+      "confidence": 0.35,
+      "rationale": "Fallback by low step count."
+    }
+  ]
+}
