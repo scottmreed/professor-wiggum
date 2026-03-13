@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "description": "CLI baseline tier mode mapping for main.py baseline --all-tiers",
+    "update_hint": "Replace eval_set_id values after importing eval sets on a new machine.",
+    "created_for": "single-command no-harness leaderboard baselines"
+  },
+  "easy": {
+    "eval_set_id": "b8855f9de2c741e6bf2d74117eeada70"
+  },
+  "medium": {
+    "eval_set_id": "003aae8966184aa2a2874dbf3e0f510f"
+  },
+  "hard": {
+    "eval_set_id": "5e2bb46a40134277926f9403330afee7"
+  }
+}

@@ -69,3 +69,80 @@ def test_baseline_runner_records_prompt_hashes_and_seed_fallback(monkeypatch: py
     assert isinstance(result["prompt_hash"], str) and len(result["prompt_hash"]) == 64
     assert isinstance(result["prompt_system_hash"], str) and len(result["prompt_system_hash"]) == 64
     assert isinstance(result["prompt_user_hash"], str) and len(result["prompt_user_hash"]) == 64
+
+
+def test_baseline_runner_uses_provider_specific_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StubResponse:
+        usage = None
+        content = ""
+        tool_calls = [
+            {
+                "name": "predict_full_mechanism",
+                "arguments": json.dumps({"mechanism_type": "sn2", "steps": []}),
+            }
+        ]
+
+    class _StubAdapter:
+        def invoke(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+            return _StubResponse()
+
+    captured_user_keys: list[str | None] = []
+
+    def _fake_get_chat_model(*_args, **kwargs):  # noqa: ANN002
+        captured_user_keys.append(kwargs.get("user_api_key"))
+        return _StubAdapter()
+
+    monkeypatch.setattr("mechanistic_agent.core.baseline_runner.get_chat_model", _fake_get_chat_model)
+    monkeypatch.setattr("mechanistic_agent.core.baseline_runner.adapter_supports_forced_tools", lambda _model: True)
+
+    runner = BaselineRunner()
+    runner.run_case(
+        starting_materials=["CCBr"],
+        products=["CCCl"],
+        model="anthropic/claude-opus-4.6",
+        api_keys={
+            "openai_api_key": "openai-key",
+            "openrouter_api_key": "openrouter-key",
+        },
+    )
+
+    assert captured_user_keys == ["openrouter-key"]
+
+
+def test_baseline_runner_normalizes_openrouter_reasoning_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StubResponse:
+        usage = None
+        content = ""
+        tool_calls = [
+            {
+                "name": "predict_full_mechanism",
+                "arguments": json.dumps({"mechanism_type": "sn2", "steps": []}),
+            }
+        ]
+
+    class _StubAdapter:
+        def invoke(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+            return _StubResponse()
+
+    captured_kwargs: list[dict] = []
+
+    def _fake_get_chat_model(*_args, **kwargs):  # noqa: ANN002
+        captured_kwargs.append(dict(kwargs.get("model_kwargs") or {}))
+        return _StubAdapter()
+
+    monkeypatch.setattr("mechanistic_agent.core.baseline_runner.get_chat_model", _fake_get_chat_model)
+    monkeypatch.setattr("mechanistic_agent.core.baseline_runner.adapter_supports_forced_tools", lambda _model: True)
+
+    runner = BaselineRunner()
+    runner.run_case(
+        starting_materials=["CCBr"],
+        products=["CCCl"],
+        model="anthropic/claude-opus-4.6",
+        thinking_level="max",
+        llm_seed=None,
+    )
+
+    assert captured_kwargs
+    kwargs = captured_kwargs[-1]
+    assert kwargs.get("effort") == "xhigh"
+    assert "thinking" not in kwargs

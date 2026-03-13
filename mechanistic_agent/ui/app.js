@@ -36,6 +36,7 @@ let skipAtomMappingForSmirks = false;
 let currentPrimaryView = "curriculum";
 let latestCurriculumStatus = null;
 let latestCurriculumHistory = [];
+let exampleProgressByCase = {};
 
 const runStatusEl = document.getElementById("runStatus");
 const terminalOutput = document.getElementById("terminalOutput");
@@ -1504,12 +1505,46 @@ async function loadCurriculumStatus() {
   populateExampleStepFilter();
 }
 
+async function loadExampleProgress() {
+  const modelName = document.getElementById("modelNameInput")?.value || "";
+  const modelFamily = document.getElementById("modelFamilyInput")?.value || "";
+  const thinkingLevel = (document.getElementById("reasoningInput")?.value || "").trim().toLowerCase();
+  if (!modelName) {
+    exampleProgressByCase = {};
+    return;
+  }
+  const params = new URLSearchParams();
+  params.set("model_name", modelName);
+  if (modelFamily) params.set("model_family", modelFamily);
+  if (thinkingLevel) params.set("thinking_level", thinkingLevel);
+  try {
+    const response = await fetchApi(`/api/examples/progress?${params.toString()}`);
+    if (!response.ok) {
+      exampleProgressByCase = {};
+      return;
+    }
+    const data = await response.json();
+    const items = data && typeof data.items === "object" ? data.items : {};
+    exampleProgressByCase = items || {};
+  } catch (_) {
+    exampleProgressByCase = {};
+  }
+}
+
+function _exampleProgress(example) {
+  const caseId = String(example?.id || "").trim();
+  if (!caseId) return null;
+  const row = exampleProgressByCase?.[caseId];
+  return row && typeof row === "object" ? row : null;
+}
+
 async function loadExamples() {
   const response = await fetchApi("/api/examples");
   if (!response.ok) return;
   examples = await response.json();
   await loadCurriculumStatus();
-
+  await loadExampleProgress();
+  populateExampleStepFilter();
   populateExampleOptions();
 
   const exampleSelect = document.getElementById("exampleInput");
@@ -1604,12 +1639,31 @@ function populateExampleStepFilter() {
   counts.forEach((count) => {
     const option = document.createElement("option");
     option.value = String(count);
+    const examplesInCount = examples.filter((ex) => _exampleStepCount(ex) === count);
+    let attemptedCount = 0;
+    let completedCount = 0;
+    examplesInCount.forEach((example) => {
+      const progress = _exampleProgress(example);
+      const attempts = Number(progress?.attempt_count || 0);
+      const completed = Number(progress?.completed_count || 0);
+      if (attempts > 0) attemptedCount += 1;
+      if (completed > 0) completedCount += 1;
+    });
     const hasValidated = examples.some(
       (ex) => _exampleStepCount(ex) === count && _isValidatedExample(ex),
     );
     const aheadOfCurriculum = maxStep !== null && count > maxStep;
-    option.textContent = `${count} step${count === 1 ? "" : "s"}${aheadOfCurriculum ? " \u26a0" : ""}`;
-    if (!hasValidated) option.style.color = "#94a3b8";
+    const progressSuffix = attemptedCount > 0
+      ? ` [${completedCount}/${examplesInCount.length} done]`
+      : "";
+    option.textContent = `${count} step${count === 1 ? "" : "s"}${aheadOfCurriculum ? " \u26a0" : ""}${progressSuffix}`;
+    if (completedCount > 0) {
+      option.style.color = "#166534";
+    } else if (attemptedCount > 0) {
+      option.style.color = "#92400e";
+    } else if (!hasValidated) {
+      option.style.color = "#94a3b8";
+    }
     select.appendChild(option);
   });
   const newValue = counts.map(String).includes(selectedBefore) || selectedBefore === "all"
@@ -1676,10 +1730,20 @@ function populateExampleOptions() {
       const descriptor = firstReaction || fallbackDescriptor || derivedLabel || (basicName && !basicName.toLowerCase().startsWith("humanbenchmark reaction")
         ? basicName
         : "reaction");
+      const progress = _exampleProgress(example);
+      const attempts = Number(progress?.attempt_count || 0);
+      const completed = Number(progress?.completed_count || 0);
+      const progressPrefix = completed > 0 ? "[done] " : (attempts > 0 ? "[tried] " : "");
       option.textContent = knownSteps > 0
-        ? `# of steps ${knownSteps} | ${descriptor}`
-        : (basicName || fallbackDescriptor);
-      if (!_isValidatedExample(example)) option.style.color = "#94a3b8";
+        ? `${progressPrefix}# of steps ${knownSteps} | ${descriptor}`
+        : `${progressPrefix}${basicName || fallbackDescriptor}`;
+      if (completed > 0) {
+        option.style.color = "#166534";
+      } else if (attempts > 0) {
+        option.style.color = "#92400e";
+      } else if (!_isValidatedExample(example)) {
+        option.style.color = "#94a3b8";
+      }
       group.appendChild(option);
     });
     select.appendChild(group);
@@ -2142,6 +2206,9 @@ async function createRun() {
   appendTerminalLine("system", "", `Run created: ${data.run_id}${isDryRun ? " [DRY RUN]" : ""}`, "info");
   setStatus(`Run created: ${runId}${isDryRun ? " [DRY RUN]" : ""}`);
   updateButtons("pending");
+  await loadExampleProgress();
+  populateExampleStepFilter();
+  populateExampleOptions();
   await refreshSnapshot();
 }
 
@@ -2884,13 +2951,25 @@ async function bootstrap() {
 
   document.getElementById("modelFamilyInput").addEventListener("change", async () => {
     populateModelOptions();
+    await loadCurriculumStatus();
+    await loadExampleProgress();
+    populateExampleStepFilter();
+    populateExampleOptions();
     await updateMermaidPreview();
   });
   document.getElementById("modelNameInput").addEventListener("change", async () => {
     await loadCurriculumStatus();
+    await loadExampleProgress();
+    populateExampleStepFilter();
+    populateExampleOptions();
     await updateMermaidPreview();
   });
-  document.getElementById("reasoningInput").addEventListener("change", updateMermaidPreview);
+  document.getElementById("reasoningInput").addEventListener("change", async () => {
+    await loadExampleProgress();
+    populateExampleStepFilter();
+    populateExampleOptions();
+    await updateMermaidPreview();
+  });
   ["modelFamilyInput", "modelNameInput", "reasoningInput"]
     .forEach((id) => {
       const el = document.getElementById(id);

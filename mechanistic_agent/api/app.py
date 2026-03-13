@@ -1370,6 +1370,10 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         arrow_push_annotation_enabled: bool,
         adaptive_harness_mode: str,
         dbe_policy: str,
+        chemistry_backend: str = "auto",
+        chemistry_backend_parity: bool = False,
+        rdkit_cli_command: str | None = None,
+        rdkit_cli_timeout_seconds: float = 5.0,
         reaction_template_policy: str,
         reaction_template_confidence_threshold: float,
         reaction_template_margin_threshold: float,
@@ -1433,6 +1437,10 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 "arrow_push_annotation_enabled": arrow_push_annotation_enabled,
                 "adaptive_harness_mode": resolved_adaptive_mode,
                 "dbe_policy": dbe_policy,
+                "chemistry_backend": str(chemistry_backend or "auto"),
+                "chemistry_backend_parity": bool(chemistry_backend_parity),
+                "rdkit_cli_command": str(rdkit_cli_command or "rdkit_cli"),
+                "rdkit_cli_timeout_seconds": float(rdkit_cli_timeout_seconds or 5.0),
                 "reaction_template_policy": reaction_template_policy,
                 "reaction_template_confidence_threshold": reaction_template_confidence_threshold,
                 "reaction_template_margin_threshold": reaction_template_margin_threshold,
@@ -1798,6 +1806,10 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             arrow_push_annotation_enabled=payload.arrow_push_annotation_enabled,
             adaptive_harness_mode=payload.adaptive_harness_mode,
             dbe_policy=payload.dbe_policy,
+            chemistry_backend=payload.chemistry_backend,
+            chemistry_backend_parity=payload.chemistry_backend_parity,
+            rdkit_cli_command=payload.rdkit_cli_command,
+            rdkit_cli_timeout_seconds=payload.rdkit_cli_timeout_seconds,
             reaction_template_policy=payload.reaction_template_policy,
             reaction_template_confidence_threshold=payload.reaction_template_confidence_threshold,
             reaction_template_margin_threshold=payload.reaction_template_margin_threshold,
@@ -1924,6 +1936,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         validation_obj = validate_mechanism_step_output(
             output,
             dbe_policy=str(cfg.get("dbe_policy") or "soft"),
+            run_config=cfg,
         )
         validation = validation_obj.as_dict()
         attempt = int(payload.step_index)
@@ -3794,6 +3807,23 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             )
         )
         return results
+
+    @app.get("/api/examples/progress")
+    def list_example_progress(
+        model_name: str,
+        thinking_level: str | None = None,
+        model_family: str | None = None,
+    ) -> Dict[str, Any]:
+        resolved_model_name = _resolve_model_name(model_name, None)
+        normalized_thinking = str(thinking_level or "").strip().lower()
+        normalized_family = str(model_family or "").strip().lower() or None
+        items = store.list_case_attempt_history(
+            model_name=resolved_model_name,
+            thinking_level=normalized_thinking,
+            model_family=normalized_family,
+            case_ids=None,
+        )
+        return {"items": items}
 
     @app.post("/api/parse_smirks")
     def parse_smirks(payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -44,6 +44,10 @@ class CreateRunRequest(BaseModel):
     arrow_push_annotation_enabled: bool = True
     adaptive_harness_mode: Literal["off", "conservative"] = "off"
     dbe_policy: Literal["strict", "soft"] = "soft"
+    chemistry_backend: Literal["auto", "rdkit_cli", "python"] = "auto"
+    chemistry_backend_parity: bool = False
+    rdkit_cli_command: Optional[str] = None
+    rdkit_cli_timeout_seconds: float = 5.0
     reaction_template_policy: Literal["off", "auto"] = "auto"
     reaction_template_confidence_threshold: float = 0.65
     reaction_template_margin_threshold: float = 0.10

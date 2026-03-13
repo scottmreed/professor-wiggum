@@ -23,6 +23,7 @@ This repository now runs on a local-first architecture:
 - Runs: `POST /api/runs`, `POST /api/runs/{id}/start`, `POST /api/runs/{id}/stop`, `POST /api/runs/{id}/resume`
 - Verified step submission: `POST /api/runs/{id}/mechanism_steps`
 - Snapshot/flow/events: `GET /api/runs/{id}`, `GET /api/runs/{id}/flow`, `GET /api/runs/{id}/events`
+- Examples/progress: `GET /api/examples`, `GET /api/examples/progress`
 - Memory: `GET /api/memory`, `POST /api/memory/query`, `POST /api/memory/items`
 - Traces/curation: `GET /api/traces`, `POST /api/traces/{trace_id}/approve`, `POST /api/curation/export`, `GET /api/curation/exports`
 - Evals: `POST /api/evals/runset`, `GET /api/evals/leaderboard` (returns overall + per-subagent quality/pass scores)
@@ -691,6 +692,26 @@ curl -X POST http://127.0.0.1:8010/api/evals/runset \
      -H "Content-Type: application/json" \
      -d '{"eval_set_id": "eval_set", "model_family": "openai"}'
 ```
+
+For harness-free baseline leaderboard rows without starting the API server:
+```bash
+python main.py baseline --all-tiers --model anthropic/claude-opus-4.6 --thinking-level high
+```
+
+Tier mode uses `training_data/baseline_tier_eval_set_map.json` to resolve
+`easy`/`medium`/`hard` eval set IDs and writes run groups:
+`harness_free_baseline_easy`, `harness_free_baseline_medium`,
+`harness_free_baseline_hard`.
+Tier case IDs default to `training_data/baseline_tiers_clawdiator.json`
+(fallback: `training_data/eval_tiers.json`).
+
+For harness eval leaderboard rows across all tiers without starting the API server:
+```bash
+python main.py eval --eval-set-id eval_set --all-tiers --model anthropic/claude-opus-4.6 --thinking-level low
+```
+
+In `--all-tiers` mode, `--eval-set-id` is ignored and eval-set IDs come from
+`training_data/baseline_tier_eval_set_map.json`.
 
 See `training_data/README.md` for full details.
 

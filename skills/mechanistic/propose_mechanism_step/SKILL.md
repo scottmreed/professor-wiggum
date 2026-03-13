@@ -31,6 +31,7 @@ Ranked list of candidates, each with:
 - `resulting_state` (SMILES[]) — all species after applying the step
 - `reaction_smirks` (SMIRKS with `|mech:v1;...|` block using explicit move sources)
 - `electron_pushes` ([{kind, source_atom|source_bond, through_atom?, target_atom, electrons}])
+- `rdkit_cli_commands` (optional command plan list) — structured retry-oriented `rdkit_cli` actions
 - `step_label` (string)
 - `rank` (int)
 - `confidence` (float 0–1)
@@ -77,6 +78,20 @@ Ranked list of candidates, each with:
                 }}
               },
               "confidence": {"type": "string", "enum": ["high", "medium", "low"]}
+              ,"rdkit_cli_commands": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["command", "args"],
+                  "properties": {
+                    "command": {"type": "string", "enum": ["repair-smiles", "edit", "check", "balance", "rings", "schema"]},
+                    "args": {"type": "object"},
+                    "run_on": {"type": "string", "enum": ["initial", "retry"]},
+                    "apply_to": {"type": "string"},
+                    "reason": {"type": "string"}
+                  }
+                }
+              }
             }
           }
         }
@@ -102,6 +117,11 @@ Each candidate must be executable by deterministic validators, so include:
   - CRITICAL: `through_atom` is **required** for `pi_bond` and `sigma_bond` moves and must equal `source_bond[1]`.
   - All atom references must be numeric strings matching atom-map indices.
 - `resulting_state`: optional but preferred explicit species list after applying the step, including minimal needed byproducts/reagents when balance would otherwise fail.
+- `rdkit_cli_commands` (optional): structured command plans for runtime execution. Prefer `run_on: "retry"` for heavyweight checks/repairs.
+  - Use `repair-smiles` and `edit` when a specific field is likely to fail parsing; set `apply_to` (e.g., `intermediate_smiles`, `resulting_state[0]`).
+  - Use `rings` only when ring/aromatic validity is uncertain.
+  - Use `check` only for mechanism-step validation context and usually on retry.
+  - Avoid unnecessary `schema` calls unless capability probing is explicitly needed.
 
 CRITICAL VALIDATION REQUIREMENTS:
 - All SMILES strings in `intermediate_smiles`, `resulting_state`, and `reaction_smirks` must be parseable by RDKit
@@ -111,6 +131,10 @@ CRITICAL VALIDATION REQUIREMENTS:
   * Unclosed rings or invalid ring notation
   * Invalid atom symbols or molecular formulas in brackets
   * Malformed SMILES syntax
+  * Detached mapped hydrogens or orphan mapped atoms (for example, creating `[H:44]` with no valid bonded context)
+  * Invalid mapped charge fragments such as malformed `[O:2-]` style tokens that fail parser sanity checks
+  * Non-ring aromatic atom annotations (`non-ring atom ... aromatic`) and unkekulizable aromatic systems
+  * Fallback-style disconnected placeholders (`C.C.C`, single counterions like `[Cl-]`) as the primary intermediate
 
 SMILES format requirements:
 - Use RDKit-parseable SMILES notation: water=`O`, not `[H2O]`.
@@ -122,6 +146,9 @@ When proposing candidates, validate each SMILES mentally:
 - Can this string be parsed by a chemical structure parser?
 - Does it represent a chemically reasonable intermediate?
 - Are all atoms properly bonded and charged?
+- Can the full `reaction_smirks` left and right sides be parsed species-by-species after atom-map stripping?
+- Does the candidate remain executable (has valid `reaction_smirks` + explicit `electron_pushes`) without relying on fallback repair?
+- Only emit command plans when they add concrete value; default to retry-first usage instead of spending tools on the initial pass.
 <!-- PROMPT_END -->
 
 ## Standalone Usage

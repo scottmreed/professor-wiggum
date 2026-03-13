@@ -4,7 +4,7 @@
 
 ## Setup
 
-See [SETUP.md](SETUP.md) for installation, environment variables, RDKit, and test instructions. You can also contribute without cloning the repo; see [CONTRIBUTING.md](CONTRIBUTING.md).
+See [SETUP.md](SETUP.md) for installation, environment variables, RDKit, and test instructions. If you will use the `rdkit_cli` chemistry backend, run `npm install` in the repo root (no `npm link`). You can also contribute without cloning the repo; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Orchestration Modes
 
@@ -81,6 +81,46 @@ The submission uses the "PR path" approach with full Docker Compose support for 
 ---
 
 ## Developer
+
+### Baseline Tier Runs (No API server)
+
+Use this when you want harness-free baseline rows on the leaderboard for easy/medium/hard in one command:
+
+```bash
+source .venv/bin/activate
+python main.py baseline --all-tiers --model anthropic/claude-opus-4.6 --thinking-level high
+```
+
+- Tier mode uses `training_data/baseline_tier_eval_set_map.json` for tier -> `eval_set_id`.
+- Tier case IDs come from `training_data/baseline_tiers_clawdiator.json` by default
+  (fallback: `training_data/eval_tiers.json`).
+- Default case selection is **unrun-first** for the selected exact model + thinking level.
+- Use `--allow-repeats` to explicitly rerun previously attempted cases.
+- Default run groups are `harness_free_baseline_easy`, `harness_free_baseline_medium`, `harness_free_baseline_hard`.
+- Override paths with `--tier-map-path <path>` and `--tier-definitions-path <path>`.
+- Override group prefix with `--run-group-prefix <prefix>`.
+- Inspect results with:
+  - `python main.py leaderboard --eval-set-id <eval_set_id>`
+
+### Harness Eval Tier Runs (No API server)
+
+Run harness evals across easy/medium/hard in one command (same tier map + tier definitions):
+
+```bash
+source .venv/bin/activate
+python main.py eval --eval-set-id eval_set --all-tiers --model anthropic/claude-opus-4.6 --thinking-level low
+```
+
+- `--eval-set-id` is ignored in `--all-tiers` mode (tier map controls eval sets).
+- Default case selection is **unrun-first** for the selected exact model + thinking level.
+- Use `--allow-repeats` to explicitly rerun previously attempted cases.
+- Run groups are `<run-group-prefix>_<tier>` (default prefix: `cli_eval_tier`).
+
+### Shared UI/CLI Progress Tracking
+
+- The UI and CLI share the same non-holdout attempt history by exact model + thinking level.
+- CLI routes (`baseline`, `eval`) use this history for default unrun-first selection.
+- UI example picker and step filter color code completion state for the currently selected model/thinking.
 
 ### Harness Workflow Diagram
 

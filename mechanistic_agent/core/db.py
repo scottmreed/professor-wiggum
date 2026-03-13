@@ -2374,6 +2374,171 @@ class RunStore:
             rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def list_case_attempt_history(
+        self,
+        *,
+        model_name: str,
+        thinking_level: Optional[str],
+        model_family: Optional[str] = None,
+        case_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Aggregate case attempts across eval runs and UI-created runs.
+
+        The aggregation is scoped to an exact model + thinking pair and excludes
+        leaderboard holdout eval-set attempts.
+        """
+
+        normalized_model_name = str(model_name or "").strip()
+        normalized_thinking = str(thinking_level or "").strip().lower()
+        normalized_family = str(model_family or "").strip().lower()
+        case_filter = {
+            str(case_id).strip()
+            for case_id in (case_ids or [])
+            if str(case_id).strip()
+        }
+
+        if not normalized_model_name:
+            return {}
+
+        attempts: List[Dict[str, Any]] = []
+        with self._connect() as conn:
+            holdout_case_rows = conn.execute(
+                """
+                SELECT esc.case_id AS case_id
+                FROM eval_set_cases esc
+                JOIN eval_sets es ON es.id = esc.eval_set_id
+                WHERE COALESCE(es.purpose, 'general') = 'leaderboard_holdout'
+                """
+            ).fetchall()
+            non_holdout_case_rows = conn.execute(
+                """
+                SELECT esc.case_id AS case_id
+                FROM eval_set_cases esc
+                JOIN eval_sets es ON es.id = esc.eval_set_id
+                WHERE COALESCE(es.purpose, 'general') != 'leaderboard_holdout'
+                """
+            ).fetchall()
+
+            holdout_case_ids = {str(row["case_id"] or "").strip() for row in holdout_case_rows}
+            non_holdout_case_ids = {str(row["case_id"] or "").strip() for row in non_holdout_case_rows}
+
+            eval_sql = """
+                SELECT
+                    err.case_id AS case_id,
+                    er.status AS run_status,
+                    er.created_at AS created_at
+                FROM eval_run_results err
+                JOIN eval_runs er ON er.id = err.eval_run_id
+                LEFT JOIN eval_sets es ON es.id = er.eval_set_id
+                WHERE COALESCE(er.model_name, er.model, '') = ?
+                  AND COALESCE(er.thinking_level, '') = ?
+                  AND COALESCE(es.purpose, 'general') != 'leaderboard_holdout'
+            """
+            eval_params: List[Any] = [normalized_model_name, normalized_thinking]
+            if normalized_family:
+                eval_sql += " AND COALESCE(er.model_family, '') = ?"
+                eval_params.append(normalized_family)
+            if case_filter:
+                placeholders = ",".join("?" for _ in sorted(case_filter))
+                eval_sql += f" AND err.case_id IN ({placeholders})"
+                eval_params.extend(sorted(case_filter))
+            eval_rows = conn.execute(eval_sql, eval_params).fetchall()
+            for row in eval_rows:
+                case_id = str(row["case_id"] or "").strip()
+                if not case_id:
+                    continue
+                attempts.append(
+                    {
+                        "case_id": case_id,
+                        "status": str(row["run_status"] or ""),
+                        "created_at": float(row["created_at"] or 0.0),
+                        "source": "eval",
+                    }
+                )
+
+            run_rows = conn.execute(
+                """
+                SELECT
+                    status,
+                    created_at,
+                    input_payload_json,
+                    config_json
+                FROM runs
+                WHERE input_payload_json LIKE '%"example_id"%'
+                """
+            ).fetchall()
+
+            for row in run_rows:
+                input_payload = self._json_loads(row["input_payload_json"], {})
+                if not isinstance(input_payload, dict):
+                    continue
+                case_id = str(input_payload.get("example_id") or "").strip()
+                if not case_id:
+                    continue
+                if case_filter and case_id not in case_filter:
+                    continue
+                # Keep non-holdout behavior: if a case ID appears only in holdout
+                # suites, don't count it toward progress for this API.
+                if case_id in holdout_case_ids and case_id not in non_holdout_case_ids:
+                    continue
+
+                config = self._json_loads(row["config_json"], {})
+                if not isinstance(config, dict):
+                    continue
+                row_model_name = str(config.get("model_name") or config.get("model") or "").strip()
+                row_thinking = str(config.get("thinking_level") or "").strip().lower()
+                row_family = str(config.get("model_family") or "").strip().lower()
+
+                if row_model_name != normalized_model_name:
+                    continue
+                if row_thinking != normalized_thinking:
+                    continue
+                if normalized_family and row_family != normalized_family:
+                    continue
+
+                attempts.append(
+                    {
+                        "case_id": case_id,
+                        "status": str(row["status"] or ""),
+                        "created_at": float(row["created_at"] or 0.0),
+                        "source": "run",
+                    }
+                )
+
+        history: Dict[str, Dict[str, Any]] = {}
+        for item in attempts:
+            case_id = str(item.get("case_id") or "").strip()
+            if not case_id:
+                continue
+            status = str(item.get("status") or "")
+            created_at = float(item.get("created_at") or 0.0)
+            source = str(item.get("source") or "")
+            row = history.setdefault(
+                case_id,
+                {
+                    "case_id": case_id,
+                    "attempt_count": 0,
+                    "completed_count": 0,
+                    "failed_count": 0,
+                    "last_attempted_at": 0.0,
+                    "last_status": None,
+                    "sources": [],
+                },
+            )
+            row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
+            if status == "completed":
+                row["completed_count"] = int(row.get("completed_count") or 0) + 1
+            elif status == "failed":
+                row["failed_count"] = int(row.get("failed_count") or 0) + 1
+            if created_at >= float(row.get("last_attempted_at") or 0.0):
+                row["last_attempted_at"] = created_at
+                row["last_status"] = status
+            sources = list(row.get("sources") or [])
+            if source and source not in sources:
+                sources.append(source)
+                row["sources"] = sources
+        return history
+
     def get_eval_run(self, eval_run_id: str) -> Optional[Dict[str, Any]]:
         with self._connect() as conn:
             row = conn.execute(
@@ -2972,6 +3137,43 @@ class RunStore:
             )
             conn.commit()
         return row_id
+
+    def seed_few_shot_examples(self, examples: List[Dict[str, Any]]) -> int:
+        """Load examples using INSERT OR IGNORE — local DB data wins on conflict.
+
+        Use this when importing from version-controlled .jsonl files so that
+        locally-approved examples are never overwritten by a git pull.
+
+        Each dict must have: step_name, example_key, input_text, output_text.
+        Optional: score.
+        """
+        inserted = 0
+        with self._lock, self._connect() as conn:
+            for ex in examples:
+                row_id = uuid.uuid4().hex
+                cur = conn.execute(
+                    """
+                    INSERT OR IGNORE INTO few_shot_examples(
+                        id, step_name, example_key, input_text, output_text,
+                        source_trace_id, score, approved_bool, prompt_version_id, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row_id,
+                        ex["step_name"],
+                        ex["example_key"],
+                        ex["input_text"],
+                        ex["output_text"],
+                        None,
+                        ex.get("score"),
+                        1,
+                        None,
+                        time.time(),
+                    ),
+                )
+                inserted += cur.rowcount
+            conn.commit()
+        return inserted
 
     def list_few_shot_examples(
         self,

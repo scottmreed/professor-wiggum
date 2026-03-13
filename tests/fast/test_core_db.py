@@ -388,3 +388,140 @@ def test_eval_set_visibility_filters_and_holdout_weighted_leaderboard(tmp_path: 
     assert leaderboard[0]["aggregate_gate_cases"] == 6
     assert "1" in leaderboard[0]["per_step_scores"]
     assert "5" in leaderboard[0]["per_step_scores"]
+
+
+def test_list_case_attempt_history_aggregates_eval_and_ui_runs_non_holdout_only(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "mechanistic.db")
+    general_eval_set_id = store.add_eval_set(
+        name="general_eval",
+        version="v1",
+        source_path="training_data/eval_set.json",
+        sha256=None,
+        cases=[
+            {
+                "case_id": "case_a",
+                "input": {"starting_materials": ["C=O"], "products": ["CO"]},
+                "expected": {"products": ["CO"]},
+                "tags": [],
+            },
+            {
+                "case_id": "case_b",
+                "input": {"starting_materials": ["CCO"], "products": ["CC=O"]},
+                "expected": {"products": ["CC=O"]},
+                "tags": [],
+            },
+        ],
+        active=True,
+        purpose="general",
+        exposed_in_ui=True,
+    )
+    holdout_eval_set_id = store.add_eval_set(
+        name="holdout_eval",
+        version="v1",
+        source_path="training_data/leaderboard_holdout/eval_set_holdout.json",
+        sha256=None,
+        cases=[
+            {
+                "case_id": "case_holdout",
+                "input": {"starting_materials": ["CCC"], "products": ["CC=C"]},
+                "expected": {"products": ["CC=C"]},
+                "tags": ["leaderboard_holdout"],
+            }
+        ],
+        active=True,
+        purpose="leaderboard_holdout",
+        exposed_in_ui=False,
+    )
+
+    eval_run_general = store.create_eval_run(
+        eval_set_id=general_eval_set_id,
+        run_group_name="cli_eval_default",
+        model="gpt-5",
+        model_name="gpt-5",
+        model_family="openai",
+        thinking_level="low",
+        harness_bundle_hash="h",
+        status="completed",
+    )
+    store.record_eval_run_result(
+        eval_run_id=eval_run_general,
+        case_id="case_a",
+        run_id=None,
+        score=0.9,
+        passed=True,
+        cost={"total_cost": 0.01},
+        latency_ms=100.0,
+        summary={},
+    )
+
+    eval_run_holdout = store.create_eval_run(
+        eval_set_id=holdout_eval_set_id,
+        run_group_name="official_holdout_harness",
+        model="gpt-5",
+        model_name="gpt-5",
+        model_family="openai",
+        thinking_level="low",
+        harness_bundle_hash="h",
+        status="completed",
+    )
+    store.record_eval_run_result(
+        eval_run_id=eval_run_holdout,
+        case_id="case_holdout",
+        run_id=None,
+        score=1.0,
+        passed=True,
+        cost={"total_cost": 0.01},
+        latency_ms=80.0,
+        summary={},
+    )
+
+    ui_run_id = store.create_run(
+        mode="unverified",
+        input_payload={
+            "example_id": "case_b",
+            "starting_materials": ["CCO"],
+            "products": ["CC=O"],
+        },
+        config={
+            "model_name": "gpt-5",
+            "model_family": "openai",
+            "thinking_level": "low",
+        },
+        prompt_bundle_hash="a",
+        skill_bundle_hash="b",
+        memory_bundle_hash="c",
+    )
+    store.set_run_status(ui_run_id, "completed")
+
+    other_model_run_id = store.create_run(
+        mode="unverified",
+        input_payload={
+            "example_id": "case_a",
+            "starting_materials": ["C=O"],
+            "products": ["CO"],
+        },
+        config={
+            "model_name": "gpt-5-mini",
+            "model_family": "openai",
+            "thinking_level": "low",
+        },
+        prompt_bundle_hash="a",
+        skill_bundle_hash="b",
+        memory_bundle_hash="c",
+    )
+    store.set_run_status(other_model_run_id, "completed")
+
+    history = store.list_case_attempt_history(
+        model_name="gpt-5",
+        thinking_level="low",
+        model_family="openai",
+        case_ids=["case_a", "case_b", "case_holdout"],
+    )
+
+    assert "case_a" in history
+    assert "case_b" in history
+    assert "case_holdout" not in history
+    assert int(history["case_a"]["attempt_count"]) == 1
+    assert int(history["case_a"]["completed_count"]) == 1
+    assert int(history["case_b"]["attempt_count"]) == 1
+    assert int(history["case_b"]["completed_count"]) == 1

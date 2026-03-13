@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import typer
 
@@ -39,15 +39,44 @@ from mechanistic_agent.eval_set_resolution import (
 
 try:  # pragma: no cover - optional helper
     from dotenv import load_dotenv
+    import os
 except ImportError:  # pragma: no cover - fallback when python-dotenv is absent
     def load_dotenv(_: Path) -> bool:  # type: ignore[override]
         return False
+    import os  # fallback import
 
 
-app = typer.Typer(add_completion=False, no_args_is_help=True)
-curriculum_app = typer.Typer(add_completion=False, no_args_is_help=True)
+_CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+app = typer.Typer(add_completion=False, no_args_is_help=True, context_settings=_CONTEXT_SETTINGS)
+curriculum_app = typer.Typer(add_completion=False, no_args_is_help=True, context_settings=_CONTEXT_SETTINGS)
 app.add_typer(curriculum_app, name="curriculum")
 load_dotenv(Path.cwd() / ".env")
+
+
+def _load_api_keys() -> Dict[str, str]:
+    """Load API keys from environment, preferring dotenv values."""
+    keys = {}
+
+    # Load from environment variables, which may be set by dotenv
+    env_mappings = {
+        'OPENAI_API_KEY': 'openai_api_key',
+        'OPENROUTER_API_KEY': 'openrouter_api_key',
+        'ANTHROPIC_API_KEY': 'anthropic_api_key',
+        'GOOGLE_API_KEY': 'google_api_key',
+        'OPENAI_ADMIN_KEY': 'openai_admin_key',
+    }
+
+    for env_var, key_name in env_mappings.items():
+        value = os.environ.get(env_var)
+        if value:
+            keys[key_name] = value
+
+    # Special handling: if OPENROUTER_API_KEY is not set but ANTHROPIC_API_KEY is,
+    # use ANTHROPIC_API_KEY as fallback for OPENROUTER_API_KEY
+    if 'openrouter_api_key' not in keys and 'anthropic_api_key' in keys:
+        keys['openrouter_api_key'] = keys['anthropic_api_key']
+
+    return keys
 
 
 def _parse_materials(raw: Optional[str], fallback: List[str]) -> List[str]:
@@ -142,6 +171,71 @@ def _extract_eval_run_diagnostics(snapshot: Dict[str, Any]) -> Dict[str, Optiona
     }
 
 
+def _extract_chemistry_backend_diagnostics(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    events = list(snapshot.get("events") or [])
+    for event in reversed(events):
+        if str(event.get("event_type") or "") != "chemistry_backend_summary":
+            continue
+        payload = event.get("payload")
+        if isinstance(payload, dict):
+            return {
+                "chemistry_backend": payload,
+                "chemistry_backend_source": "event",
+            }
+
+    backend_used_counts: Dict[str, int] = {}
+    backend_requested_counts: Dict[str, int] = {}
+    fallback_count = 0
+    fallback_reasons: Dict[str, int] = {}
+    rdkit_cli_error_counts: Dict[str, int] = {}
+    first_rdkit_cli_error: Optional[Dict[str, Any]] = None
+    calls = 0
+
+    for row in snapshot.get("step_outputs") or []:
+        output = row.get("output") if isinstance(row.get("output"), dict) else {}
+        details = output.get("details") if isinstance(output.get("details"), dict) else {}
+        backend_meta = details.get("chemistry_backend") if isinstance(details.get("chemistry_backend"), dict) else None
+        if not isinstance(backend_meta, dict):
+            continue
+        calls += 1
+        backend_used = str(backend_meta.get("backend_used") or "python")
+        backend_requested = str(backend_meta.get("backend_requested") or "auto")
+        backend_used_counts[backend_used] = backend_used_counts.get(backend_used, 0) + 1
+        backend_requested_counts[backend_requested] = backend_requested_counts.get(backend_requested, 0) + 1
+
+        if bool(backend_meta.get("fallback_used")):
+            fallback_count += 1
+            reason = str(backend_meta.get("fallback_reason") or "unknown")
+            fallback_reasons[reason] = fallback_reasons.get(reason, 0) + 1
+
+        error_code = str(backend_meta.get("rdkit_cli_error_code") or "").strip()
+        error_text = str(backend_meta.get("rdkit_cli_error") or "").strip()
+        key = error_code or (error_text[:120] if error_text else "")
+        if key:
+            rdkit_cli_error_counts[key] = rdkit_cli_error_counts.get(key, 0) + 1
+            if first_rdkit_cli_error is None:
+                first_rdkit_cli_error = {
+                    "code": error_code or None,
+                    "message": error_text or None,
+                    "step_name": row.get("step_name"),
+                }
+
+    if calls == 0:
+        return {"chemistry_backend": {}, "chemistry_backend_source": "none"}
+    return {
+        "chemistry_backend": {
+            "calls": calls,
+            "backend_used_counts": backend_used_counts,
+            "backend_requested_counts": backend_requested_counts,
+            "fallback_count": fallback_count,
+            "fallback_reasons": fallback_reasons,
+            "rdkit_cli_error_counts": rdkit_cli_error_counts,
+            "first_rdkit_cli_error": first_rdkit_cli_error,
+        },
+        "chemistry_backend_source": "step_outputs",
+    }
+
+
 def _build_eval_case_summary(
     *,
     snapshot: Dict[str, Any],
@@ -163,6 +257,7 @@ def _build_eval_case_summary(
         "subagent_scores": subagent_scores,
     }
     summary.update(diagnostics)
+    summary.update(_extract_chemistry_backend_diagnostics(snapshot))
     return summary
 
 
@@ -180,6 +275,18 @@ def _format_eval_case_result_line(
     if latency_ms is not None:
         latency_text = f" latency={latency_ms/1000:.1f}s"
     line = f"  [{index}] {case_id}: score={score:.3f} passed={passed} cost=${total_cost:.3f}{latency_text}"
+    chemistry = summary.get("chemistry_backend") if isinstance(summary.get("chemistry_backend"), dict) else {}
+    if chemistry:
+        backend_used_counts = chemistry.get("backend_used_counts")
+        if isinstance(backend_used_counts, dict) and backend_used_counts:
+            primary = max(backend_used_counts.items(), key=lambda item: item[1])[0]
+            line += f" backend={primary}"
+        if int(chemistry.get("fallback_count") or 0) > 0:
+            line += f" fallback={int(chemistry.get('fallback_count') or 0)}"
+        error_counts = chemistry.get("rdkit_cli_error_counts")
+        if isinstance(error_counts, dict) and error_counts:
+            top_error = max(error_counts.items(), key=lambda item: item[1])[0]
+            line += f" rdkit_cli_error={top_error}"
     if str(summary.get("run_status") or "") != "failed":
         return line
     detail = _first_text_value(summary.get("failure_reason"), summary.get("first_step_error"))
@@ -457,6 +564,487 @@ def _eval_case_step_count(case: Dict[str, Any]) -> Optional[int]:
             if isinstance(steps, list):
                 return len(steps)
     return None
+
+
+BASELINE_TIER_NAMES: tuple[str, str, str] = ("easy", "medium", "hard")
+BASELINE_TIER_MAP_DEFAULT_PATH: Path = Path("training_data") / "baseline_tier_eval_set_map.json"
+BASELINE_TIER_DEFINITIONS_DEFAULT_PATH: Path = Path("training_data") / "baseline_tiers_clawdiator.json"
+EVAL_TIERS_DEFAULT_PATH: Path = Path("training_data") / "eval_tiers.json"
+
+
+def _load_eval_tier_ids(tier_file: Path) -> Dict[str, List[str]]:
+    """Load and validate tier IDs from a tier-definition JSON file."""
+    if not tier_file.exists():
+        raise typer.BadParameter(f"Tier file not found: {tier_file}")
+    try:
+        raw = json.loads(tier_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"Invalid JSON in {tier_file}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(f"{tier_file} must be a JSON object")
+
+    resolved: Dict[str, List[str]] = {}
+    for tier_name in BASELINE_TIER_NAMES:
+        raw_ids = raw.get(tier_name)
+        if not isinstance(raw_ids, list):
+            raise typer.BadParameter(f"{tier_file} is missing tier list '{tier_name}'")
+        resolved[tier_name] = [str(item) for item in raw_ids if str(item)]
+    return resolved
+
+
+def _resolve_baseline_tier_definitions_path(
+    *,
+    base: Path,
+    override_path: Optional[str],
+) -> Path:
+    """Resolve the tier case-id source file for baseline tier mode."""
+    if override_path:
+        return Path(override_path).expanduser().resolve()
+    clawdiator_path = (base / BASELINE_TIER_DEFINITIONS_DEFAULT_PATH).resolve()
+    if clawdiator_path.exists():
+        return clawdiator_path
+    return (base / EVAL_TIERS_DEFAULT_PATH).resolve()
+
+
+def _normalize_requested_baseline_tiers(
+    requested_tiers: Optional[Sequence[str]],
+    *,
+    all_tiers: bool,
+) -> List[str]:
+    """Normalize --tier / --all-tiers input while preserving user order."""
+    if all_tiers:
+        return list(BASELINE_TIER_NAMES)
+
+    normalized: List[str] = []
+    for item in requested_tiers or []:
+        value = str(item or "").strip().lower()
+        if not value:
+            continue
+        if value not in BASELINE_TIER_NAMES:
+            raise typer.BadParameter("tier must be one of: easy, medium, hard")
+        if value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
+def _load_baseline_tier_eval_set_map(path: Path) -> Dict[str, str]:
+    """Load tier -> eval_set_id mapping from JSON."""
+    if not path.exists():
+        raise typer.BadParameter(
+            f"Tier map file not found: {path}. "
+            "Create it or pass --tier-map-path to a valid JSON mapping file."
+        )
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"Invalid JSON in tier map file {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(f"Tier map file must be a JSON object: {path}")
+
+    missing_tiers: List[str] = []
+    resolved: Dict[str, str] = {}
+    for tier_name in BASELINE_TIER_NAMES:
+        tier_payload = raw.get(tier_name)
+        if not isinstance(tier_payload, dict):
+            missing_tiers.append(tier_name)
+            continue
+        eval_set_id = str(tier_payload.get("eval_set_id") or "").strip()
+        if not eval_set_id:
+            raise typer.BadParameter(
+                f"Tier map file {path} must define a non-empty {tier_name}.eval_set_id"
+            )
+        resolved[tier_name] = eval_set_id
+    if missing_tiers:
+        raise typer.BadParameter(
+            f"Tier map file {path} is missing required tiers: {', '.join(missing_tiers)}"
+        )
+    return resolved
+
+
+def _build_baseline_tier_execution_plan(
+    *,
+    base: Path,
+    store: RunStore,
+    requested_tiers: Sequence[str],
+    tier_eval_set_ids: Mapping[str, str],
+    tier_definitions_path: Path,
+    allow_holdout: bool,
+) -> List[Dict[str, Any]]:
+    """Resolve tier configuration and ensure each tier has runnable cases."""
+    tier_case_ids_by_name = _load_eval_tier_ids(tier_definitions_path)
+    plan: List[Dict[str, Any]] = []
+
+    for tier_name in requested_tiers:
+        eval_set_id = str(tier_eval_set_ids.get(tier_name) or "").strip()
+        if not eval_set_id:
+            raise typer.BadParameter(f"Tier '{tier_name}' has no configured eval_set_id in tier map")
+        try:
+            resolved_eval_set = resolve_eval_set(
+                store=store,
+                requested_eval_set_id=eval_set_id,
+            )
+        except EvalSetResolutionError as exc:
+            raise typer.BadParameter(
+                f"Tier '{tier_name}' references unknown eval_set_id '{eval_set_id}': {exc}"
+            ) from exc
+        if resolved_eval_set.purpose == "leaderboard_holdout" and not allow_holdout:
+            raise typer.BadParameter(
+                f"Tier '{tier_name}' references holdout eval set '{eval_set_id}', "
+                "which is not allowed for baseline tier runs."
+            )
+
+        by_id = {
+            str(case.get("case_id") or ""): case
+            for case in resolved_eval_set.cases
+            if str(case.get("case_id") or "")
+        }
+        tier_case_ids = tier_case_ids_by_name.get(tier_name, [])
+        selected_case_ids = [case_id for case_id in tier_case_ids if case_id in by_id]
+        if not selected_case_ids:
+            raise typer.BadParameter(
+                f"Tier '{tier_name}' has 0 cases; sync eval_tiers.json or tier mapping"
+            )
+
+        plan.append(
+            {
+                "tier": tier_name,
+                "eval_set_id": eval_set_id,
+                "resolved_eval_set": resolved_eval_set,
+                "case_ids": selected_case_ids,
+            }
+        )
+
+    return plan
+
+
+def _filter_unrun_case_ids_for_model(
+    *,
+    store: RunStore,
+    case_ids: Sequence[str],
+    model_name: str,
+    thinking_level: Optional[str],
+    model_family: Optional[str],
+) -> List[str]:
+    """Return case IDs that have not yet been attempted for model+thinking."""
+    ordered_case_ids = [
+        str(case_id).strip()
+        for case_id in case_ids
+        if str(case_id).strip()
+    ]
+    if not ordered_case_ids:
+        return []
+    history = store.list_case_attempt_history(
+        model_name=model_name,
+        thinking_level=thinking_level,
+        model_family=model_family,
+        case_ids=ordered_case_ids,
+    )
+    attempted = set(history)
+    return [case_id for case_id in ordered_case_ids if case_id not in attempted]
+
+
+OFFICIAL_TIER_NAMES: tuple[str, str, str] = ("easy", "medium", "hard")
+
+
+def _official_case_matches_tier(case: Dict[str, Any], tier_name: str) -> bool:
+    step_count = _eval_case_step_count(case)
+    if step_count is None:
+        return False
+    if tier_name == "easy":
+        return 1 <= step_count <= 2
+    if tier_name == "medium":
+        return step_count == 3
+    return step_count >= 4
+
+
+def _official_case_ids_for_tier(
+    *,
+    cases: Sequence[Dict[str, Any]],
+    tier_name: str,
+) -> List[str]:
+    ordered_case_ids: List[str] = []
+    for case in cases:
+        case_id = str(case.get("case_id") or "").strip()
+        if not case_id:
+            continue
+        if not _official_case_matches_tier(case, tier_name):
+            continue
+        ordered_case_ids.append(case_id)
+    return ordered_case_ids
+
+
+def _list_attempted_eval_case_ids_for_scope(
+    *,
+    store: RunStore,
+    eval_set_id: str,
+    model_name: str,
+    thinking_level: Optional[str],
+    run_group_name: Optional[str],
+) -> List[str]:
+    normalized_model_name = str(model_name or "").strip()
+    normalized_thinking = str(thinking_level or "").strip().lower()
+    normalized_run_group = str(run_group_name or "").strip()
+
+    run_ids: List[str] = []
+    for row in store.list_eval_runs(eval_set_id=eval_set_id):
+        row_model_name = str(row.get("model_name") or row.get("model") or "").strip()
+        row_thinking = str(row.get("thinking_level") or "").strip().lower()
+        row_run_group = str(row.get("run_group_name") or "").strip()
+        if row_model_name != normalized_model_name:
+            continue
+        if row_thinking != normalized_thinking:
+            continue
+        if normalized_run_group and row_run_group != normalized_run_group:
+            continue
+        run_id = str(row.get("id") or "").strip()
+        if run_id:
+            run_ids.append(run_id)
+
+    if not run_ids:
+        return []
+
+    results_by_run = store.list_eval_run_results_many(run_ids)
+    seen: set[str] = set()
+    attempted_case_ids: List[str] = []
+    for run_id in run_ids:
+        for result in results_by_run.get(run_id, []):
+            case_id = str(result.get("case_id") or "").strip()
+            if not case_id or case_id in seen:
+                continue
+            seen.add(case_id)
+            attempted_case_ids.append(case_id)
+    return attempted_case_ids
+
+
+def _select_case_ids_resume_then_cycle(
+    *,
+    candidate_case_ids: Sequence[str],
+    attempted_case_ids: Sequence[str],
+    max_cases: int,
+) -> tuple[List[str], Dict[str, Any]]:
+    ordered_candidate_case_ids: List[str] = []
+    seen_candidates: set[str] = set()
+    for case_id in candidate_case_ids:
+        normalized = str(case_id).strip()
+        if not normalized or normalized in seen_candidates:
+            continue
+        seen_candidates.add(normalized)
+        ordered_candidate_case_ids.append(normalized)
+
+    if max_cases <= 0 or not ordered_candidate_case_ids:
+        return [], {
+            "candidate_count": len(ordered_candidate_case_ids),
+            "attempted_count": 0,
+            "unrun_count": 0,
+            "target_count": 0,
+            "wrapped": False,
+        }
+
+    attempted_set = {
+        str(case_id).strip()
+        for case_id in attempted_case_ids
+        if str(case_id).strip()
+    }
+    unrun_case_ids = [
+        case_id
+        for case_id in ordered_candidate_case_ids
+        if case_id not in attempted_set
+    ]
+
+    target_count = min(max_cases, len(ordered_candidate_case_ids))
+    selected_case_ids = list(unrun_case_ids[:target_count])
+    wrapped = False
+
+    if len(selected_case_ids) < target_count:
+        wrapped = True
+        selected_set = set(selected_case_ids)
+        for case_id in ordered_candidate_case_ids:
+            if case_id in selected_set:
+                continue
+            selected_case_ids.append(case_id)
+            selected_set.add(case_id)
+            if len(selected_case_ids) >= target_count:
+                break
+
+    return selected_case_ids, {
+        "candidate_count": len(ordered_candidate_case_ids),
+        "attempted_count": len(attempted_set.intersection(seen_candidates)),
+        "unrun_count": len(unrun_case_ids),
+        "target_count": target_count,
+        "wrapped": wrapped,
+    }
+
+
+def _run_baseline_eval_set(
+    *,
+    runner: Any,
+    score_baseline_result_fn: Any,
+    store: RunStore,
+    run_group_name: str,
+    resolved_eval_set: Any,
+    model_name: str,
+    model_family: str,
+    thinking_level: Optional[str],
+    temperature: float,
+    ph: Optional[float],
+    max_cases: int,
+    timeout: float,
+    llm_seed: int,
+    llm_temperature: float,
+    sampling_policy: str,
+    harness_hash: str,
+    case_ids: Optional[Sequence[str]] = None,
+    api_keys: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Execute one baseline eval run and persist leaderboard results."""
+    eval_run_id = store.create_eval_run(
+        eval_set_id=str(resolved_eval_set.eval_set_id),
+        run_group_name=run_group_name,
+        model=model_name,
+        model_name=model_name,
+        model_family=model_family,
+        thinking_level=thinking_level,
+        harness_bundle_hash=harness_hash,
+        status="running",
+    )
+
+    selected_cases = select_eval_cases(
+        cases=resolved_eval_set.cases,
+        case_ids=(list(case_ids) if case_ids else None),
+        max_cases=max_cases,
+    )
+    resolved_case_ids = [
+        str(item.get("case_id") or "")
+        for item in selected_cases
+        if str(item.get("case_id") or "")
+    ]
+    resolved_case_ids_digest = case_ids_hash(resolved_case_ids)
+
+    completed = 0
+    passed_count = 0
+    failed = 0
+    errored = 0
+    prompt_hashes: List[str] = []
+    for case in selected_cases:
+        case_id = str(case.get("case_id") or "")
+        input_payload = case.get("input") or {}
+        sm = [str(s) for s in input_payload.get("starting_materials", [])]
+        prods = [str(p) for p in input_payload.get("products", [])]
+        if not sm or not prods:
+            continue
+
+        expected = case.get("expected") or {}
+        if not isinstance(expected, dict):
+            expected = {}
+
+        try:
+            result = runner.run_case(
+                starting_materials=sm,
+                products=prods,
+                model=model_name,
+                thinking_level=thinking_level,
+                temperature_celsius=temperature,
+                ph=ph,
+                timeout=timeout,
+                llm_seed=llm_seed,
+                llm_temperature=(llm_temperature if sampling_policy == "fixed" else None),
+                sampling_policy=sampling_policy,
+                api_keys=api_keys or None,
+            )
+            graded = score_baseline_result_fn(result, expected if expected else None)
+            score = float(graded["score"])
+            case_passed = bool(graded["passed"])
+            latency_ms = float(result.get("latency_ms") or 0.0)
+            prompt_hash = str(result.get("prompt_hash") or "")
+            if prompt_hash:
+                prompt_hashes.append(prompt_hash)
+            summary: Dict[str, Any] = {
+                "score": score,
+                "passed": case_passed,
+                "step_count": graded.get("step_count"),
+                "mechanism_type": graded.get("mechanism_type"),
+                "scoring_breakdown": graded.get("scoring_breakdown", {}),
+                "error": graded.get("error"),
+                "eval_mode": "baseline",
+                "run_metadata": {
+                    "eval_set_id": resolved_eval_set.eval_set_id,
+                    "eval_set_purpose": resolved_eval_set.purpose,
+                    "eval_case_ids_hash": resolved_case_ids_digest,
+                    "case_id": case_id,
+                    "model": model_name,
+                    "thinking_level": thinking_level,
+                    "llm_seed": llm_seed,
+                    "llm_temperature": (llm_temperature if sampling_policy == "fixed" else None),
+                    "sampling_policy": sampling_policy,
+                    "prompt_hash": result.get("prompt_hash"),
+                    "prompt_system_hash": result.get("prompt_system_hash"),
+                    "prompt_user_hash": result.get("prompt_user_hash"),
+                },
+                "subagent_scores": {
+                    "full_mechanism_baseline": {
+                        "quality_score": score,
+                        "pass_rate": 1.0 if case_passed else 0.0,
+                        "case_count": 1,
+                    }
+                },
+            }
+            store.record_eval_run_result(
+                eval_run_id=eval_run_id,
+                case_id=case_id or uuid.uuid4().hex,
+                run_id=None,
+                score=score,
+                passed=case_passed,
+                cost={},
+                latency_ms=latency_ms,
+                summary=summary,
+            )
+            completed += 1
+            if case_passed:
+                passed_count += 1
+            else:
+                failed += 1
+            error_text = str(graded.get("error") or "").strip()
+            if error_text:
+                typer.echo(
+                    f"  [{completed}] {case_id}: score={score:.3f} "
+                    f"passed={case_passed} error={error_text}"
+                )
+            else:
+                typer.echo(f"  [{completed}] {case_id}: score={score:.3f} passed={case_passed}")
+        except Exception as exc:
+            store.record_eval_run_result(
+                eval_run_id=eval_run_id,
+                case_id=case_id or uuid.uuid4().hex,
+                run_id=None,
+                score=0.0,
+                passed=False,
+                cost={},
+                latency_ms=0.0,
+                summary={"error": str(exc), "eval_mode": "baseline"},
+            )
+            completed += 1
+            failed += 1
+            errored += 1
+            typer.echo(f"  [{completed}] {case_id}: FAILED ({exc})")
+
+    store.set_eval_run_status(eval_run_id, "completed")
+    return {
+        "eval_run_id": eval_run_id,
+        "model": model_name,
+        "thinking_level": thinking_level,
+        "completed": completed,
+        "passed": passed_count,
+        "failed": failed,
+        "errored": errored,
+        "eval_set_id": resolved_eval_set.eval_set_id,
+        "eval_set_purpose": resolved_eval_set.purpose,
+        "eval_case_ids_hash": resolved_case_ids_digest,
+        "llm_seed": llm_seed,
+        "llm_temperature": (llm_temperature if sampling_policy == "fixed" else None),
+        "sampling_policy": sampling_policy,
+        "prompt_hashes": sorted(set(prompt_hashes))[:20],
+        "run_group_name": run_group_name,
+    }
 @app.command()
 def run(
     starting: Optional[str] = typer.Option(
@@ -550,7 +1138,7 @@ def run(
         None,
         "--thinking-level",
         "--reasoning",
-        help="Optional thinking level: low or high",
+        help="Optional thinking level: low, high, or max (model-dependent)",
     ),
     show_events: bool = typer.Option(False, "--show-events", help="Print recorded run events"),
     json_output: bool = typer.Option(False, "--json", help="Emit final summary as JSON"),
@@ -574,8 +1162,8 @@ def run(
             raise typer.BadParameter("mutation-lane must be one of: topology, harness, prompt, few_shot")
     if thinking_level is not None:
         thinking_level = thinking_level.strip().lower()
-        if thinking_level not in {"low", "high"}:
-            raise typer.BadParameter("thinking-level must be one of: low, high")
+        if thinking_level not in {"low", "high", "max"}:
+            raise typer.BadParameter("thinking-level must be one of: low, high, max")
     model_name = _canonicalize_model_name_or_raise(model_name)
 
     base = Path.cwd()
@@ -960,6 +1548,34 @@ def baseline(
     eval_set_id: Optional[str] = typer.Option(
         None, "--eval-set-id", help="Run baseline against all cases in an eval set"
     ),
+    tier: Optional[List[str]] = typer.Option(
+        None,
+        "--tier",
+        help="Repeatable tier name: easy, medium, or hard (uses tier map eval_set_id)",
+    ),
+    all_tiers: bool = typer.Option(
+        False,
+        "--all-tiers",
+        help="Run easy, medium, and hard baseline tiers in one command",
+    ),
+    tier_map_path: Optional[str] = typer.Option(
+        None,
+        "--tier-map-path",
+        help="Path to tier eval-set mapping JSON (default: training_data/baseline_tier_eval_set_map.json)",
+    ),
+    tier_definitions_path: Optional[str] = typer.Option(
+        None,
+        "--tier-definitions-path",
+        help=(
+            "Path to tier case-id definitions JSON "
+            "(default: training_data/baseline_tiers_clawdiator.json, fallback: training_data/eval_tiers.json)"
+        ),
+    ),
+    run_group_prefix: str = typer.Option(
+        "harness_free_baseline",
+        "--run-group-prefix",
+        help="Run-group prefix for tier mode; final name is <prefix>_<tier>",
+    ),
     model_name: str = typer.Option(
         get_default_model(),
         "--model-name",
@@ -967,7 +1583,7 @@ def baseline(
         help="Model identifier (e.g. gpt-5.4, claude-opus-4.6)",
     ),
     thinking_level: Optional[str] = typer.Option(
-        None, "--thinking-level", "--reasoning", help="Thinking level: low or high"
+        None, "--thinking-level", "--reasoning", help="Thinking level: low, high, or max (model-dependent)"
     ),
     temperature: float = typer.Option(25.0, "--temperature", help="Reaction temperature in Celsius"),
     ph: Optional[float] = typer.Option(None, "--ph", help="Observed reaction pH (optional)"),
@@ -980,13 +1596,19 @@ def baseline(
         "--sampling-policy",
         help="LLM sampling policy: fixed or provider_default",
     ),
+    allow_repeats: bool = typer.Option(
+        False,
+        "--allow-repeats",
+        help="Allow rerunning cases already attempted for this model + thinking level",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
     allow_holdout: bool = typer.Option(False, "--allow-holdout", hidden=True),
 ) -> None:
     """Run harness-free single-shot baseline mechanism prediction.
 
     Either provide --starting/--products for a single case, or --eval-set-id
-    to run against an eval set and record results on the leaderboard.
+    to run against an eval set and record results on the leaderboard. Tier mode
+    is available via --tier/--all-tiers and runs without starting the API server.
     """
     from mechanistic_agent.core.baseline_runner import (
         BASELINE_GROUP_PREFIX,
@@ -994,16 +1616,133 @@ def baseline(
         score_baseline_result,
     )
 
+    # Load API keys from environment (dotenv + environment variables)
+    api_keys = _load_api_keys()
+
     if thinking_level is not None:
         thinking_level = thinking_level.strip().lower()
-        if thinking_level not in {"low", "high"}:
-            raise typer.BadParameter("thinking-level must be one of: low, high")
+        if thinking_level not in {"low", "high", "max"}:
+            raise typer.BadParameter("thinking-level must be one of: low, high, max")
     sampling_policy = sampling_policy.strip().lower()
     if sampling_policy not in {"fixed", "provider_default"}:
         raise typer.BadParameter("sampling-policy must be one of: fixed, provider_default")
     model_name = _canonicalize_model_name_or_raise(model_name)
+    run_group_prefix = run_group_prefix.strip()
+    if not run_group_prefix:
+        raise typer.BadParameter("run-group-prefix must not be empty")
+    requested_tiers = _normalize_requested_baseline_tiers(tier, all_tiers=all_tiers)
 
     runner = BaselineRunner()
+
+    if requested_tiers:
+        # ---- Tier mode: run easy/medium/hard in sequence via local CLI ----
+        base = Path.cwd()
+        store = RunStore(base / "data" / "mechanistic.db")
+        registry = RegistrySet(base)
+        model_family = get_model_family(model_name) or "unknown"
+        harness_hash = registry.bundle_hashes(model_name=model_name).get("prompt_bundle_hash", "")
+        if eval_set_id and not json_output:
+            typer.echo("Ignoring --eval-set-id because --tier/--all-tiers was provided.")
+
+        resolved_tier_map_path = (
+            Path(tier_map_path).expanduser().resolve()
+            if tier_map_path
+            else (base / BASELINE_TIER_MAP_DEFAULT_PATH).resolve()
+        )
+        resolved_tier_definitions_path = _resolve_baseline_tier_definitions_path(
+            base=base,
+            override_path=tier_definitions_path,
+        )
+        tier_eval_set_ids = _load_baseline_tier_eval_set_map(resolved_tier_map_path)
+        execution_plan = _build_baseline_tier_execution_plan(
+            base=base,
+            store=store,
+            requested_tiers=requested_tiers,
+            tier_eval_set_ids=tier_eval_set_ids,
+            tier_definitions_path=resolved_tier_definitions_path,
+            allow_holdout=allow_holdout,
+        )
+
+        tier_results: List[Dict[str, Any]] = []
+        for item in execution_plan:
+            tier_name = str(item.get("tier") or "")
+            resolved_eval_set = item["resolved_eval_set"]
+            case_ids = list(item.get("case_ids") or [])
+            if not allow_repeats:
+                case_ids = _filter_unrun_case_ids_for_model(
+                    store=store,
+                    case_ids=case_ids,
+                    model_name=model_name,
+                    thinking_level=thinking_level,
+                    model_family=model_family,
+                )
+                if not case_ids:
+                    raise typer.BadParameter(
+                        f"Tier '{tier_name}' has 0 unrun cases for model={model_name} "
+                        f"thinking={thinking_level or 'none'}; pass --allow-repeats to rerun."
+                    )
+            run_group_name = f"{run_group_prefix}_{tier_name}"
+            if not json_output:
+                typer.echo(
+                    f"\nRunning baseline tier '{tier_name}' "
+                    f"(eval_set_id={resolved_eval_set.eval_set_id}, cases={len(case_ids)})..."
+                )
+            result_obj = _run_baseline_eval_set(
+                runner=runner,
+                score_baseline_result_fn=score_baseline_result,
+                store=store,
+                run_group_name=run_group_name,
+                resolved_eval_set=resolved_eval_set,
+                model_name=model_name,
+                model_family=model_family,
+                thinking_level=thinking_level,
+                temperature=temperature,
+                ph=ph,
+                max_cases=max_cases,
+                timeout=timeout,
+                llm_seed=llm_seed,
+                llm_temperature=llm_temperature,
+                sampling_policy=sampling_policy,
+                harness_hash=harness_hash,
+                case_ids=case_ids,
+                api_keys=api_keys,
+            )
+            result_obj["tier"] = tier_name
+            tier_results.append(result_obj)
+            if not json_output:
+                typer.echo(
+                    f"Tier '{tier_name}' complete: eval_run_id={result_obj['eval_run_id']} "
+                    f"completed={result_obj['completed']} passed={result_obj.get('passed', 0)} "
+                    f"failed={result_obj['failed']} "
+                    f"run_group={run_group_name}"
+                )
+
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {
+                        "mode": "baseline_tiers",
+                        "model": model_name,
+                        "thinking_level": thinking_level,
+                        "tier_map_path": str(resolved_tier_map_path),
+                        "tier_definitions_path": str(resolved_tier_definitions_path),
+                        "results": tier_results,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            typer.echo("\nBaseline tier runs complete.")
+            unique_eval_set_ids = sorted(
+                {
+                    str(item.get("eval_set_id") or "")
+                    for item in tier_results
+                    if str(item.get("eval_set_id") or "")
+                }
+            )
+            for eval_id in unique_eval_set_ids:
+                typer.echo(f"View leaderboard: python main.py leaderboard --eval-set-id {eval_id}")
+        return
 
     if eval_set_id:
         # ---- Eval-set mode: run all cases and record to leaderboard ----
@@ -1023,139 +1762,58 @@ def baseline(
             raise typer.BadParameter(
                 "leaderboard_holdout eval sets are restricted to 'baseline-runset-official'"
             )
-
-        eval_run_id = store.create_eval_run(
-            eval_set_id=str(resolved_eval_set.eval_set_id),
+        selected_case_ids: Optional[List[str]] = None
+        if not allow_repeats and resolved_eval_set.purpose != "leaderboard_holdout":
+            all_case_ids = [
+                str(item.get("case_id") or "")
+                for item in resolved_eval_set.cases
+                if str(item.get("case_id") or "")
+            ]
+            selected_case_ids = _filter_unrun_case_ids_for_model(
+                store=store,
+                case_ids=all_case_ids,
+                model_name=model_name,
+                thinking_level=thinking_level,
+                model_family=model_family,
+            )
+            if not selected_case_ids:
+                typer.echo(
+                    "No unrun cases remain for the selected eval set/model/thinking. "
+                    "Pass --allow-repeats to rerun cases."
+                )
+                raise typer.Exit(code=1)
+        result_obj = _run_baseline_eval_set(
+            runner=runner,
+            score_baseline_result_fn=score_baseline_result,
+            store=store,
             run_group_name=BASELINE_GROUP_PREFIX,
-            model=model_name,
+            resolved_eval_set=resolved_eval_set,
             model_name=model_name,
             model_family=model_family,
             thinking_level=thinking_level,
-            harness_bundle_hash=harness_hash,
-            status="running",
-        )
-
-        cases = select_eval_cases(
-            cases=resolved_eval_set.cases,
+            temperature=temperature,
+            ph=ph,
             max_cases=max_cases,
+            timeout=timeout,
+            llm_seed=llm_seed,
+            llm_temperature=llm_temperature,
+            sampling_policy=sampling_policy,
+            harness_hash=harness_hash,
+            case_ids=selected_case_ids,
+            api_keys=api_keys,
         )
-        resolved_case_ids = [str(item.get("case_id") or "") for item in cases if str(item.get("case_id") or "")]
-        resolved_case_ids_digest = case_ids_hash(resolved_case_ids)
-
-        completed = 0
-        failed = 0
-        prompt_hashes: List[str] = []
-        for case in cases:
-            case_id = str(case.get("case_id") or "")
-            input_payload = case.get("input") or {}
-            sm = [str(s) for s in input_payload.get("starting_materials", [])]
-            prods = [str(p) for p in input_payload.get("products", [])]
-            if not sm or not prods:
-                continue
-
-            expected = case.get("expected") or {}
-            if not isinstance(expected, dict):
-                expected = {}
-
-            try:
-                result = runner.run_case(
-                    starting_materials=sm,
-                    products=prods,
-                    model=model_name,
-                    thinking_level=thinking_level,
-                    temperature_celsius=temperature,
-                    ph=ph,
-                    timeout=timeout,
-                    llm_seed=llm_seed,
-                    llm_temperature=(llm_temperature if sampling_policy == "fixed" else None),
-                    sampling_policy=sampling_policy,
-                )
-                graded = score_baseline_result(result, expected if expected else None)
-                score = float(graded["score"])
-                passed = bool(graded["passed"])
-                latency_ms = float(result.get("latency_ms") or 0.0)
-                prompt_hash = str(result.get("prompt_hash") or "")
-                if prompt_hash:
-                    prompt_hashes.append(prompt_hash)
-                summary: Dict[str, Any] = {
-                    "score": score,
-                    "passed": passed,
-                    "step_count": graded.get("step_count"),
-                    "mechanism_type": graded.get("mechanism_type"),
-                    "scoring_breakdown": graded.get("scoring_breakdown", {}),
-                    "error": graded.get("error"),
-                    "eval_mode": "baseline",
-                    "run_metadata": {
-                        "eval_set_id": resolved_eval_set.eval_set_id,
-                        "eval_set_purpose": resolved_eval_set.purpose,
-                        "eval_case_ids_hash": resolved_case_ids_digest,
-                        "case_id": case_id,
-                        "model": model_name,
-                        "thinking_level": thinking_level,
-                        "llm_seed": llm_seed,
-                        "llm_temperature": (llm_temperature if sampling_policy == "fixed" else None),
-                        "sampling_policy": sampling_policy,
-                        "prompt_hash": result.get("prompt_hash"),
-                        "prompt_system_hash": result.get("prompt_system_hash"),
-                        "prompt_user_hash": result.get("prompt_user_hash"),
-                    },
-                    "subagent_scores": {
-                        "full_mechanism_baseline": {
-                            "quality_score": score,
-                            "pass_rate": 1.0 if passed else 0.0,
-                            "case_count": 1,
-                        }
-                    },
-                }
-                store.record_eval_run_result(
-                    eval_run_id=eval_run_id,
-                    case_id=case_id or uuid.uuid4().hex,
-                    run_id=None,
-                    score=score,
-                    passed=passed,
-                    cost={},
-                    latency_ms=latency_ms,
-                    summary=summary,
-                )
-                completed += 1
-                typer.echo(f"  [{completed + failed}] {case_id}: score={score:.3f} passed={passed}")
-            except Exception as exc:
-                store.record_eval_run_result(
-                    eval_run_id=eval_run_id,
-                    case_id=case_id or uuid.uuid4().hex,
-                    run_id=None,
-                    score=0.0,
-                    passed=False,
-                    cost={},
-                    latency_ms=0.0,
-                    summary={"error": str(exc), "eval_mode": "baseline"},
-                )
-                failed += 1
-                typer.echo(f"  [{completed + failed}] {case_id}: FAILED ({exc})")
-
-        store.set_eval_run_status(eval_run_id, "completed")
-        result_obj = {
-            "eval_run_id": eval_run_id,
-            "model": model_name,
-            "thinking_level": thinking_level,
-            "completed": completed,
-            "failed": failed,
-            "eval_set_id": resolved_eval_set.eval_set_id,
-            "eval_set_purpose": resolved_eval_set.purpose,
-            "eval_case_ids_hash": resolved_case_ids_digest,
-            "llm_seed": llm_seed,
-            "llm_temperature": (llm_temperature if sampling_policy == "fixed" else None),
-            "sampling_policy": sampling_policy,
-            "prompt_hashes": sorted(set(prompt_hashes))[:20],
-        }
         if json_output:
             typer.echo(json.dumps(result_obj, indent=2))
         else:
-            typer.echo(f"\nBaseline eval complete: {completed} passed, {failed} failed")
-            typer.echo(f"Eval run ID: {eval_run_id}")
+            typer.echo(
+                f"\nBaseline eval complete: completed={result_obj['completed']} "
+                f"passed={result_obj.get('passed', 0)} failed={result_obj['failed']} "
+                f"errored={result_obj.get('errored', 0)}"
+            )
+            typer.echo(f"Eval run ID: {result_obj['eval_run_id']}")
             typer.echo(
                 f"Resolved eval set: {resolved_eval_set.eval_set_id} ({resolved_eval_set.purpose}) "
-                f"case_ids_hash={resolved_case_ids_digest}"
+                f"case_ids_hash={result_obj['eval_case_ids_hash']}"
             )
 
     else:
@@ -1173,6 +1831,7 @@ def baseline(
             llm_seed=llm_seed,
             llm_temperature=(llm_temperature if sampling_policy == "fixed" else None),
             sampling_policy=sampling_policy,
+            api_keys=api_keys or None,
         )
         graded = score_baseline_result(result, None)
         output = {
@@ -1232,7 +1891,7 @@ def baseline_runset_official_cmd(
         help="Model identifier (e.g. gpt-5.4, claude-opus-4.6)",
     ),
     thinking_level: Optional[str] = typer.Option(
-        None, "--thinking-level", "--reasoning", help="Thinking level: low or high"
+        None, "--thinking-level", "--reasoning", help="Thinking level: low, high, or max (model-dependent)"
     ),
     temperature: float = typer.Option(25.0, "--temperature", help="Reaction temperature in Celsius"),
     ph: Optional[float] = typer.Option(None, "--ph", help="Observed reaction pH (optional)"),
@@ -1812,46 +2471,258 @@ def curriculum_build_lookup_cmd() -> None:
 
 @app.command(name="eval")
 def eval_cmd(
-    eval_set_id: str = typer.Option(..., "--eval-set-id", help="Eval set to run against"),
+    eval_set_id: str = typer.Option(..., "--eval-set-id", help="Eval set to run against (ignored if --tier/--all-tiers)"),
     model_name: str = typer.Option(
         get_default_model(), "--model-name", "--model",
         help="Model identifier (e.g. gpt-5.4, claude-opus-4.6)",
     ),
     thinking_level: Optional[str] = typer.Option(
-        None, "--thinking-level", "--reasoning", help="Thinking level: low or high"
+        None, "--thinking-level", "--reasoning", help="Thinking level: low, high, or max (model-dependent)",
     ),
     tier: Optional[str] = typer.Option(None, "--tier", help="Tier name: easy, medium, or hard"),
+    all_tiers: bool = typer.Option(
+        False,
+        "--all-tiers",
+        help="Run easy, medium, and hard eval tiers in one command",
+    ),
+    tier_map_path: Optional[str] = typer.Option(
+        None,
+        "--tier-map-path",
+        help="Path to tier eval-set mapping JSON (default: training_data/baseline_tier_eval_set_map.json)",
+    ),
+    tier_definitions_path: Optional[str] = typer.Option(
+        None,
+        "--tier-definitions-path",
+        help=(
+            "Path to tier case-id definitions JSON "
+            "(default: training_data/baseline_tiers_clawdiator.json, fallback: training_data/eval_tiers.json)"
+        ),
+    ),
+    run_group_prefix: str = typer.Option(
+        "cli_eval_tier",
+        "--run-group-prefix",
+        help="Run-group prefix for --all-tiers mode; final name is <prefix>_<tier>",
+    ),
     case_ids: Optional[List[str]] = typer.Option(None, "--case-id", help="Specific case IDs to run (repeatable)"),
     harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
     run_group: Optional[str] = typer.Option(None, "--run-group", help="Run group name for leaderboard"),
-    max_cases: int = typer.Option(25, "--max-cases", help="Max cases to run"),
+    max_cases: int = typer.Option(
+        25, "--max-cases",
+        help="Max cases per run (per tier when using --tier/--all-tiers)",
+    ),
+    max_per_tier: Optional[int] = typer.Option(
+        None, "--max-per-tier",
+        help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
+    ),
     max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(300.0, "--max-runtime", help="Per-case timeout in seconds"),
+    chemistry_backend: str = typer.Option(
+        "auto",
+        "--chemistry-backend",
+        help="Chemistry backend: python (default, no CLI), rdkit_cli, or auto",
+    ),
+    rdkit_cli_command: Optional[str] = typer.Option(
+        None,
+        "--rdkit-cli-command",
+        help="Optional rdkit_cli executable command/path (used when chemistry backend is rdkit_cli/auto)",
+    ),
+    chemistry_backend_parity: bool = typer.Option(
+        False,
+        "--chemistry-backend-parity",
+        help="Enable dual-run parity compare (Python authoritative on mismatch)",
+    ),
+    allow_repeats: bool = typer.Option(
+        False,
+        "--allow-repeats",
+        help="Allow rerunning cases already attempted for this model + thinking level",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
+    trace_runtime: bool = typer.Option(
+        True,
+        "--trace-runtime/--no-trace-runtime",
+        help="Emit compact per-step runtime trace lines during eval runs.",
+    ),
     allow_holdout: bool = typer.Option(False, "--allow-holdout", hidden=True),
 ) -> None:
     """Run a full harness eval set and record results on the leaderboard.
 
     Uses the harness pipeline (not baseline single-shot) to evaluate each case.
     Results are stored in the DB and appear on the leaderboard.
+
+    Use --tier or --all-tiers to run tiered evals (easy/medium/hard). Use --max-cases
+    or --max-per-tier to limit how many examples run per tier. Use -h/--help to list
+    all options.
     """
+    from typer.models import OptionInfo
+
     from mechanistic_agent.core import RunCoordinator
     from mechanistic_agent.scoring import score_snapshot_against_known, score_subagents_from_step_outputs
 
+    def _unwrap_option(value, fallback=None):  # type: ignore[no-untyped-def]
+        if isinstance(value, OptionInfo):
+            return value.default if value.default is not None else fallback
+        return value if value is not None else fallback
+
+    # When eval_cmd is called programmatically (e.g. from eval_runset_official_cmd),
+    # parameters may still carry Typer's OptionInfo defaults. Normalize them here so
+    # the rest of the function can assume plain Python types.
+    eval_set_id = _unwrap_option(eval_set_id)
+    model_name = _unwrap_option(model_name)
+    thinking_level = _unwrap_option(thinking_level)
+    tier = _unwrap_option(tier)
+    all_tiers = bool(_unwrap_option(all_tiers, False))
+    tier_map_path = _unwrap_option(tier_map_path)
+    tier_definitions_path = _unwrap_option(tier_definitions_path)
+    run_group_prefix = _unwrap_option(run_group_prefix, "")
+    case_ids = _unwrap_option(case_ids)
+    harness = _unwrap_option(harness, "default")
+    run_group = _unwrap_option(run_group)
+    max_cases = int(_unwrap_option(max_cases, 25))
+    max_per_tier = _unwrap_option(max_per_tier)
+    max_steps = int(_unwrap_option(max_steps, 10))
+    max_runtime = float(_unwrap_option(max_runtime, 300.0))
+    chemistry_backend = str(_unwrap_option(chemistry_backend, "auto") or "auto").strip().lower()
+    rdkit_cli_command = _unwrap_option(rdkit_cli_command)
+    chemistry_backend_parity = bool(_unwrap_option(chemistry_backend_parity, False))
+    allow_repeats = bool(_unwrap_option(allow_repeats, False))
+    json_output = bool(_unwrap_option(json_output, False))
+    trace_runtime = bool(_unwrap_option(trace_runtime, True))
+    allow_holdout = bool(_unwrap_option(allow_holdout, False))
+
     if thinking_level is not None:
         thinking_level = thinking_level.strip().lower()
-        if thinking_level not in {"low", "high"}:
-            raise typer.BadParameter("thinking-level must be one of: low, high")
+        if thinking_level not in {"low", "high", "max"}:
+            raise typer.BadParameter("thinking-level must be one of: low, high, max")
     model_name = _canonicalize_model_name_or_raise(model_name)
 
     if tier and tier not in {"easy", "medium", "hard"}:
         raise typer.BadParameter("tier must be one of: easy, medium, hard")
+    if chemistry_backend not in {"python", "rdkit_cli", "auto"}:
+        raise typer.BadParameter("chemistry-backend must be one of: python, rdkit_cli, auto")
+    requested_tiers = _normalize_requested_baseline_tiers(
+        ([tier] if tier else None),
+        all_tiers=all_tiers,
+    )
+    run_group_prefix = run_group_prefix.strip()
+    if not run_group_prefix:
+        raise typer.BadParameter("run-group-prefix must not be empty")
+    _max_per_tier: Optional[int] = max_per_tier if isinstance(max_per_tier, int) else None
+    if _max_per_tier is not None and _max_per_tier < 1:
+        raise typer.BadParameter("--max-per-tier must be at least 1 when set")
 
     base = Path.cwd()
     store = RunStore(base / "data" / "mechanistic.db")
     registry = RegistrySet(base)
     model_family = get_model_family(model_name) or "unknown"
     internal_reasoning = to_internal_reasoning_level(thinking_level)
+
+    if requested_tiers:
+        if eval_set_id and not json_output:
+            typer.echo("Ignoring --eval-set-id because --tier/--all-tiers was provided.")
+        resolved_tier_map_path = (
+            Path(tier_map_path).expanduser().resolve()
+            if tier_map_path
+            else (base / BASELINE_TIER_MAP_DEFAULT_PATH).resolve()
+        )
+        resolved_tier_definitions_path = _resolve_baseline_tier_definitions_path(
+            base=base,
+            override_path=tier_definitions_path,
+        )
+        tier_eval_set_ids = _load_baseline_tier_eval_set_map(resolved_tier_map_path)
+        execution_plan = _build_baseline_tier_execution_plan(
+            base=base,
+            store=store,
+            requested_tiers=requested_tiers,
+            tier_eval_set_ids=tier_eval_set_ids,
+            tier_definitions_path=resolved_tier_definitions_path,
+            allow_holdout=allow_holdout,
+        )
+
+        aggregated: List[Dict[str, Any]] = []
+        for item in execution_plan:
+            tier_name = str(item.get("tier") or "")
+            tier_eval_set_id = str(item.get("eval_set_id") or "")
+            tier_case_ids = list(item.get("case_ids") or [])
+            if not allow_repeats:
+                tier_case_ids = _filter_unrun_case_ids_for_model(
+                    store=store,
+                    case_ids=tier_case_ids,
+                    model_name=model_name,
+                    thinking_level=thinking_level,
+                    model_family=model_family,
+                )
+                if not tier_case_ids:
+                    raise typer.BadParameter(
+                        f"Tier '{tier_name}' has 0 unrun cases for model={model_name} "
+                        f"thinking={thinking_level or 'none'}; pass --allow-repeats to rerun."
+                    )
+            tier_run_group = f"{run_group_prefix}_{tier_name}"
+            tier_limit = _max_per_tier if _max_per_tier is not None else max_cases
+            if not json_output:
+                typer.echo(
+                    f"\nRunning harness eval tier '{tier_name}' "
+                    f"(eval_set_id={tier_eval_set_id}, cases={len(tier_case_ids)}, max={tier_limit})..."
+                )
+
+            eval_cmd(
+                eval_set_id=tier_eval_set_id,
+                model_name=model_name,
+                thinking_level=thinking_level,
+                tier=None,
+                all_tiers=False,
+                tier_map_path=tier_map_path,
+                tier_definitions_path=tier_definitions_path,
+                run_group_prefix=run_group_prefix,
+                case_ids=tier_case_ids,
+                harness=harness,
+                run_group=tier_run_group,
+                max_cases=tier_limit,
+                max_per_tier=None,
+                max_steps=max_steps,
+                max_runtime=max_runtime,
+                chemistry_backend=chemistry_backend,
+                rdkit_cli_command=rdkit_cli_command,
+                chemistry_backend_parity=chemistry_backend_parity,
+                allow_repeats=allow_repeats,
+                json_output=False,
+                trace_runtime=trace_runtime,
+                allow_holdout=allow_holdout,
+            )
+            latest = None
+            for row in store.list_eval_runs(eval_set_id=tier_eval_set_id):
+                if str(row.get("run_group_name") or "") == tier_run_group:
+                    latest = row
+                    break
+            if latest:
+                aggregated.append(
+                    {
+                        "tier": tier_name,
+                        "eval_set_id": tier_eval_set_id,
+                        "eval_run_id": str(latest.get("id") or ""),
+                        "run_group_name": tier_run_group,
+                        "status": latest.get("status"),
+                    }
+                )
+
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {
+                        "mode": "eval_tiers",
+                        "model": model_name,
+                        "thinking_level": thinking_level,
+                        "harness": harness,
+                        "tier_map_path": str(resolved_tier_map_path),
+                        "tier_definitions_path": str(resolved_tier_definitions_path),
+                        "results": aggregated,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            typer.echo("\nAll requested harness eval tiers complete.")
+        return
+
     try:
         resolved_eval_set = resolve_eval_set(
             store=store,
@@ -1869,12 +2740,16 @@ def eval_cmd(
     # Load eval tier data if needed
     tier_case_ids: Optional[List[str]] = None
     if tier:
-        tier_file = base / "training_data" / "eval_tiers.json"
-        if tier_file.exists():
-            tier_data = json.loads(tier_file.read_text(encoding="utf-8"))
-            tier_case_ids = tier_data.get(tier, [])
+        resolved_tier_definitions_path = _resolve_baseline_tier_definitions_path(
+            base=base,
+            override_path=tier_definitions_path,
+        )
+        try:
+            tier_data = _load_eval_tier_ids(resolved_tier_definitions_path)
+        except typer.BadParameter as exc:
+            typer.echo(f"Warning: {exc}; ignoring --tier")
         else:
-            typer.echo("Warning: eval_tiers.json not found, ignoring --tier")
+            tier_case_ids = tier_data.get(tier, [])
 
     hashes = registry.bundle_hashes(model_name=model_name)
     eval_run_id = store.create_eval_run(
@@ -1894,13 +2769,49 @@ def eval_cmd(
         store.set_eval_run_status(eval_run_id, "failed")
         raise typer.Exit(code=1)
 
-    # Case selection
-    selected = select_eval_cases(
-        cases=all_cases,
-        case_ids=case_ids,
-        tier_case_ids=tier_case_ids,
-        max_cases=max_cases,
-    )
+    # Case selection (explicit --case-id stays deterministic/user-controlled).
+    if case_ids:
+        selected = select_eval_cases(
+            cases=all_cases,
+            case_ids=case_ids,
+            tier_case_ids=None,
+            max_cases=max_cases,
+        )
+    else:
+        candidate_cases = select_eval_cases(
+            cases=all_cases,
+            case_ids=None,
+            tier_case_ids=tier_case_ids,
+            max_cases=None,
+        )
+        candidate_case_ids = [
+            str(item.get("case_id") or "")
+            for item in candidate_cases
+            if str(item.get("case_id") or "")
+        ]
+        selected_case_ids = list(candidate_case_ids)
+        if not allow_repeats and not is_holdout:
+            selected_case_ids = _filter_unrun_case_ids_for_model(
+                store=store,
+                case_ids=candidate_case_ids,
+                model_name=model_name,
+                thinking_level=thinking_level,
+                model_family=model_family,
+            )
+            if not selected_case_ids:
+                typer.echo(
+                    "No unrun cases remain for the selected scope/model/thinking. "
+                    "Pass --allow-repeats to rerun cases."
+                )
+                store.set_eval_run_status(eval_run_id, "failed")
+                raise typer.Exit(code=1)
+        selected_case_id_set = set(selected_case_ids)
+        selected = [
+            case for case in candidate_cases
+            if str(case.get("case_id") or "") in selected_case_id_set
+        ]
+        if max_cases > 0 and len(selected) > max_cases:
+            selected = selected[:max_cases]
 
     if not selected:
         typer.echo("No cases matched the selection criteria")
@@ -1919,6 +2830,9 @@ def eval_cmd(
     failed = 0
     all_graded: List[Dict[str, Any]] = []
     all_latencies: List[float] = []
+    backend_usage_counts: Dict[str, int] = {}
+    backend_fallback_cases = 0
+    backend_error_counts: Dict[str, int] = {}
     for case in selected:
         case_id = str(case.get("case_id") or "")
         input_payload = case.get("input") or {}
@@ -1963,11 +2877,20 @@ def eval_cmd(
                     "max_steps": max_steps,
                     "max_runtime_seconds": max_runtime,
                     "harness_name": harness,
+                    "chemistry_backend": chemistry_backend,
+                    "chemistry_backend_parity": chemistry_backend_parity,
+                    "rdkit_cli_command": str(rdkit_cli_command or "rdkit_cli"),
+                    "runtime_trace_enabled": trace_runtime,
+                    "runtime_trace_label": case_id,
                 },
                 **hashes,
             )
 
             _t0 = time.monotonic()
+            if trace_runtime and not json_output:
+                typer.echo(
+                    f"    trace start case={case_id} starting={sm} products={prods}"
+                )
             coordinator.execute_run(run_id, threading.Event())
             case_latency_ms = (time.monotonic() - _t0) * 1000.0
             all_latencies.append(case_latency_ms)
@@ -1999,6 +2922,28 @@ def eval_cmd(
                 subagent_scores=subagent_scores,
                 scored_error=graded.get("error"),
             )
+            chemistry = summary.get("chemistry_backend") if isinstance(summary.get("chemistry_backend"), dict) else {}
+            if chemistry:
+                used_counts = chemistry.get("backend_used_counts")
+                if isinstance(used_counts, dict):
+                    for key, value in used_counts.items():
+                        if not isinstance(key, str):
+                            continue
+                        try:
+                            backend_usage_counts[key] = backend_usage_counts.get(key, 0) + int(value)
+                        except Exception:
+                            continue
+                if int(chemistry.get("fallback_count") or 0) > 0:
+                    backend_fallback_cases += 1
+                err_counts = chemistry.get("rdkit_cli_error_counts")
+                if isinstance(err_counts, dict):
+                    for key, value in err_counts.items():
+                        if not isinstance(key, str):
+                            continue
+                        try:
+                            backend_error_counts[key] = backend_error_counts.get(key, 0) + int(value)
+                        except Exception:
+                            continue
             store.record_eval_run_result(
                 eval_run_id=eval_run_id,
                 case_id=case_id,
@@ -2075,15 +3020,27 @@ def eval_cmd(
         "model": model_name,
         "thinking_level": thinking_level,
         "harness": harness,
+        "chemistry_backend": chemistry_backend,
+        "chemistry_backend_parity": chemistry_backend_parity,
+        "rdkit_cli_command": str(rdkit_cli_command or "rdkit_cli"),
         "completed": completed,
         "failed": failed,
         "eval_set_id": resolved_eval_set_id,
         "eval_case_ids_hash": selected_case_ids_digest,
+        "chemistry_backend_usage": backend_usage_counts,
+        "chemistry_backend_fallback_cases": backend_fallback_cases,
+        "rdkit_cli_error_counts": backend_error_counts,
     }
     if json_output:
         typer.echo(json.dumps(result_obj, indent=2))
     else:
         typer.echo(f"\nEval complete: {completed} completed, {failed} failed")
+        if backend_usage_counts:
+            typer.echo(f"Chemistry backend usage: {backend_usage_counts}")
+            typer.echo(f"Cases with fallback: {backend_fallback_cases}")
+            if backend_error_counts:
+                top_backend_errors = sorted(backend_error_counts.items(), key=lambda item: item[1], reverse=True)[:3]
+                typer.echo(f"Top rdkit_cli errors: {top_backend_errors}")
         typer.echo(f"Eval run ID: {eval_run_id}")
         typer.echo(f"View results: python main.py leaderboard --eval-set-id {resolved_eval_set_id}")
 
@@ -2105,21 +3062,64 @@ def eval_runset_official_cmd(
         help="Model identifier (e.g. gpt-5.4, claude-opus-4.6)",
     ),
     thinking_level: Optional[str] = typer.Option(
-        None, "--thinking-level", "--reasoning", help="Thinking level: low or high"
+        None, "--thinking-level", "--reasoning", help="Thinking level: low, high, or max (model-dependent)"
+    ),
+    tier: Optional[str] = typer.Option(
+        None,
+        "--tier",
+        help="Optional official tier filter: easy (1-2 steps), medium (3 steps), hard (4+ steps).",
     ),
     case_ids: Optional[List[str]] = typer.Option(None, "--case-id", help="Specific case IDs to run (repeatable)"),
     harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
     run_group: Optional[str] = typer.Option(
         None, "--run-group", help="Run group name for leaderboard (default: official_holdout_harness)"
     ),
-    max_cases: int = typer.Option(200, "--max-cases", help="Max cases to run"),
+    max_cases: Optional[int] = typer.Option(
+        None,
+        "--max-cases",
+        "--num-examples",
+        help="Max cases/examples to run (default: 20).",
+    ),
     max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(300.0, "--max-runtime", help="Per-case timeout in seconds"),
+    chemistry_backend: str = typer.Option(
+        "auto",
+        "--chemistry-backend",
+        help="Chemistry backend: python (default, no CLI), rdkit_cli, or auto",
+    ),
+    rdkit_cli_command: Optional[str] = typer.Option(
+        None,
+        "--rdkit-cli-command",
+        help="Optional rdkit_cli executable command/path (used when chemistry backend is rdkit_cli/auto)",
+    ),
+    chemistry_backend_parity: bool = typer.Option(
+        False,
+        "--chemistry-backend-parity",
+        help="Enable dual-run parity compare (Python authoritative on mismatch)",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
+    trace_runtime: bool = typer.Option(
+        True,
+        "--trace-runtime/--no-trace-runtime",
+        help="Emit compact per-step runtime trace lines during official eval runs.",
+    ),
 ) -> None:
     """Run the official holdout-only leaderboard eval."""
     base = Path.cwd()
     store = RunStore(base / "data" / "mechanistic.db")
+    model_name = _canonicalize_model_name_or_raise(model_name)
+    resolved_max_cases = int(max_cases) if max_cases is not None else 20
+    if resolved_max_cases < 1:
+        raise typer.BadParameter("--max-cases/--num-examples must be at least 1")
+    if thinking_level is not None:
+        thinking_level = thinking_level.strip().lower()
+        if thinking_level not in {"low", "high", "max"}:
+            raise typer.BadParameter("thinking-level must be one of: low, high, max")
+    if tier is not None:
+        tier = tier.strip().lower()
+        if tier not in OFFICIAL_TIER_NAMES:
+            raise typer.BadParameter("tier must be one of: easy, medium, hard")
+
     try:
         resolved = resolve_eval_set(
             store=store,
@@ -2130,20 +3130,89 @@ def eval_runset_official_cmd(
     except EvalSetResolutionError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
+    run_group_name = run_group or (
+        "official_holdout_harness" if resolved.purpose == "leaderboard_holdout" else "official_compare_harness"
+    )
+    selected_case_ids = list(case_ids or [])
+    if not selected_case_ids:
+        candidate_cases = list(resolved.cases)
+        if tier:
+            tier_case_id_set = set(_official_case_ids_for_tier(cases=candidate_cases, tier_name=tier))
+            candidate_cases = [
+                case for case in candidate_cases
+                if str(case.get("case_id") or "").strip() in tier_case_id_set
+            ]
+
+        candidate_case_ids = [
+            str(case.get("case_id") or "").strip()
+            for case in candidate_cases
+            if str(case.get("case_id") or "").strip()
+        ]
+        attempted_case_ids = _list_attempted_eval_case_ids_for_scope(
+            store=store,
+            eval_set_id=str(resolved.eval_set_id or ""),
+            model_name=model_name,
+            thinking_level=thinking_level,
+            run_group_name=run_group_name,
+        )
+        selected_case_ids, selection_meta = _select_case_ids_resume_then_cycle(
+            candidate_case_ids=candidate_case_ids,
+            attempted_case_ids=attempted_case_ids,
+            max_cases=resolved_max_cases,
+        )
+        if not selected_case_ids:
+            raise typer.BadParameter("No official eval cases available for the requested scope")
+        if not json_output:
+            if tier:
+                typer.echo(f"Official tier filter '{tier}': {selection_meta['candidate_count']} candidate cases")
+            typer.echo(
+                "Official resume selection: "
+                f"{selection_meta['unrun_count']} unrun of {selection_meta['candidate_count']} candidates; "
+                f"running {selection_meta['target_count']} case(s)."
+            )
+            if selection_meta["wrapped"]:
+                if int(selection_meta["unrun_count"]) == 0:
+                    typer.echo("All candidate cases were already attempted; cycling back to the beginning.")
+                else:
+                    wrapped_count = int(selection_meta["target_count"]) - int(selection_meta["unrun_count"])
+                    typer.echo(
+                        f"Only {selection_meta['unrun_count']} unrun case(s) remained; "
+                        f"cycled the remaining {max(0, wrapped_count)} case(s) from the start."
+                    )
+    elif tier:
+        tier_case_id_set = set(_official_case_ids_for_tier(cases=resolved.cases, tier_name=tier))
+        selected_case_ids = [
+            str(case_id).strip()
+            for case_id in selected_case_ids
+            if str(case_id).strip() in tier_case_id_set
+        ]
+        if not selected_case_ids:
+            raise typer.BadParameter(
+                "No provided --case-id values matched the requested --tier filter"
+            )
+
+    if not json_output:
+        typer.echo(
+            "Prompt/few-shot update status: eval-runset-official is read-only for "
+            "skills/mechanistic prompts and few-shot files (no updates in this command)."
+        )
+
     eval_cmd(
         eval_set_id=str(resolved.eval_set_id),
         model_name=model_name,
         thinking_level=thinking_level,
         tier=None,
-        case_ids=case_ids,
+        case_ids=selected_case_ids,
         harness=harness,
-        run_group=run_group or (
-            "official_holdout_harness" if resolved.purpose == "leaderboard_holdout" else "official_compare_harness"
-        ),
-        max_cases=max_cases,
+        run_group=run_group_name,
+        max_cases=resolved_max_cases,
         max_steps=max_steps,
         max_runtime=max_runtime,
+        chemistry_backend=chemistry_backend,
+        rdkit_cli_command=rdkit_cli_command,
+        chemistry_backend_parity=chemistry_backend_parity,
         json_output=json_output,
+        trace_runtime=trace_runtime,
         allow_holdout=True,
     )
 

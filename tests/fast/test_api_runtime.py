@@ -139,6 +139,120 @@ def test_create_run_accepts_example_id_and_deterministic_template_mapping(tmp_pa
     assert start_resp.status_code == 200
 
 
+def test_examples_progress_endpoint_returns_non_holdout_attempts_for_model_scope(tmp_path: Path) -> None:
+    base = _prepare_base(tmp_path)
+    app = create_app(base)
+    client = TestClient(app)
+    store = RunStore(base / "data" / "mechanistic.db")
+
+    general_eval_set_id = store.add_eval_set(
+        name="general_eval",
+        version="v1",
+        source_path=None,
+        sha256=None,
+        cases=[
+            {
+                "case_id": "case_a",
+                "input": {"starting_materials": ["C=O"], "products": ["CO"]},
+                "expected": {"products": ["CO"]},
+                "tags": [],
+            }
+        ],
+        active=True,
+        purpose="general",
+        exposed_in_ui=True,
+    )
+    holdout_eval_set_id = store.add_eval_set(
+        name="holdout_eval",
+        version="v1",
+        source_path=None,
+        sha256=None,
+        cases=[
+            {
+                "case_id": "case_holdout",
+                "input": {"starting_materials": ["CCC"], "products": ["CC=C"]},
+                "expected": {"products": ["CC=C"]},
+                "tags": ["leaderboard_holdout"],
+            }
+        ],
+        active=True,
+        purpose="leaderboard_holdout",
+        exposed_in_ui=False,
+    )
+
+    eval_run_general = store.create_eval_run(
+        eval_set_id=general_eval_set_id,
+        run_group_name="cli_eval_default",
+        model="gpt-5",
+        model_name="gpt-5",
+        model_family="openai",
+        thinking_level="low",
+        harness_bundle_hash="h",
+        status="completed",
+    )
+    store.record_eval_run_result(
+        eval_run_id=eval_run_general,
+        case_id="case_a",
+        run_id=None,
+        score=0.8,
+        passed=True,
+        cost={},
+        latency_ms=12.0,
+        summary={},
+    )
+
+    eval_run_holdout = store.create_eval_run(
+        eval_set_id=holdout_eval_set_id,
+        run_group_name="official_holdout_harness",
+        model="gpt-5",
+        model_name="gpt-5",
+        model_family="openai",
+        thinking_level="low",
+        harness_bundle_hash="h",
+        status="completed",
+    )
+    store.record_eval_run_result(
+        eval_run_id=eval_run_holdout,
+        case_id="case_holdout",
+        run_id=None,
+        score=0.9,
+        passed=True,
+        cost={},
+        latency_ms=10.0,
+        summary={},
+    )
+
+    ui_run_id = store.create_run(
+        mode="unverified",
+        input_payload={
+            "example_id": "case_b",
+            "starting_materials": ["CCO"],
+            "products": ["CC=O"],
+        },
+        config={
+            "model_name": "gpt-5",
+            "model_family": "openai",
+            "thinking_level": "low",
+        },
+        prompt_bundle_hash="a",
+        skill_bundle_hash="b",
+        memory_bundle_hash="c",
+    )
+    store.set_run_status(ui_run_id, "completed")
+
+    progress_resp = client.get(
+        "/api/examples/progress?model_name=gpt-5&model_family=openai&thinking_level=low"
+    )
+    assert progress_resp.status_code == 200
+    payload = progress_resp.json()
+    items = payload.get("items") or {}
+    assert "case_a" in items
+    assert "case_b" in items
+    assert "case_holdout" not in items
+    assert int(items["case_a"]["attempt_count"]) >= 1
+    assert int(items["case_b"]["attempt_count"]) >= 1
+
+
 def test_examples_include_multistep_eval_cases_with_stripped_known_steps(tmp_path: Path) -> None:
     app = create_app(_prepare_base(tmp_path))
     client = TestClient(app)

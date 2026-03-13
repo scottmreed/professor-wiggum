@@ -128,6 +128,8 @@ training_data/*
 !training_data/eval_set.json
 !training_data/eval_tiers.json
 !training_data/eval_quality_report.json
+!training_data/baseline_tier_eval_set_map.json
+!training_data/baseline_tiers_clawdiator.json
 
 # FlowER curated subset (source for dev eval)
 !training_data/flower_mechanisms_100.json
@@ -158,6 +160,8 @@ training_data/practice_eval/*.png
 # Legacy — stays gitignored
 training_data/local_legacy/
 traces/
+!traces/evidence/
+!traces/evidence/**
 plans/
 evolution_workspace/
 

@@ -179,6 +179,20 @@ class RunCoordinator:
                 True,
             ),
             dbe_policy=self._coerce_literal(config.get("dbe_policy"), {"strict", "soft"}, "soft"),  # type: ignore[arg-type]
+            chemistry_backend=self._coerce_literal(
+                config.get("chemistry_backend"),
+                {"auto", "rdkit_cli", "python"},
+                "auto",
+            ),  # type: ignore[arg-type]
+            chemistry_backend_parity=self._coerce_bool(
+                config.get("chemistry_backend_parity", False),
+                False,
+            ),
+            rdkit_cli_command=str(config.get("rdkit_cli_command") or "rdkit_cli"),
+            rdkit_cli_timeout_seconds=self._coerce_float(
+                config.get("rdkit_cli_timeout_seconds", 5.0),
+                5.0,
+            ),
             reaction_template_policy=self._coerce_literal(
                 config.get("reaction_template_policy"),
                 {"off", "auto"},
@@ -282,6 +296,15 @@ class RunCoordinator:
             proceed_only_on_arrow_push_failure=self._coerce_bool(
                 config.get("proceed_only_on_arrow_push_failure", True),
                 True,
+            ),
+            runtime_trace_enabled=self._coerce_bool(
+                config.get("runtime_trace_enabled", False),
+                False,
+            ),
+            runtime_trace_label=(
+                str(config.get("runtime_trace_label")).strip()
+                if config.get("runtime_trace_label")
+                else None
             ),
         )
         mode: RunMode = str(run_row.get("mode") or "unverified")  # type: ignore[assignment]
@@ -400,6 +423,223 @@ class RunCoordinator:
     def _step_reasoning(self, state: RunState, step_name: str) -> Optional[str]:
         return state.run_config.step_reasoning.get(step_name)
 
+    @staticmethod
+    def _runtime_trace_enabled(state: RunState) -> bool:
+        return bool(getattr(state.run_config, "runtime_trace_enabled", False))
+
+    @staticmethod
+    def _trace_run_label(state: RunState) -> str:
+        label = str(getattr(state.run_config, "runtime_trace_label", "") or "").strip()
+        if label:
+            return label
+        return str(state.run_id or "")[:8]
+
+    @staticmethod
+    def _short_text(value: Any, limit: int = 120) -> str:
+        text = str(value or "").strip()
+        text = re.sub(r"\s+", " ", text)
+        if len(text) <= limit:
+            return text
+        return text[: max(0, limit - 3)] + "..."
+
+    def _short_smiles_list(self, values: Any, *, limit: int = 3) -> str:
+        if not isinstance(values, list):
+            return ""
+        items = [self._short_text(item, 48) for item in values if str(item or "").strip()]
+        if not items:
+            return ""
+        head = items[:limit]
+        suffix = ""
+        if len(items) > limit:
+            suffix = f", +{len(items) - limit} more"
+        return "[" + ", ".join(head) + suffix + "]"
+
+    def _summarize_candidate(self, candidate: Dict[str, Any]) -> str:
+        rank = int(candidate.get("rank") or 0)
+        smiles = self._short_text(candidate.get("intermediate_smiles"), 64) or "n/a"
+        smirks = self._short_text(candidate.get("reaction_smirks"), 96)
+        pushes = candidate.get("electron_pushes")
+        push_count = len(pushes) if isinstance(pushes, list) else 0
+        parts = [f"rank={rank}", f"smiles={smiles}"]
+        if smirks:
+            parts.append(f"smirks={smirks}")
+        if push_count:
+            parts.append(f"pushes={push_count}")
+        resulting = self._short_smiles_list(candidate.get("resulting_state"))
+        if resulting:
+            parts.append(f"resulting={resulting}")
+        return " ".join(parts)
+
+    def _summarize_validation_details(self, details: Any) -> str:
+        if not isinstance(details, dict):
+            return ""
+        parts: List[str] = []
+        for key in ("code", "message", "error", "field", "summary"):
+            value = details.get(key)
+            if value:
+                parts.append(f"{key}={self._short_text(value, 96)}")
+        chemistry_backend = details.get("chemistry_backend")
+        if isinstance(chemistry_backend, dict):
+            backend_used = str(chemistry_backend.get("backend_used") or "").strip()
+            if backend_used:
+                parts.append(f"backend={backend_used}")
+            fallback_reason = str(chemistry_backend.get("fallback_reason") or "").strip()
+            if fallback_reason:
+                parts.append(f"fallback={fallback_reason}")
+            rdkit_cli_error_code = str(chemistry_backend.get("rdkit_cli_error_code") or "").strip()
+            if rdkit_cli_error_code:
+                parts.append(f"rdkit_cli_error={rdkit_cli_error_code}")
+        invalid_smiles = details.get("invalid_smiles")
+        if isinstance(invalid_smiles, list) and invalid_smiles:
+            parts.append(f"invalid_smiles={self._short_smiles_list(invalid_smiles, limit=2)}")
+        return " ".join(parts[:5])
+
+    def _summarize_validation(self, validation: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(validation, dict):
+            return ""
+        checks = validation.get("checks")
+        if not isinstance(checks, list):
+            return "validation=pass" if validation.get("passed") else "validation=fail"
+        failed = []
+        for item in checks:
+            if not isinstance(item, dict):
+                continue
+            if item.get("passed"):
+                continue
+            name = str(item.get("name") or "").strip()
+            detail = self._summarize_validation_details(item.get("details"))
+            failed.append(f"{name}({detail})" if detail else name)
+        if validation.get("passed"):
+            return "validation=pass"
+        if failed:
+            return "validation=fail " + "; ".join(failed[:3])
+        return "validation=fail"
+
+    def _summarize_step_output(
+        self,
+        step_name: str,
+        output: Dict[str, Any],
+        *,
+        validation: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        parts: List[str] = []
+        if step_name == "balance_analysis":
+            deficits = output.get("remaining_deficit")
+            if isinstance(deficits, dict) and deficits:
+                parts.append(f"deficit={self._short_text(json.dumps(deficits, sort_keys=True), 96)}")
+        elif step_name == "initial_conditions":
+            env = self._short_text(output.get("environment"), 24)
+            acid = self._short_smiles_list([item.get("smiles") for item in output.get("acid_candidates", []) if isinstance(item, dict)])
+            base = self._short_smiles_list([item.get("smiles") for item in output.get("base_candidates", []) if isinstance(item, dict)])
+            if env:
+                parts.append(f"environment={env}")
+            if acid:
+                parts.append(f"acid={acid}")
+            if base:
+                parts.append(f"base={base}")
+        elif step_name == "missing_reagents":
+            reactants = self._short_smiles_list(output.get("missing_reactants") or output.get("missing_reagents"))
+            products = self._short_smiles_list(output.get("missing_products"))
+            if reactants:
+                parts.append(f"missing_reactants={reactants}")
+            if products:
+                parts.append(f"missing_products={products}")
+        elif step_name in {"atom_mapping", "step_atom_mapping"}:
+            for key in ("mapped_reaction", "reaction_smirks", "mapping"):
+                value = self._short_text(output.get(key), 120)
+                if value:
+                    parts.append(f"{key}={value}")
+                    break
+        elif step_name == "reaction_type_mapping":
+            selected = self._short_text(output.get("selected_label_exact"), 48)
+            confidence = output.get("confidence")
+            if selected:
+                parts.append(f"selected={selected}")
+            if isinstance(confidence, (int, float)):
+                parts.append(f"confidence={float(confidence):.2f}")
+        elif step_name == "mechanism_step_proposal":
+            candidates = output.get("candidates")
+            rejected = output.get("rejected_candidates")
+            topology = self._short_text(output.get("topology"), 32)
+            if topology:
+                parts.append(f"topology={topology}")
+            if isinstance(candidates, list):
+                parts.append(f"candidates={len(candidates)}")
+                if candidates:
+                    parts.append(
+                        " | ".join(
+                            self._summarize_candidate(dict(item))
+                            for item in candidates[:3]
+                            if isinstance(item, dict)
+                        )
+                    )
+            if isinstance(rejected, list) and rejected:
+                parts.append(f"rejected={len(rejected)}")
+        elif step_name == "mechanism_synthesis":
+            predicted = self._short_text(output.get("predicted_intermediate"), 64)
+            smirks = self._short_text(output.get("reaction_smirks") or output.get("raw_reaction_smirks"), 120)
+            pushes = output.get("electron_pushes")
+            push_count = len(pushes) if isinstance(pushes, list) else 0
+            current = self._short_smiles_list(output.get("current_state"))
+            resulting = self._short_smiles_list(output.get("resulting_state"))
+            if predicted:
+                parts.append(f"predicted={predicted}")
+            if smirks:
+                parts.append(f"smirks={smirks}")
+            parts.append(f"pushes={push_count}")
+            if current:
+                parts.append(f"current={current}")
+            if resulting:
+                parts.append(f"resulting={resulting}")
+            if output.get("contains_target_product") is not None:
+                parts.append(f"contains_target={bool(output.get('contains_target_product'))}")
+        elif step_name == "candidate_rescue":
+            status = self._short_text(output.get("status"), 32)
+            error = self._short_text(output.get("error"), 64)
+            add_reactants = self._short_smiles_list(output.get("add_reactants"))
+            add_products = self._short_smiles_list(output.get("add_products"))
+            if status:
+                parts.append(f"status={status}")
+            if error:
+                parts.append(f"error={error}")
+            if add_reactants:
+                parts.append(f"add_reactants={add_reactants}")
+            if add_products:
+                parts.append(f"add_products={add_products}")
+        elif step_name in ALL_VALIDATOR_IDS:
+            passed = output.get("passed")
+            if passed is not None:
+                parts.append(f"passed={bool(passed)}")
+            detail = self._summarize_validation_details(output.get("details"))
+            if detail:
+                parts.append(detail)
+
+        validation_summary = self._summarize_validation(validation)
+        if validation_summary:
+            parts.append(validation_summary)
+        return " ".join(part for part in parts if part).strip()
+
+    def _trace(
+        self,
+        state: RunState,
+        message: str,
+        *,
+        step_name: Optional[str] = None,
+        attempt: Optional[int] = None,
+        retry_index: Optional[int] = None,
+    ) -> None:
+        if not self._runtime_trace_enabled(state):
+            return
+        prefix_parts = [f"TRACE[{self._trace_run_label(state)}"]
+        if step_name:
+            prefix_parts.append(f"step={step_name}")
+        if attempt is not None:
+            prefix_parts.append(f"attempt={attempt}")
+        if retry_index is not None:
+            prefix_parts.append(f"retry={retry_index}")
+        prefix = " ".join(prefix_parts) + "]"
+        print(f"{prefix} {message}", flush=True)
+
     def _record_step(self, state: RunState, result: StepResult) -> None:
         validation_payload = result.validation.as_dict() if result.validation else None
         resolved_model = result.model or self._step_model(state, result.step_name)
@@ -514,6 +754,19 @@ class RunCoordinator:
                 },
                 step_name=result.step_name,
             )
+        duration_text = f" duration={duration_seconds:.2f}s" if duration_seconds is not None else ""
+        summary = self._summarize_step_output(
+            result.step_name,
+            result.output if isinstance(result.output, dict) else {},
+            validation=validation_payload,
+        )
+        self._trace(
+            state,
+            f"DONE tool={result.tool_name} source={result.source}{duration_text} {summary}".strip(),
+            step_name=result.step_name,
+            attempt=result.attempt,
+            retry_index=result.retry_index,
+        )
 
     def _mark_step_started(
         self,
@@ -537,6 +790,21 @@ class RunCoordinator:
                 "start_time": start_time,
             },
             step_name=step_name,
+        )
+        context_parts = [f"START tool={tool_name}"]
+        if step_name in {"mechanism_step_proposal", "mechanism_synthesis"}:
+            current = self._short_smiles_list(state.current_state)
+            targets = self._short_smiles_list(state.run_input.products)
+            if current:
+                context_parts.append(f"current={current}")
+            if targets:
+                context_parts.append(f"targets={targets}")
+        self._trace(
+            state,
+            " ".join(context_parts),
+            step_name=step_name,
+            attempt=attempt,
+            retry_index=retry_index,
         )
 
     def _existing_steps(self, run_id: str) -> set[str]:
@@ -1259,6 +1527,15 @@ class RunCoordinator:
                 failed_checks.append(name)
                 details = check.get("details")
                 if isinstance(details, dict):
+                    error_code = details.get("error_code")
+                    fix_suggestions = details.get("fix_suggestions")
+                    if isinstance(error_code, str) and error_code.strip():
+                        guidance_parts.append(f"{name} [{error_code.strip()}]")
+                    if isinstance(fix_suggestions, list):
+                        for suggestion in fix_suggestions:
+                            if isinstance(suggestion, str) and suggestion.strip():
+                                guidance_parts.append(f"{name}: {suggestion.strip()}")
+                                break
                     error_text = details.get("error") or details.get("message")
                     if isinstance(error_text, str) and error_text.strip():
                         # Provide specific guidance for SMILES validation errors
@@ -1435,6 +1712,7 @@ class RunCoordinator:
             step_name = mapping.get(check.name)
             if not step_name:
                 continue
+            self._update_chemistry_backend_telemetry(state, check)
             self._mark_step_started(
                 state,
                 step_name=step_name,
@@ -1452,6 +1730,105 @@ class RunCoordinator:
                 validation=StepValidationResult(checks=[StepValidationCheck(name=check.name, passed=check.passed, details=check.details)]),
             )
             self._record_step(state, result)
+
+    def _update_chemistry_backend_telemetry(self, state: RunState, check: StepValidationCheck) -> None:
+        details = check.details if isinstance(check.details, dict) else {}
+        backend_meta = details.get("chemistry_backend")
+        if not isinstance(backend_meta, dict):
+            return
+
+        telemetry = state.adaptive_runtime_state.setdefault(
+            "chemistry_backend_telemetry",
+            {
+                "calls": 0,
+                "backend_used_counts": {},
+                "backend_requested_counts": {},
+                "fallback_count": 0,
+                "fallback_reasons": {},
+                "rdkit_cli_error_counts": {},
+                "first_rdkit_cli_error": None,
+            },
+        )
+        telemetry["calls"] = int(telemetry.get("calls") or 0) + 1
+
+        backend_used = str(backend_meta.get("backend_used") or "python")
+        used_counts = telemetry.setdefault("backend_used_counts", {})
+        used_counts[backend_used] = int(used_counts.get(backend_used) or 0) + 1
+
+        backend_requested = str(backend_meta.get("backend_requested") or "auto")
+        requested_counts = telemetry.setdefault("backend_requested_counts", {})
+        requested_counts[backend_requested] = int(requested_counts.get(backend_requested) or 0) + 1
+
+        fallback_used = bool(backend_meta.get("fallback_used"))
+        if fallback_used:
+            telemetry["fallback_count"] = int(telemetry.get("fallback_count") or 0) + 1
+            fallback_reason = str(backend_meta.get("fallback_reason") or "unknown")
+            fallback_reasons = telemetry.setdefault("fallback_reasons", {})
+            fallback_reasons[fallback_reason] = int(fallback_reasons.get(fallback_reason) or 0) + 1
+
+        rdkit_cli_error_code = str(backend_meta.get("rdkit_cli_error_code") or "").strip()
+        rdkit_cli_error = str(backend_meta.get("rdkit_cli_error") or "").strip()
+        error_key = rdkit_cli_error_code or (rdkit_cli_error[:120] if rdkit_cli_error else "")
+        if error_key:
+            error_counts = telemetry.setdefault("rdkit_cli_error_counts", {})
+            error_counts[error_key] = int(error_counts.get(error_key) or 0) + 1
+            if telemetry.get("first_rdkit_cli_error") is None:
+                telemetry["first_rdkit_cli_error"] = {
+                    "code": rdkit_cli_error_code or None,
+                    "message": rdkit_cli_error or None,
+                    "check": check.name,
+                }
+            self.store.append_event(
+                state.run_id,
+                "chemistry_backend_error",
+                {
+                    "check": check.name,
+                    "backend_requested": backend_requested,
+                    "backend_used": backend_used,
+                    "fallback_used": fallback_used,
+                    "fallback_reason": backend_meta.get("fallback_reason"),
+                    "rdkit_cli_error_code": rdkit_cli_error_code or None,
+                    "rdkit_cli_error": rdkit_cli_error or None,
+                },
+                step_name=check.name,
+            )
+
+        if fallback_used:
+            self.store.append_event(
+                state.run_id,
+                "chemistry_backend_fallback",
+                {
+                    "check": check.name,
+                    "backend_requested": backend_requested,
+                    "backend_used": backend_used,
+                    "fallback_reason": backend_meta.get("fallback_reason"),
+                    "rdkit_cli_error_code": rdkit_cli_error_code or None,
+                },
+                step_name=check.name,
+            )
+
+    def _emit_chemistry_backend_summary_event(self, state: RunState) -> None:
+        telemetry = state.adaptive_runtime_state.get("chemistry_backend_telemetry")
+        if not isinstance(telemetry, dict):
+            return
+        if telemetry.get("_emitted"):
+            return
+        payload = {
+            "calls": int(telemetry.get("calls") or 0),
+            "backend_used_counts": dict(telemetry.get("backend_used_counts") or {}),
+            "backend_requested_counts": dict(telemetry.get("backend_requested_counts") or {}),
+            "fallback_count": int(telemetry.get("fallback_count") or 0),
+            "fallback_reasons": dict(telemetry.get("fallback_reasons") or {}),
+            "rdkit_cli_error_counts": dict(telemetry.get("rdkit_cli_error_counts") or {}),
+            "first_rdkit_cli_error": telemetry.get("first_rdkit_cli_error"),
+        }
+        self.store.append_event(
+            state.run_id,
+            "chemistry_backend_summary",
+            payload,
+            step_name="mechanism_synthesis",
+        )
+        telemetry["_emitted"] = True
 
     def _record_arrow_push_annotation(
         self,
@@ -1771,6 +2148,83 @@ class RunCoordinator:
                     texts.append(value.strip())
         return texts
 
+    @staticmethod
+    def _normalise_chemistry_error_code(error_text: str) -> Optional[str]:
+        text = str(error_text or "").strip()
+        if not text:
+            return None
+        lowered = text.lower()
+        if "explicit valence" in lowered and "greater than permitted" in lowered:
+            return "explicit_valence"
+        if "can't kekulize" in lowered or "unkekulized" in lowered:
+            return "kekulize_fail"
+        if "non-ring atom" in lowered and "aromatic" in lowered:
+            return "aromatic_non_ring"
+        if "unclosed ring" in lowered:
+            return "unclosed_ring"
+        if (
+            "smiles parse error" in lowered
+            or "failed parsing smiles" in lowered
+            or "could not parse" in lowered
+            or "invalid smiles" in lowered
+        ):
+            return "smiles_parse"
+        return None
+
+    @classmethod
+    def _extract_chemistry_error_codes(cls, errors: List[str]) -> List[str]:
+        ordered: List[str] = []
+        for error in errors:
+            code = cls._normalise_chemistry_error_code(error)
+            if not code:
+                continue
+            if code in ordered:
+                continue
+            ordered.append(code)
+        return ordered
+
+    @staticmethod
+    def _runtime_guard_window(
+        max_runtime_seconds: float,
+        *,
+        fraction: float = 0.08,
+        min_seconds: float = 0.01,
+        max_seconds: float = 30.0,
+    ) -> float:
+        return min(max_seconds, max(min_seconds, float(max_runtime_seconds) * float(fraction)))
+
+    def _runtime_budget_guard_triggered(
+        self,
+        state: RunState,
+        *,
+        loop_start: Optional[float],
+        step_name: str,
+        fraction: float,
+    ) -> bool:
+        if loop_start is None:
+            return False
+        elapsed = time.monotonic() - float(loop_start)
+        remaining = float(state.run_config.max_runtime_seconds) - float(elapsed)
+        guard_seconds = self._runtime_guard_window(
+            state.run_config.max_runtime_seconds,
+            fraction=fraction,
+        )
+        if remaining > guard_seconds:
+            return False
+        self.store.append_event(
+            state.run_id,
+            "runtime_budget_guard_triggered",
+            {
+                "step_index": state.step_index + 1,
+                "step_name": step_name,
+                "elapsed_seconds": elapsed,
+                "remaining_seconds": max(0.0, remaining),
+                "guard_seconds": guard_seconds,
+                "max_runtime_seconds": state.run_config.max_runtime_seconds,
+            },
+        )
+        return True
+
     def _summarize_proposal_quality(
         self,
         *,
@@ -1789,8 +2243,13 @@ class RunCoordinator:
             "invalid_smiles_count": 0,
             "rdkit_parse_error_count": 0,
             "rdkit_valence_error_count": 0,
+            "kekulize_error_count": 0,
+            "aromatic_non_ring_error_count": 0,
+            "unclosed_ring_error_count": 0,
             "structurally_off_template_count": 0,
             "first_invalid_detail": None,
+            "first_chemistry_error_code": None,
+            "chemistry_error_codes": {},
         }
         for candidate, attempt_result in candidate_attempts:
             if str(candidate.get("template_alignment") or "").strip() == "not_aligned":
@@ -1813,12 +2272,21 @@ class RunCoordinator:
             if not isinstance(validation_payload, dict):
                 validation_payload = {}
             texts = self._validation_error_strings(validation_payload)
+            chemistry_error_codes = self._extract_chemistry_error_codes(texts)
+            for code in chemistry_error_codes:
+                summary["chemistry_error_codes"][code] = int(summary["chemistry_error_codes"].get(code, 0)) + 1
+            if summary["first_chemistry_error_code"] is None and chemistry_error_codes:
+                summary["first_chemistry_error_code"] = chemistry_error_codes[0]
             joined = " ".join(texts)
             has_parse = bool(
                 re.search(r"SMILES Parse Error|Failed parsing SMILES|could not parse", joined)
             )
             has_valence = bool(re.search(r"Explicit valence .* greater than permitted", joined))
-            if has_parse or has_valence:
+            if chemistry_error_codes:
+                summary["invalid_smiles_count"] += 1
+                if summary["first_invalid_detail"] is None and texts:
+                    summary["first_invalid_detail"] = texts[0]
+            elif has_parse or has_valence:
                 summary["invalid_smiles_count"] += 1
                 if summary["first_invalid_detail"] is None and texts:
                     summary["first_invalid_detail"] = texts[0]
@@ -1826,6 +2294,12 @@ class RunCoordinator:
                 summary["rdkit_parse_error_count"] += 1
             if has_valence:
                 summary["rdkit_valence_error_count"] += 1
+            if "kekulize_fail" in chemistry_error_codes:
+                summary["kekulize_error_count"] += 1
+            if "aromatic_non_ring" in chemistry_error_codes:
+                summary["aromatic_non_ring_error_count"] += 1
+            if "unclosed_ring" in chemistry_error_codes:
+                summary["unclosed_ring_error_count"] += 1
             if summary["first_invalid_detail"] is None and texts:
                 summary["first_invalid_detail"] = texts[0]
             elif summary["first_invalid_detail"] is None and reason:
@@ -1881,6 +2355,7 @@ class RunCoordinator:
         candidate: Dict[str, Any],
         proposal_output: Dict[str, Any],
         enabled_validators: Optional[set[str]] = None,
+        loop_start: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Validate a single candidate with up to 3 retry attempts.
 
@@ -1927,6 +2402,18 @@ class RunCoordinator:
 
         max_retries = max(1, int(state.run_config.retry_same_candidate_max or 1))
         for retry_index in range(max_retries):
+            self._trace(
+                state,
+                (
+                    f"CANDIDATE rank={int(candidate.get('rank') or 0)} "
+                    f"smiles={self._short_text(smiles, 64) or 'n/a'} "
+                    f"smirks={self._short_text(candidate.get('reaction_smirks'), 120) or 'n/a'} "
+                    f"retry_budget={retry_index + 1}/{max_retries}"
+                ),
+                step_name="mechanism_synthesis",
+                attempt=state.step_index + 1,
+                retry_index=retry_index,
+            )
             self._mark_step_started(
                 state,
                 step_name="mechanism_synthesis",
@@ -1972,6 +2459,7 @@ class RunCoordinator:
                     mechanism_result.output,
                     dbe_policy=state.run_config.dbe_policy,
                     enabled_validators=enabled_validators,
+                    run_config=state.run_config,
                 )
             except Exception as exc:
                 self.store.append_event(
@@ -2052,12 +2540,30 @@ class RunCoordinator:
                     "rescue_outcome": rescue_outcome,
                 }
 
-            rescue_result = self._attempt_candidate_rescue(
+            rescue_result: Optional[StepResult] = None
+            if self._runtime_budget_guard_triggered(
                 state,
-                mechanism_result=mechanism_result,
-                failed_checks=last_failed_checks,
-                candidate_rank=candidate.get("rank"),
-            )
+                loop_start=loop_start,
+                step_name="candidate_rescue",
+                fraction=0.08,
+            ):
+                rescue_outcome = "skipped_runtime_guard"
+                self.store.append_event(
+                    state.run_id,
+                    "candidate_rescue_skipped_runtime_guard",
+                    {
+                        "attempt": state.step_index + 1,
+                        "candidate_rank": candidate.get("rank"),
+                    },
+                    step_name="candidate_rescue",
+                )
+            else:
+                rescue_result = self._attempt_candidate_rescue(
+                    state,
+                    mechanism_result=mechanism_result,
+                    failed_checks=last_failed_checks,
+                    candidate_rank=candidate.get("rank"),
+                )
             if rescue_result is not None:
                 rescue_attempted = True
                 rescue_output = rescue_result.output or {}
@@ -2094,6 +2600,7 @@ class RunCoordinator:
                         maybe_output,
                         dbe_policy=state.run_config.dbe_policy,
                         enabled_validators=enabled_validators,
+                        run_config=state.run_config,
                     )
                     rescued_validation = rescued_validation_result.as_dict()
                     if rescued_validation.get("passed"):
@@ -2172,9 +2679,24 @@ class RunCoordinator:
                     "validation_signature": last_signature,
                     "rescue_attempted": rescue_attempted,
                     "rescue_outcome": rescue_outcome,
+                    "chemistry_error_codes": self._extract_chemistry_error_codes(
+                        self._validation_error_strings(validation_payload)
+                    ),
                     "validation": validation_payload,
                 },
                 step_name="mechanism_synthesis",
+            )
+            self._trace(
+                state,
+                (
+                    f"RETRY_FAILED rank={int(candidate.get('rank') or 0)} "
+                    f"failed_checks={','.join(last_failed_checks) or 'none'} "
+                    f"signature={self._short_text(last_signature, 80) or 'n/a'} "
+                    f"rescue={rescue_outcome}"
+                ),
+                step_name="mechanism_synthesis",
+                attempt=state.step_index + 1,
+                retry_index=retry_index,
             )
 
             repeat_failure_signature_limit = max(
@@ -2213,6 +2735,18 @@ class RunCoordinator:
                         "validator_hints": dict(retry_feedback.get("validator_hints", {})),
                     },
                     step_name="mechanism_synthesis",
+                )
+                self._trace(
+                    state,
+                    (
+                        f"RETRY_NEXT rank={int(candidate.get('rank') or 0)} "
+                        f"next_retry={retry_index + 1} "
+                        f"failed_checks={','.join(last_failed_checks) or 'none'} "
+                        f"guidance={self._short_text(retry_feedback.get('guidance'), 120) or 'n/a'}"
+                    ),
+                    step_name="mechanism_synthesis",
+                    attempt=state.step_index + 1,
+                    retry_index=retry_index + 1,
                 )
 
         return {
@@ -2287,6 +2821,16 @@ class RunCoordinator:
                 "validation_summary": dict(candidate.validation_summary or {}),
             },
             step_name="mechanism_synthesis",
+        )
+        self._trace(
+            state,
+            (
+                f"ACCEPT rank={candidate.rank} intermediate={self._short_text(candidate.intermediate_smiles, 64) or 'n/a'} "
+                f"resulting={self._short_smiles_list(state.current_state)}"
+            ),
+            step_name="mechanism_synthesis",
+            attempt=state.step_index,
+            retry_index=0,
         )
 
     def _collect_failed_path_steps(self, state: RunState, from_step_index: int) -> List[Dict[str, Any]]:
@@ -2373,6 +2917,18 @@ class RunCoordinator:
                     "intermediate": next_alt.intermediate_smiles,
                     "remaining_alternatives": len(bp.alternatives),
                 },
+            )
+            self._trace(
+                state,
+                (
+                    f"BACKTRACK reverted_to_step={bp.step_index} "
+                    f"alt_rank={next_alt.rank} "
+                    f"intermediate={self._short_text(next_alt.intermediate_smiles, 64) or 'n/a'} "
+                    f"remaining_alternatives={len(bp.alternatives)}"
+                ),
+                step_name="mechanism_synthesis",
+                attempt=bp.step_index + 1,
+                retry_index=0,
             )
             return True
 
@@ -3163,7 +3719,7 @@ class RunCoordinator:
                     _ev = self._enabled_validators(harness) if harness else None
                     try:
                         attempt_result = self._try_candidate_with_retries(
-                            state, candidate, proposal_output, enabled_validators=_ev,
+                            state, candidate, proposal_output, enabled_validators=_ev, loop_start=start,
                         )
                     except Exception as exc:
                         attempt_result = {
@@ -3341,6 +3897,7 @@ class RunCoordinator:
                                         "selected_candidate": fallback_candidate,
                                     },
                                     enabled_validators=_ev,
+                                    loop_start=start,
                                 )
                                 candidate_attempts.append((dict(fallback_candidate), dict(fallback_attempt)))
                                 if str(fallback_attempt.get("status") or "") == "validated":
@@ -3436,6 +3993,60 @@ class RunCoordinator:
                                     "validation_signature": last_validation_signature,
                                     "repeat_failure_signature_limit": last_repeat_failure_signature_limit,
                                     "candidate_rank": last_candidate_rank,
+                                },
+                            )
+                            return
+                        continue
+                    if proposal_quality_summary.get("candidate_count", 0) == 0 and not all_candidates_rejected:
+                        step_key = state.step_index + 1
+                        reproposals_by_step[step_key] = reproposals_by_step.get(step_key, 0) + 1
+                        current_reproposals = reproposals_by_step[step_key]
+                        reproposal_hints[step_key] = {
+                            "require_reaction_smirks": True,
+                            "require_electron_pushes": True,
+                            "smiles_error_context": smiles_error_context,
+                            "non_executable_fallback": bool(proposal_output.get("non_executable_fallback")),
+                        }
+                        self.store.append_event(
+                            state.run_id,
+                            "mechanism_reproposal_requested",
+                            {
+                                "attempt": state.step_index + 1,
+                                "reason": "incomplete_candidate_payload",
+                                "candidate_count": 0,
+                                "reproposal_count": current_reproposals,
+                                "non_executable_fallback": bool(proposal_output.get("non_executable_fallback")),
+                            },
+                            step_name="mechanism_step_proposal",
+                        )
+                        if current_reproposals >= max(1, int(state.run_config.max_reproposals_per_step or 4)):
+                            self.store.append_event(
+                                state.run_id,
+                                "mechanism_reproposal_limit_reached",
+                                {
+                                    "step_index": state.step_index + 1,
+                                    "reproposal_count": current_reproposals,
+                                    "max_reproposals_per_step": max(
+                                        1, int(state.run_config.max_reproposals_per_step or 4)
+                                    ),
+                                    "reason": "incomplete_candidate_payload",
+                                    "candidate_count": 0,
+                                    "non_executable_fallback": bool(proposal_output.get("non_executable_fallback")),
+                                },
+                                step_name="mechanism_step_proposal",
+                            )
+                            self.store.set_run_status(state.run_id, "failed")
+                            self.store.append_event(
+                                state.run_id,
+                                "run_failed",
+                                {
+                                    "reason": "proposal_incomplete_loop",
+                                    "step_index": state.step_index + 1,
+                                    "reproposal_count": current_reproposals,
+                                    "last_reproposal_reason": "incomplete_candidate_payload",
+                                    "candidate_count": 0,
+                                    "non_executable_fallback": bool(proposal_output.get("non_executable_fallback")),
+                                    "proposal_quality_summary": proposal_quality_summary,
                                 },
                             )
                             return
@@ -3771,7 +4382,7 @@ class RunCoordinator:
                 self._apply_candidate(state, chosen)
 
             # --- Step F: Post-step modules (reflection, step mapping, etc.) ---
-            self._run_post_step_modules(state, chosen, harness)
+            self._run_post_step_modules(state, chosen, harness, loop_start=start)
 
             # --- Step G: Completion check ---
             contains_target = bool(chosen.mechanism_output.get("contains_target_product"))
@@ -3935,6 +4546,7 @@ class RunCoordinator:
                 validation_payload,
                 dbe_policy="soft",
                 enabled_validators={"atom_balance_validation", "state_progress_validation"},
+                run_config=state.run_config,
             )
             passed = validation_result.passed if validation_result else False
 
@@ -3991,6 +4603,7 @@ class RunCoordinator:
         state: RunState,
         chosen: BranchCandidate,
         harness: Optional[HarnessConfig] = None,
+        loop_start: Optional[float] = None,
     ) -> None:
         """Run post-step modules after a validated mechanism step."""
         if harness is not None:
@@ -4014,6 +4627,19 @@ class RunCoordinator:
                     reflection.attempt = state.step_index
                     self._record_step(state, reflection)
                 elif module.id == "step_atom_mapping":
+                    if self._runtime_budget_guard_triggered(
+                        state,
+                        loop_start=loop_start,
+                        step_name="step_atom_mapping",
+                        fraction=0.10,
+                    ):
+                        self.store.append_event(
+                            state.run_id,
+                            "step_mapping_skipped_runtime_guard",
+                            {"step_index": state.step_index},
+                            step_name="step_atom_mapping",
+                        )
+                        continue
                     self._run_step_mapping(state, chosen)
                 elif module.custom:
                     context: Dict[str, Any] = {"mechanism_output": chosen.mechanism_output}
@@ -4032,6 +4658,19 @@ class RunCoordinator:
             reflection.attempt = state.step_index
             self._record_step(state, reflection)
             if state.run_config.step_mapping_enabled:
+                if self._runtime_budget_guard_triggered(
+                    state,
+                    loop_start=loop_start,
+                    step_name="step_atom_mapping",
+                    fraction=0.10,
+                ):
+                    self.store.append_event(
+                        state.run_id,
+                        "step_mapping_skipped_runtime_guard",
+                        {"step_index": state.step_index},
+                        step_name="step_atom_mapping",
+                    )
+                    return
                 self._run_step_mapping(state, chosen)
 
     def _run_step_mapping(self, state: RunState, chosen: BranchCandidate) -> None:
@@ -4139,6 +4778,14 @@ class RunCoordinator:
 
         prior_status = str(run_row.get("status") or "pending")
         self.store.set_run_status(run_id, "running")
+        self._trace(
+            state,
+            (
+                f"RUN_START mode={state.mode} topology={state.run_config.coordination_topology} "
+                f"starting={self._short_smiles_list(state.run_input.starting_materials)} "
+                f"products={self._short_smiles_list(state.run_input.products)}"
+            ),
+        )
         if prior_status == "paused":
             # If resuming from a last_chance_backtrack pause with decision="continue",
             # reconstruct the pending alternative and revert state to the branch point.
@@ -4346,6 +4993,18 @@ class RunCoordinator:
                 },
             )
         finally:
+            try:
+                terminal_row = self.store.get_run_row(run_id)
+                terminal_status = str((terminal_row or {}).get("status") or "")
+                self._trace(
+                    state,
+                    f"RUN_END status={terminal_status or 'unknown'} final_state={self._short_smiles_list(state.current_state)}",
+                )
+                if terminal_status in {"completed", "failed", "stopped"}:
+                    self._emit_chemistry_backend_summary_event(state)
+            except Exception:
+                # Telemetry summary must never break run completion/failure handling.
+                pass
             model_context.clear_run_context()
 
 
