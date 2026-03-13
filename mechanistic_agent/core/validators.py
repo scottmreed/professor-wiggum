@@ -153,6 +153,58 @@ def _attach_backend_metadata(result: StepValidationResult, metadata: Dict[str, A
         check.details = details
 
 
+def _annotate_soft_backend_warnings(result: StepValidationResult) -> None:
+    for check in result.checks:
+        if check.name != "atom_balance" or not check.passed:
+            continue
+        details = dict(check.details or {})
+        backend_meta = details.get("chemistry_backend")
+        if not isinstance(backend_meta, dict):
+            continue
+        error_code = str(backend_meta.get("rdkit_cli_error_code") or "").strip()
+        if error_code != "atom_balance_invalid_species":
+            continue
+        warnings = details.get("warnings")
+        warning_lines = [str(item).strip() for item in warnings if str(item).strip()] if isinstance(warnings, list) else []
+        warning_text = (
+            "rdkit_cli reported invalid species; treating as a known soft pass "
+            "because Python atom-balance validation succeeded."
+        )
+        if warning_text not in warning_lines:
+            warning_lines.append(warning_text)
+        details["warnings"] = warning_lines
+        details["warning_only"] = True
+        details["known_soft_pass"] = True
+        details["soft_pass_reason"] = "rdkit_cli_invalid_species"
+        details["retry_recommended"] = True
+        check.details = details
+
+
+def _override_atom_balance_check(
+    result: StepValidationResult,
+    *,
+    payload: Dict[str, Any],
+    active: Set[str],
+) -> StepValidationResult:
+    if VALIDATOR_ATOM_BALANCE not in active:
+        return result
+    current_state = [str(item) for item in payload.get("current_state", [])]
+    resulting_state = [str(item) for item in payload.get("resulting_state", [])]
+    atom_check = validate_atom_balance(current_state, resulting_state)
+
+    updated: List[StepValidationCheck] = []
+    replaced = False
+    for check in result.checks:
+        if check.name == "atom_balance":
+            updated.append(atom_check)
+            replaced = True
+        else:
+            updated.append(check)
+    if not replaced:
+        updated.append(atom_check)
+    return StepValidationResult(checks=updated)
+
+
 def validate_mechanism_step_output(
     payload: Dict[str, Any],
     *,
@@ -188,5 +240,7 @@ def validate_mechanism_step_output(
     if not isinstance(result, StepValidationResult):
         result = _python_path()
     result = _filter_active_checks(result, active)
+    result = _override_atom_balance_check(result, payload=payload, active=active)
     _attach_backend_metadata(result, backend_meta)
+    _annotate_soft_backend_warnings(result)
     return result

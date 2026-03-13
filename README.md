@@ -128,7 +128,7 @@ The default mechanistic harness orchestrates pre-loop analysis, an iterative mec
 
 ![Harness flow diagram](docs/harness_flow_snapshot.png)
 
-- **Pre-loop** (runs once): Check Atom Balance -> Identify Functional Groups -> Recommend pH -> Assess Reaction Conditions -> Predict Missing Reagents -> Map Atoms -> Map To Reaction Type
+- **Pre-loop** (runs once): Check Atom Balance -> Identify Functional Groups -> Recommend pH -> Assess Reaction Conditions -> Predict Missing Reagents (now also emits species roles and proposal constraints) -> Map Atoms -> Map To Reaction Type
 - **Loop**: Propose Next Mechanism Step (LLM) -> Validate Mechanism Step -> Bond/Electron, Atom Balance, State Progress validators -> Retry or Continue? -> Target Products Reached? (yes -> Run Complete; no -> loop back)
 - **Decision gates**: Retry/Backtrack routing when validation fails; Paused when no branch points remain
 

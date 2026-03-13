@@ -129,6 +129,38 @@ def test_predict_mechanistic_step_dedupes_resulting_state() -> None:
     assert payload["resulting_state"].count("CCCl") == 1
 
 
+def test_predict_mechanistic_step_requires_primary_target_not_small_byproduct() -> None:
+    raw = predict_mechanistic_step(
+        step_index=1,
+        current_state=["CCBr", "[Cl-]"],
+        target_products=["CCCl", "[Br-]"],
+        electron_pushes=[{"start_atom": "1", "end_atom": "2", "electrons": 2}],
+        predicted_intermediate="CC(Cl)Br",
+        resulting_state=["CC(Cl)Br", "[Br-]"],
+        starting_materials=["CCBr", "[Cl-]"],
+    )
+    payload = json.loads(raw)
+    assert payload["contains_target_product"] is False
+    assert payload["matched_target_products"] == ["[Br-]"]
+    assert payload["primary_target_products"] == ["CCCl"]
+
+
+def test_predict_mechanistic_step_ignores_target_spectators_present_from_start() -> None:
+    raw = predict_mechanistic_step(
+        step_index=1,
+        current_state=["F[P-](F)(F)(F)(F)F", "O=C(O)O"],
+        target_products=["CCC(=O)N", "F[P-](F)(F)(F)(F)F"],
+        electron_pushes=[{"start_atom": "1", "end_atom": "2", "electrons": 2}],
+        predicted_intermediate="CCOC(=O)N",
+        resulting_state=["CCOC(=O)N", "F[P-](F)(F)(F)(F)F"],
+        starting_materials=["F[P-](F)(F)(F)(F)F", "O=C(O)O"],
+    )
+    payload = json.loads(raw)
+    assert payload["contains_target_product"] is False
+    assert payload["spectator_target_products"] == ["F[P-](F)(F)(F)(F)F"]
+    assert payload["primary_target_products"] == ["CCC(N)=O"]
+
+
 def test_soft_dbe_policy_allows_warning_only_dbe_failure() -> None:
     payload = {
         "current_state": ["CCBr", "[Cl-]"],
@@ -966,11 +998,84 @@ def test_proposal_empty_activates_low_risk_mode() -> None:
 
     assert state.run_config.coordination_topology == "sas"
     assert state.run_config.candidate_rescue_enabled is False
-    assert state.run_config.step_mapping_enabled is False
+    assert state.run_config.step_mapping_enabled is True
     assert state.adaptive_runtime_state["mode"] == "low_risk"
     changed_events = [ev for ev in store.events if ev["event_type"] == "adaptive_harness_mode_changed"]
     assert changed_events
     assert changed_events[-1]["payload"]["reason"] == "proposal_empty"
+    assert changed_events[-1]["payload"]["step_mapping_enabled"] is True
+
+
+def test_prevalidate_candidate_rejects_forbidden_species_in_acidic_mode() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state()
+
+    coordinator._build_proposal_constraint_guidance = lambda _state: {  # type: ignore[method-assign]
+        "proposal_constraints": {
+            "environment": "acidic",
+            "forbidden_new_species": ["[OH-]"],
+            "persistent_species": [],
+            "conjugate_pairs": [{"left": "[OH3+]", "right": "O", "role": "proton_shuttle"}],
+        }
+    }
+
+    candidate, violation = coordinator._prevalidate_candidate_against_constraints(
+        state,
+        {
+            "rank": 1,
+            "intermediate_smiles": "CCCl",
+            "resulting_state": ["CCCl", "[Br-]", "[OH-]"],
+        },
+    )
+
+    assert candidate["resulting_state"] == ["CCCl", "[Br-]", "[OH-]"]
+    assert violation is not None
+    assert violation["reason"] == "forbidden_new_species"
+    assert violation["species"] == ["[OH-]"]
+
+
+def test_prevalidate_candidate_repairs_persistent_counterion_and_merges_template_byproducts() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state()
+    state.current_state = ["CCBr", "[Cl-]", "[Na+]"]
+    state.selected_reaction_template = {"canonical_byproducts": ["O"]}
+
+    coordinator._latest_output_by_step = lambda _run_id, step_name: (  # type: ignore[method-assign]
+        {
+            "proposal_constraints": {
+                "environment": "basic",
+                "persistent_species": ["[Na+]"],
+                "spectator_species": ["[Na+]"],
+                "counterion_species": ["[Na+]"],
+                "allowed_generated_species": [],
+                "canonical_byproducts": [],
+                "conjugate_pairs": [{"left": "[OH-]", "right": "O", "role": "proton_shuttle"}],
+            },
+            "species_registry": [{"species": "[Na+]", "roles": ["counterion", "spectator"], "tags": ["persistent"]}],
+        }
+        if step_name == "missing_reagents"
+        else None
+    )
+
+    guidance = coordinator._build_proposal_constraint_guidance(state)
+    assert guidance is not None
+    assert "O" in guidance["proposal_constraints"]["canonical_byproducts"]
+    assert "O" in guidance["proposal_constraints"]["allowed_generated_species"]
+
+    repaired_candidate, violation = coordinator._prevalidate_candidate_against_constraints(
+        state,
+        {
+            "rank": 1,
+            "intermediate_smiles": "CCCl",
+            "resulting_state": ["CCCl", "[Br-]"],
+        },
+    )
+
+    assert violation is None
+    assert "[Na+]" in repaired_candidate["resulting_state"]
+    assert "constraint_repairs" in repaired_candidate
 
 
 def test_remaining_mechanism_fallback_candidate_is_reingested() -> None:

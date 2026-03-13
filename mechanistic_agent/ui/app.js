@@ -86,7 +86,7 @@ const NODE_DESCRIPTIONS = {
   functional_groups: "SMARTS pattern matching identifies reactive functional groups (alcohols, ketones, amines, etc.) and leaving groups across all starting materials and products. Runs once; output is not passed to the LLM directly but informs atom-mapping context.",
   ph_recommendation: "Rule-based pH suggestion. If the user supplies a pH it is returned as-is. Otherwise, uses Dimorphite-DL protonation profiles or a heuristic acid/base scoring of the molecules. Runs once; the recommended pH is passed to the Assess Reaction Conditions LLM call.",
   initial_conditions: "LLM call that receives starting materials, products, the pH recommendation, and optional functional group data. Returns environment (acidic/basic/neutral), representative pH, pH range, and either acid candidates (acidic) or base candidates (basic) — never both. Its full JSON output is forwarded as conditions_guidance to the Predict Missing Reagents step and the reagent candidates are injected into Propose Next Intermediate.",
-  missing_reagents: "LLM call that receives starting materials, products, and the full conditions_guidance JSON from the previous step (including representative pH and acid/base candidates). Returns any missing reactants or products needed to balance the reaction under the recommended conditions.",
+  missing_reagents: "LLM call that receives starting materials, products, and the full conditions_guidance JSON from the previous step (including representative pH and acid/base candidates). Returns any missing reactants or products needed to balance the reaction under the recommended conditions, plus deterministic species-role and proposal-constraint metadata for later steps.",
   atom_mapping: "LLM call that receives starting materials and products. Returns a proposed atom-to-atom mapping, unmapped atoms, and confidence score. If functional group analysis is enabled, that context is included.",
   reaction_type_mapping: "LLM call that maps the reaction to one mechanism taxonomy label from training_data/reaction_type_templates.json, with confidence and rationale. Includes explicit 'no_match' when no taxonomy type fits.",
   mechanism_step_proposal: "Topology-aware LLM call that proposes ranked candidates for the next mechanism step. Dispatches via coordination_topology: SAS (1 call, 1 candidate), centralized MAS (1 call, up to 3 candidates), independent MAS (3 parallel calls, 2 each), or decentralized MAS (3 agents × 2 debate rounds, consensus merge). All returned candidates are validated independently by the same post-step validators. The top-ranked valid candidate proceeds; alternatives are stored as branch points for backtracking.",
@@ -114,7 +114,7 @@ const NODE_IO_SCHEMAS = {
   },
   missing_reagents: {
     inputs: ["starting_materials (SMILES[])", "products (SMILES[])", "conditions_guidance (full JSON from Assess Reaction Conditions, includes pH and acid/base candidates)"],
-    outputs: ["missing_reactants (SMILES[])", "missing_products (SMILES[])", "verification"],
+    outputs: ["missing_reactants (SMILES[])", "missing_products (SMILES[])", "verification", "species_registry", "proposal_constraints"],
   },
   atom_mapping: {
     inputs: ["starting_materials (SMILES[])", "products (SMILES[])", "functional_groups (if enabled)"],
@@ -125,7 +125,7 @@ const NODE_IO_SCHEMAS = {
     outputs: ["selected_label_exact (taxonomy label or no_match)", "selected_type_id", "confidence (0-1)", "rationale", "top_candidates"],
   },
   mechanism_step_proposal: {
-    inputs: ["starting_materials (SMILES[])", "products (SMILES[])", "current_state (SMILES[], updated after each accepted step)", "previous_intermediates (SMILES[], all prior accepted intermediates)", "ph", "temperature_celsius", "step_index", "acid_candidates or base_candidates (from conditions assessment, pH-selected)"],
+    inputs: ["starting_materials (SMILES[])", "products (SMILES[])", "current_state (SMILES[], updated after each accepted step)", "previous_intermediates (SMILES[], all prior accepted intermediates)", "ph", "temperature_celsius", "step_index", "proposal_constraints", "acid_candidates or base_candidates (from conditions assessment, pH-selected)"],
     outputs: ["classification (intermediate_step/final_step)", "candidates [{rank, intermediate_smiles, reaction_description, confidence, intermediate_type, note}]", "analysis"],
   },
   mechanism_synthesis: {
@@ -1981,9 +1981,6 @@ async function renderPredictedMechanismComparison(snapshot) {
   }
 }
 
-function applyFrontendMode() {
-  renderPredictedMechanismComparison(latestSnapshotData || {});
-}
 
 function applyHarnessTestingMode() {
   const selection = getHarnessSelection();
@@ -2927,7 +2924,7 @@ async function bootstrap() {
   await safeInit("examples", loadExamples);
   await safeInit("eval sets", loadEvalSets);
   await safeInit("harness configs", loadHarnessVersions);
-  applyFrontendMode();
+  renderPredictedMechanismComparison(latestSnapshotData || {});
   applyHarnessTestingMode();
   updateOrchestrationModeUi();
   updateHarnessReadOnlySummary();
@@ -2984,13 +2981,6 @@ async function bootstrap() {
     applyExample(event.target.value);
   });
 
-  document.getElementById("parseSmirksBtn").onclick = async () => {
-    try {
-      await parseSmirksInput();
-    } catch (err) {
-      setStatus(String(err.message || err));
-    }
-  };
 
   document.getElementById("createBtn").onclick = async () => {
     try {
@@ -3134,10 +3124,6 @@ async function bootstrap() {
 
   document.getElementById("orchestrationModeInput")?.addEventListener("change", () => {
     updateOrchestrationModeUi();
-  });
-  document.getElementById("frontendModeInput").addEventListener("change", () => {
-    applyFrontendMode();
-    applyHarnessTestingMode();
   });
   document.getElementById("harnessSelectionInput").addEventListener("change", () => {
     applyHarnessTestingMode();

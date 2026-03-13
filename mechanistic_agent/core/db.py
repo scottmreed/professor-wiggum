@@ -14,8 +14,41 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from mechanistic_agent.model_registry import get_model_family, get_model_provider, resolve_model_key
 from mechanistic_agent.prompt_assets import resolve_call_name_from_step, traces_root
+from mechanistic_agent.smiles_utils import strip_atom_mapping_list
 
 SCHEMA_VERSION = "2026_03_single_model_selection_v1"
+
+
+def _normalize_run_input_payload(input_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Canonicalize run inputs once at persistence time for every caller."""
+
+    payload = dict(input_payload or {})
+    starting_raw = payload.get("starting_materials")
+    products_raw = payload.get("products")
+    if not isinstance(starting_raw, list) or not isinstance(products_raw, list):
+        return payload
+
+    starting_original = [str(item) for item in starting_raw]
+    products_original = [str(item) for item in products_raw]
+    starting_canonical = strip_atom_mapping_list(starting_original)
+    products_canonical = strip_atom_mapping_list(products_original)
+
+    payload["starting_materials"] = starting_canonical
+    payload["products"] = products_canonical
+
+    if starting_canonical != starting_original or products_canonical != products_original:
+        boundary = dict(payload.get("input_boundary") or {})
+        boundary.update(
+            {
+                "original_starting_materials": starting_original,
+                "original_products": products_original,
+                "normalized_at_ingress": True,
+                "had_atom_mapping": any(":" in item for item in starting_original + products_original),
+            }
+        )
+        payload["input_boundary"] = boundary
+
+    return payload
 
 
 class RunStore:
@@ -562,6 +595,7 @@ class RunStore:
     ) -> str:
         run_id = uuid.uuid4().hex
         now = time.time()
+        normalized_payload = _normalize_run_input_payload(input_payload)
         with self._lock, self._connect() as conn:
             conn.execute(
                 """
@@ -576,7 +610,7 @@ class RunStore:
                     now,
                     "pending",
                     mode,
-                    self._json_dumps(input_payload),
+                    self._json_dumps(normalized_payload),
                     self._json_dumps(config),
                     prompt_bundle_hash,
                     skill_bundle_hash,
@@ -3275,6 +3309,13 @@ class RunStore:
             }
             for row in pending
         ]
+        run["overall_balance"] = None
+        for event in reversed(events):
+            if str(event.get("event_type") or "") == "overall_balance_reconciled":
+                payload = event.get("payload")
+                if isinstance(payload, dict):
+                    run["overall_balance"] = payload
+                break
         run["cost_summary"] = self.get_run_cost_summary(run_id)
         return run
 

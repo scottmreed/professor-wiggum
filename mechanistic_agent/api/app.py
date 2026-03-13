@@ -85,7 +85,11 @@ from mechanistic_agent.prompt_assets import (
     unified_prompt_diff,
 )
 from mechanistic_agent.prompt_trace_validator import validate_evidence_for_calls
-from mechanistic_agent.smiles_utils import strip_atom_mapping_list, strip_atom_mapping_optional
+from mechanistic_agent.smiles_utils import (
+    normalize_species_for_matching,
+    strip_atom_mapping_list,
+    strip_atom_mapping_optional,
+)
 from mechanistic_agent.tools import classify_functional_group_transformation, predict_mechanistic_step
 from mechanistic_agent.core.validators import validate_mechanism_step_output
 
@@ -1067,8 +1071,8 @@ def _grade_eval_snapshot(snapshot: Dict[str, Any], expected: Dict[str, Any]) -> 
 
 def _find_known_expected_for_snapshot(store: RunStore, snapshot: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     payload = snapshot.get("input_payload") or {}
-    starting = sorted([str(x).strip() for x in payload.get("starting_materials") or [] if str(x).strip()])
-    products = sorted([str(x).strip() for x in payload.get("products") or [] if str(x).strip()])
+    starting = sorted(normalize_species_for_matching([str(x) for x in payload.get("starting_materials") or []]))
+    products = sorted(normalize_species_for_matching([str(x) for x in payload.get("products") or []]))
     if not starting or not products:
         return None
 
@@ -1078,8 +1082,12 @@ def _find_known_expected_for_snapshot(store: RunStore, snapshot: Dict[str, Any])
             continue
         for case in store.list_eval_set_cases(eval_set_id):
             input_payload = case.get("input") or {}
-            case_starting = sorted([str(x).strip() for x in input_payload.get("starting_materials") or [] if str(x).strip()])
-            case_products = sorted([str(x).strip() for x in input_payload.get("products") or [] if str(x).strip()])
+            case_starting = sorted(
+                normalize_species_for_matching([str(x) for x in input_payload.get("starting_materials") or []])
+            )
+            case_products = sorted(
+                normalize_species_for_matching([str(x) for x in input_payload.get("products") or []])
+            )
             if case_starting == starting and case_products == products:
                 expected = case.get("expected")
                 if isinstance(expected, dict):
@@ -2163,6 +2171,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "latest_step_mapping": snapshot.get("latest_step_mapping"),
             "reaction_type_selection": snapshot.get("reaction_type_selection"),
             "template_guidance_state": snapshot.get("template_guidance_state"),
+            "overall_balance": snapshot.get("overall_balance"),
             "pending_verification": snapshot.get("pending_verification", []),
             "latest_pause": snapshot.get("latest_pause"),
             "ralph_attempts": snapshot.get("ralph_attempts", []),

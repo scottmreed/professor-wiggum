@@ -139,6 +139,101 @@ def test_create_run_accepts_example_id_and_deterministic_template_mapping(tmp_pa
     assert start_resp.status_code == 200
 
 
+def test_create_run_normalizes_mapped_and_unmapped_inputs_identically(tmp_path: Path) -> None:
+    app = create_app(_prepare_base(tmp_path))
+    client = TestClient(app)
+
+    mapped_resp = client.post(
+        "/api/runs",
+        json={
+            "mode": "unverified",
+            "starting_materials": ["[CH3:1][OH:2]"],
+            "products": ["[CH2:1]=[O:2]"],
+            "model": "gpt-5",
+            "max_steps": 1,
+        },
+    )
+    plain_resp = client.post(
+        "/api/runs",
+        json={
+            "mode": "unverified",
+            "starting_materials": ["CO"],
+            "products": ["C=O"],
+            "model": "gpt-5",
+            "max_steps": 1,
+        },
+    )
+
+    assert mapped_resp.status_code == 200
+    assert plain_resp.status_code == 200
+
+    mapped_snapshot = client.get(f"/api/runs/{mapped_resp.json()['run_id']}").json()
+    plain_snapshot = client.get(f"/api/runs/{plain_resp.json()['run_id']}").json()
+
+    assert mapped_snapshot["input_payload"]["starting_materials"] == ["CO"]
+    assert mapped_snapshot["input_payload"]["products"] == ["C=O"]
+    assert mapped_snapshot["input_payload"]["starting_materials"] == plain_snapshot["input_payload"]["starting_materials"]
+    assert mapped_snapshot["input_payload"]["products"] == plain_snapshot["input_payload"]["products"]
+    assert mapped_snapshot["input_payload"]["input_boundary"]["normalized_at_ingress"] is True
+    assert mapped_snapshot["input_payload"]["input_boundary"]["original_starting_materials"] == ["[CH3:1][OH:2]"]
+
+
+def test_evaluate_run_finds_mapped_expected_case_for_unmapped_run_inputs(tmp_path: Path) -> None:
+    base = _prepare_base(tmp_path)
+    app = create_app(base)
+    client = TestClient(app)
+    store = RunStore(base / "data" / "mechanistic.db")
+
+    eval_set_id = store.add_eval_set(
+        name="mapped_eval",
+        version="v1",
+        source_path=None,
+        sha256=None,
+        cases=[
+            {
+                "case_id": "mapped_case",
+                "input": {
+                    "starting_materials": ["[CH3:1][OH:2]"],
+                    "products": ["[CH2:1]=[O:2]"],
+                },
+                "expected": {
+                    "known_mechanism": {
+                        "min_steps": 1,
+                        "steps": [{"step_index": 1, "target_smiles": "[CH2:1]=[O:2]"}],
+                    }
+                },
+                "tags": [],
+            }
+        ],
+        active=True,
+        purpose="general",
+        exposed_in_ui=True,
+    )
+    assert eval_set_id
+
+    create_resp = client.post(
+        "/api/runs",
+        json={
+            "mode": "unverified",
+            "starting_materials": ["CO"],
+            "products": ["C=O"],
+            "model": "gpt-5",
+            "max_steps": 1,
+        },
+    )
+    assert create_resp.status_code == 200
+    run_id = create_resp.json()["run_id"]
+    store.set_run_status(run_id, "completed")
+
+    eval_resp = client.post(
+        f"/api/runs/{run_id}/evaluate",
+        json={"judge_model": "deterministic"},
+    )
+    assert eval_resp.status_code == 200
+    payload = eval_resp.json()["evaluation"]
+    assert payload["save_record"]["known_answer_available"] is True
+
+
 def test_examples_progress_endpoint_returns_non_holdout_attempts_for_model_scope(tmp_path: Path) -> None:
     base = _prepare_base(tmp_path)
     app = create_app(base)

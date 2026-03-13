@@ -15,8 +15,8 @@ This repository now runs on a local-first architecture:
 
 ## Verified vs Unverified
 
-- `unverified`: runtime can auto-generate mechanism steps and validates each step.
-- `verified`: runtime requires user-submitted mechanistic steps via API/UI, then validates each step deterministically.
+- `unverified`: runtime can auto-generate mechanism steps and validates each step. This is the only mode offered in the **web UI**; use it for interactive runs.
+- `verified`: runtime requires user-submitted mechanistic steps, then validates each step deterministically. **Verified mode is available only via CLI and API**, not from the main web UI. Use it for benchmark authoring and scripted flows (e.g. `python main.py run --mode verified --starting "CCO" --products "CC=O"` and submit steps via `POST /api/runs/{id}/mechanism_steps`).
 
 ## Key Endpoints
 
@@ -34,6 +34,7 @@ This repository now runs on a local-first architecture:
   - `training_data/eval_set.json`
   - `training_data/eval_tiers.json`
   - `training_data/flower_mechanisms_100.json`
+- To create and run **custom eval sets without FlowER data**, see [docs/custom_eval_sets.md](docs/custom_eval_sets.md) (author JSON, import via `POST /api/eval_sets/import_template`, then run with `--eval-set-id` or the runset API).
 - The leaderboard holdout suite is generated from `FlowER ... /test.txt` and stored separately under:
   - `training_data/leaderboard_holdout/`
 - Holdout eval sets are marked `purpose=leaderboard_holdout` and hidden from UI example/eval menus.
@@ -42,6 +43,13 @@ This repository now runs on a local-first architecture:
   - `POST /api/evals/official-runset`
   - `GET /api/evals/leaderboard/official`
 - `scripts/evolve_harness.py` explicitly rejects holdout eval sets to prevent tuning on leaderboard data.
+
+## Chemistry Backend Soft Passes
+
+- `eval-runset-official` now defaults to `--max-runtime 600` seconds per case.
+- When the `rdkit_cli` backend reports `rdkit_cli_error_code=atom_balance_invalid_species` but the Python atom-balance validator still passes, treat that condition as a **known soft pass**.
+- Known soft passes must emit warning-level telemetry/events and may recommend a retry or re-proposal, but they must **not** fail the step by themselves.
+- The Python validator remains authoritative for atom-balance pass/fail; `rdkit_cli` invalid-species reports are advisory unless the Python validator also fails.
 
 ## Skill and Prompt Architecture
 

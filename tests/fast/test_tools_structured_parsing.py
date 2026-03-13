@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 import pytest
 from pydantic import ValidationError
 
+from mechanistic_agent.core.tool_executor import ToolExecutor
 from mechanistic_agent.tools import (
     AtomMappingPayload,
     MechanismIntermediate,
@@ -526,7 +527,7 @@ def test_propose_intermediates_rejects_invalid_reaction_smirks_species(monkeypat
                         "rank": 1,
                         "intermediate_smiles": "CCCl",
                         "reaction_description": "invalid mapped fragment",
-                        "reaction_smirks": "[O:2-][C:1](=[O:3])>>[O:2-][C:1](=[O:3])",
+                        "reaction_smirks": "[Qq:2][C:1](=[O:3])>>[Qq:2][C:1](=[O:3])",
                         "electron_pushes": [{"kind": "lone_pair", "source_atom": "2", "target_atom": "1", "electrons": 2}],
                     }
                 ],
@@ -697,8 +698,37 @@ def test_propose_intermediates_receives_template_guidance(monkeypatch: pytest.Mo
     payload = json.loads(raw)
     assert payload.get("candidates")
     message_text = "\n".join(str(msg.get("content") or "") for msg in (captured["messages"] or []))
-    assert "Optional reaction-type template guidance" in message_text
+    assert "Optional deterministic harness guidance" in message_text
     assert "SN2 reaction" in message_text
+
+
+def test_tool_executor_does_not_forward_raw_mapped_prompt_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: Dict[str, Any] = {}
+
+    def _stub_propose_intermediates(**kwargs):  # noqa: ANN003
+        captured.update(kwargs)
+        return json.dumps({"classification": "intermediate_step", "candidates": []})
+
+    monkeypatch.setattr("mechanistic_agent.core.tool_executor.propose_intermediates", _stub_propose_intermediates)
+
+    executor = ToolExecutor()
+    executor.run_intermediates(
+        starting=["[CH3:1][Br:2]", "[Cl-:3]"],
+        products=["[CH3:1][Cl:3]", "[Br-:2]"],
+        current_state=["[CH3:1][Br:2]", "[Cl-:3]"],
+        previous_intermediates=[],
+        ph=7.0,
+        temperature=25.0,
+        step_index=0,
+        step_mapping_context=None,
+        template_guidance=None,
+    )
+
+    assert captured["starting_materials"] == ["CBr", "[Cl-]"]
+    assert captured["current_state"] == ["CBr", "[Cl-]"]
+    assert captured["mapped_starting_materials"] == []
+    assert captured["mapped_products"] == []
+    assert captured["mapped_current_state"] == []
 
 
 def test_propose_intermediates_retry_records_cli_command_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -904,3 +934,46 @@ def test_predict_missing_reagents_retry_executes_repair_smiles_and_applies_fix(
     assert any(entry.get("command") == "repair-smiles" for entry in executed if isinstance(entry, dict))
     applied = payload.get("cli_applied_fixes", [])
     assert any(item.get("command") == "repair-smiles" for item in applied if isinstance(item, dict))
+
+
+def test_predict_missing_reagents_emits_participant_constraints(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _StubResponse:
+        usage = None
+
+        def __init__(self) -> None:
+            self.tool_calls = [{"arguments": json.dumps({"missing_reactants": ["[OH3+]"], "missing_products": ["O"]})}]
+
+    class _StubLLM:
+        def invoke(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+            return _StubResponse()
+
+    monkeypatch.setattr("mechanistic_agent.tools.adapter_supports_forced_tools", lambda _model: True)
+    monkeypatch.setattr("mechanistic_agent.tools.get_model_api_key", lambda *_args, **_kwargs: "test-key")
+    monkeypatch.setattr("mechanistic_agent.tools.get_chat_model", lambda *_args, **_kwargs: _StubLLM())
+    monkeypatch.setattr(
+        "mechanistic_agent.tools.validate_proposed_reagents",
+        lambda reactants, products, *_args, **_kwargs: json.dumps(
+            {"status": "success", "is_balanced": True, "valid_reagents": list(reactants) + list(products)}
+        ),
+    )
+
+    raw = predict_missing_reagents(
+        starting_materials=["CCO"],
+        products=["CCCl"],
+        conditions_guidance=json.dumps(
+            {
+                "environment": "acidic",
+                "representative_ph": 2.0,
+                "acid_candidates": [{"name": "hydronium", "smiles": "[OH3+]", "role": "acid"}],
+            }
+        ),
+    )
+    payload = json.loads(raw)
+    constraints = payload.get("proposal_constraints", {})
+    registry = payload.get("species_registry", [])
+    assert payload["missing_reactants"] == ["[OH3+]"]
+    assert payload["missing_products"] == ["O"]
+    assert constraints.get("environment") == "acidic"
+    assert "[OH-]" in constraints.get("forbidden_new_species", [])
+    assert "O" in constraints.get("allowed_generated_species", [])
+    assert any(entry.get("species") == "[OH3+]" and "acid" in entry.get("roles", []) for entry in registry)

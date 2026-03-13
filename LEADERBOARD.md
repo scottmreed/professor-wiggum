@@ -32,6 +32,8 @@ Score: `python clawdiators-test/scoring/score_submission.py --submission <path>`
 
 ## Arena Submissions (Harness Eval — 1000-pt scale)
 
+*Auto-generated from live leaderboard. Run `python main.py update-leaderboard-artifacts` after eval-runset-official to refresh this table and curriculum/generated/leaderboard_*.json.*
+
 Official Clawdiators leaderboard results from `python main.py eval-runset-official`.
 Official one-shot baseline on the same holdout set: `python main.py baseline-runset-official`.
 Reproducibility comparison helper: `python main.py compare-eval-runs --run-a <id> --run-b <id>`.
@@ -39,7 +41,10 @@ Score computed by `_graded_to_clawdiators_pts()` in `main.py` using the same rub
 
 | Date | Model | Score | Outcome | Pass Rate | Avg Latency | Run Group |
 |---|---|---|---|---|---|---|
-| — | *(pending first submission)* | — | — | — | — | — |
+| 2026-03-11 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | 0.1s | `harness_free_baseline` |
+| 2026-03-09 | `claude-opus-4-6` | 100/1000 | LOSS | 0.0% | — | `official_holdout_harness` |
+| 2026-03-09 | `gpt-4o-mini` | 100/1000 | LOSS | 0.0% | — | `official_holdout_harness` |
+| 2026-03-09 | `gpt-4o-mini` | 100/1000 | LOSS | 0.0% | — | `official_holdout_harness` |
 
 ### Speed Calibration
 
@@ -56,6 +61,10 @@ Speed scoring uses `HARNESS_SPEED_CALIBRATION_MS` in `main.py` (top of file, vis
 
 **To recalibrate:** Run `python main.py eval-runset-official --model-name claude-opus-4-6`, note the
 `avg Xs/case` value in the score summary output, then update `HARNESS_SPEED_CALIBRATION_MS` in `main.py`.
+
+### Why 100/1000 LOSS?
+
+If the leaderboard shows 100/1000 LOSS for a run, it means **pass_rate = 0** (no cases reached target products). The 100 pts come from the methodology component only; product/pathway/push/speed are zeroed when pass_rate is 0. Runs **interrupted with ^C** never get `status=completed` and are filtered out — only completed runs appear. To see your high-scoring runs, let `eval-runset-official` finish without interrupting.
 
 ### Harness Proxy Mapping
 
@@ -116,6 +125,18 @@ Building the 10-reaction test harness revealed the following scoring dynamics:
 ### Speed Strategy
 - Arena: linear decay 1.0 → 0.0 over 600 seconds. 60-second single-shot submission → ~90/100 on speed.
 - Local test: always full 100 pts (speed not penalized in `score_submission.py`).
+
+---
+
+## Updating Prompts and Few-Shot Examples
+
+`eval-runset-official` is **read-only** for prompts and few-shot files. To mine and apply new few-shot examples from eval runs:
+
+```bash
+python scripts/evolve_harness.py --model-name anthropic/claude-opus-4.6 --harness default
+```
+
+Options: `--thinking-level` (low/high/max/auto; default: highest for model), `--step-count` (1–8 or `mixed`), `--loop` (when no candidates remain, allow repeats and continue). Use `--dry-run` to preview changes without writing. This runs the curriculum batch, mines high-scoring traces, and appends them to `skills/mechanistic/<call_name>/few_shot.jsonl`. For prompt edits, update `SKILL.md` files directly; see [CONTRIBUTING.md](CONTRIBUTING.md) for evidence gates.
 
 ---
 

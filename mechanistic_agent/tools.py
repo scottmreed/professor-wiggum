@@ -38,7 +38,12 @@ from .model_registry import (
     get_model_family,
 )
 from .prompt_assets import compose_system_prompt, format_few_shot_block
-from .smiles_utils import canonicalize_capture_error, remove_mapping_and_canonicalize
+from .smiles_utils import (
+    assess_target_product_state,
+    canonicalize_capture_error,
+    canonicalize_if_valid,
+    remove_mapping_and_canonicalize,
+)
 from .tool_schemas import (
     ASSESS_CONDITIONS_TOOL,
     ATOM_MAPPING_TOOL,
@@ -214,6 +219,253 @@ def _get_user_api_key_for_model(model_name: str) -> Optional[str]:
         return get_api_key("openai")
     except Exception:
         return None
+
+
+def _canonicalize_constraint_smiles(smiles: Optional[str]) -> Optional[str]:
+    """Canonicalize a species token for runtime constraint checks."""
+
+    if not isinstance(smiles, str) or not smiles.strip():
+        return None
+    corrected, _ = _apply_smiles_correction(smiles)
+    stripped = remove_mapping_and_canonicalize(corrected)
+    canonical = canonicalize_if_valid(stripped)
+    return canonical or str(stripped or corrected).strip() or None
+
+
+def _unique_species(items: Iterable[Optional[str]]) -> List[str]:
+    """Return canonical species preserving first-seen order."""
+
+    ordered: List[str] = []
+    seen: set[str] = set()
+    for item in items:
+        canonical = _canonicalize_constraint_smiles(item)
+        if not canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        ordered.append(canonical)
+    return ordered
+
+
+def _species_heavy_atom_count(smiles: str) -> int:
+    canonical = _canonicalize_constraint_smiles(smiles)
+    if not canonical:
+        return 0
+    if Chem is None:
+        return sum(1 for ch in canonical if ch.isalpha() and ch.isupper())
+    mol = Chem.MolFromSmiles(canonical)
+    if mol is None:
+        return 0
+    return sum(1 for atom in mol.GetAtoms() if atom.GetAtomicNum() > 1)
+
+
+def _is_counterion_like_species(smiles: str) -> bool:
+    canonical = _canonicalize_constraint_smiles(smiles)
+    if not canonical:
+        return False
+    return canonical in {
+        "[Cl-]",
+        "[Br-]",
+        "[I-]",
+        "[F-]",
+        "[Na+]",
+        "[K+]",
+        "[Li+]",
+        "[Mg+2]",
+        "[Ca+2]",
+        "[Zn+2]",
+        "[NH4+]",
+    }
+
+
+def _normalise_condition_support_species(items: Any) -> List[str]:
+    supports: List[str] = []
+    if not isinstance(items, (list, tuple)):
+        return supports
+    for item in items:
+        if isinstance(item, Mapping):
+            canonical = _canonicalize_constraint_smiles(item.get("smiles"))
+            if canonical:
+                supports.append(canonical)
+        elif isinstance(item, str):
+            canonical = _canonicalize_constraint_smiles(item)
+            if canonical:
+                supports.append(canonical)
+    return _unique_species(supports)
+
+
+def _build_species_registry_and_constraints(
+    *,
+    starting_materials: Sequence[str],
+    products: Sequence[str],
+    conditions_context: Optional[Mapping[str, Any]],
+    missing_reactants: Sequence[str],
+    missing_products: Sequence[str],
+) -> Dict[str, Any]:
+    """Build deterministic participant roles and proposal constraints."""
+
+    canonical_starting = _unique_species(starting_materials)
+    canonical_products = _unique_species(products)
+    canonical_missing_reactants = _unique_species(missing_reactants)
+    canonical_missing_products = _unique_species(missing_products)
+
+    env = str((conditions_context or {}).get("environment") or "unknown").strip().lower() or "unknown"
+    acid_supports = _normalise_condition_support_species((conditions_context or {}).get("acid_candidates"))
+    base_supports = _normalise_condition_support_species((conditions_context or {}).get("base_candidates"))
+    water = _canonicalize_constraint_smiles("O") or "O"
+    hydronium = _canonicalize_constraint_smiles("[OH3+]") or "[OH3+]"
+    hydroxide = _canonicalize_constraint_smiles("[OH-]") or "[OH-]"
+
+    entries: List[Dict[str, Any]] = []
+    index_by_species: Dict[str, int] = {}
+
+    def _ensure_entry(species: str) -> Dict[str, Any]:
+        canonical = _canonicalize_constraint_smiles(species)
+        if not canonical:
+            canonical = str(species).strip()
+        if canonical in index_by_species:
+            return entries[index_by_species[canonical]]
+        entry = {
+            "species": canonical,
+            "roles": [],
+            "tags": [],
+            "sources": [],
+        }
+        index_by_species[canonical] = len(entries)
+        entries.append(entry)
+        return entry
+
+    def _add_role(entry: Dict[str, Any], role: str) -> None:
+        if role not in entry["roles"]:
+            entry["roles"].append(role)
+
+    def _add_tag(entry: Dict[str, Any], tag: str) -> None:
+        if tag not in entry["tags"]:
+            entry["tags"].append(tag)
+
+    def _add_source(entry: Dict[str, Any], source: str) -> None:
+        if source not in entry["sources"]:
+            entry["sources"].append(source)
+
+    for idx, species in enumerate(canonical_starting):
+        entry = _ensure_entry(species)
+        _add_source(entry, "starting_materials")
+        if species in acid_supports:
+            _add_role(entry, "acid")
+            _add_role(entry, "catalyst")
+            _add_tag(entry, "persistent")
+            _add_tag(entry, "eligible_now")
+        elif species in base_supports:
+            _add_role(entry, "base")
+            _add_role(entry, "catalyst")
+            _add_tag(entry, "persistent")
+            _add_tag(entry, "eligible_now")
+        elif _is_counterion_like_species(species):
+            _add_role(entry, "counterion")
+            _add_role(entry, "spectator")
+            _add_tag(entry, "persistent")
+            _add_tag(entry, "eligible_now")
+        elif idx == 0 or _species_heavy_atom_count(species) >= 4:
+            _add_role(entry, "substrate")
+            _add_tag(entry, "eligible_now")
+        else:
+            _add_role(entry, "coreactant")
+            _add_tag(entry, "eligible_now")
+
+    for species in acid_supports:
+        entry = _ensure_entry(species)
+        _add_source(entry, "conditions")
+        _add_role(entry, "acid")
+        _add_role(entry, "catalyst")
+        _add_tag(entry, "persistent")
+        _add_tag(entry, "eligible_now")
+
+    for species in base_supports:
+        entry = _ensure_entry(species)
+        _add_source(entry, "conditions")
+        _add_role(entry, "base")
+        _add_role(entry, "catalyst")
+        _add_tag(entry, "persistent")
+        _add_tag(entry, "eligible_now")
+
+    for species in canonical_missing_reactants:
+        entry = _ensure_entry(species)
+        _add_source(entry, "missing_reactants")
+        if species in acid_supports:
+            _add_role(entry, "acid")
+            _add_role(entry, "catalyst")
+            _add_tag(entry, "persistent")
+        elif species in base_supports:
+            _add_role(entry, "base")
+            _add_role(entry, "catalyst")
+            _add_tag(entry, "persistent")
+        elif _is_counterion_like_species(species):
+            _add_role(entry, "counterion")
+            _add_role(entry, "spectator")
+            _add_tag(entry, "persistent")
+        else:
+            _add_role(entry, "coreactant")
+            _add_tag(entry, "consumed_on_use")
+        _add_tag(entry, "eligible_now")
+
+    for species in canonical_missing_products:
+        entry = _ensure_entry(species)
+        _add_source(entry, "missing_products")
+        _add_role(entry, "byproduct")
+        _add_tag(entry, "forbidden_until_generated")
+
+    persistent_species = _unique_species(
+        entry["species"]
+        for entry in entries
+        if "persistent" in entry["tags"] or "catalyst" in entry["roles"] or "spectator" in entry["roles"]
+    )
+    spectator_species = _unique_species(
+        entry["species"] for entry in entries if "spectator" in entry["roles"]
+    )
+    counterion_species = _unique_species(
+        entry["species"] for entry in entries if "counterion" in entry["roles"]
+    )
+    eligible_reactants = _unique_species(
+        canonical_starting + canonical_missing_reactants + acid_supports + base_supports
+    )
+    allowed_generated_species = _unique_species(canonical_missing_products)
+    forbidden_new_species: List[str] = []
+    conjugate_pairs: List[Dict[str, str]] = []
+    if env == "acidic":
+        forbidden_new_species = _unique_species([hydroxide])
+        conjugate_pairs.append({"left": hydronium, "right": water, "role": "proton_shuttle"})
+        allowed_generated_species = _unique_species(allowed_generated_species + [water])
+    elif env == "basic":
+        forbidden_new_species = _unique_species([hydronium])
+        conjugate_pairs.append({"left": hydroxide, "right": water, "role": "proton_shuttle"})
+        allowed_generated_species = _unique_species(allowed_generated_species + [water])
+
+    return {
+        "species_registry": entries,
+        "proposal_constraints": {
+            "registry_version": "v1",
+            "environment": env,
+            "eligible_reactants": eligible_reactants,
+            "persistent_species": persistent_species,
+            "spectator_species": spectator_species,
+            "counterion_species": counterion_species,
+            "condition_support_species": _unique_species(acid_supports + base_supports),
+            "allowed_generated_species": allowed_generated_species,
+            "forbidden_new_species": forbidden_new_species,
+            "canonical_byproducts": canonical_missing_products,
+            "conjugate_pairs": conjugate_pairs,
+            "roles_by_species": {
+                str(entry["species"]): list(entry["roles"])
+                for entry in entries
+                if entry.get("species")
+            },
+        },
+        "participant_summary": {
+            "starting_materials": canonical_starting,
+            "products": canonical_products,
+            "missing_reactants": canonical_missing_reactants,
+            "missing_products": canonical_missing_products,
+        },
+    }
 
 
 @dataclass(frozen=True)
@@ -1488,23 +1740,33 @@ def validate_proposed_reagents(
     # Check atomic balance with the new molecules
     extended_starting_materials = starting_materials + valid_reactants
     extended_products = products + valid_products
-    
-    start_counts = _atom_counter_with_hydrogens(extended_starting_materials)
-    product_counts = _atom_counter_with_hydrogens(extended_products)
-    
-    # Calculate remaining deficits and surpluses
-    deficit: Counter = Counter()
-    surplus: Counter = Counter()
-    
-    for element, amount in product_counts.items():
-        deficit[element] = max(amount - start_counts.get(element, 0), 0)
-    
-    for element, amount in start_counts.items():
-        surplus[element] = max(amount - product_counts.get(element, 0), 0)
-    
-    # Check if reaction is now balanced
-    is_balanced = not any(deficit.values()) and not any(surplus.values())
-    
+    from mechanistic_agent.balance import assess_balance_diagnostics
+
+    diagnostics = assess_balance_diagnostics(
+        extended_starting_materials,
+        extended_products,
+        include_hydrogens=True,
+        left_label="reactants",
+        right_label="products",
+    )
+    if diagnostics.get("classification") == "invalid_species":
+        return _serialise({
+            "status": "failed",
+            "is_balanced": False,
+            "valid_reactants": valid_reactants,
+            "valid_products": valid_products,
+            "valid_reagents": valid_reactants + valid_products,
+            "invalid_reagents": invalid_molecules,
+            "remaining_deficit": {},
+            "remaining_surplus": {},
+            "balance_diagnostics": diagnostics,
+            "reason": str(diagnostics.get("error") or "Invalid species for atom balance"),
+            "validation_details": "Atom balance could not be assessed because species remain invalid after repair",
+        })
+    deficit = diagnostics.get("deficit", {})
+    surplus = diagnostics.get("surplus", {})
+    is_balanced = bool(diagnostics.get("balanced"))
+
     return _serialise({
         "status": "success" if is_balanced else "partial",
         "is_balanced": is_balanced,
@@ -1512,8 +1774,9 @@ def validate_proposed_reagents(
         "valid_products": valid_products,
         "valid_reagents": valid_reactants + valid_products,  # For backward compatibility
         "invalid_reagents": invalid_molecules,
-        "remaining_deficit": dict({k: v for k, v in deficit.items() if v > 0}),
-        "remaining_surplus": dict({k: v for k, v in surplus.items() if v > 0}),
+        "remaining_deficit": dict(deficit),
+        "remaining_surplus": dict(surplus),
+        "balance_diagnostics": diagnostics,
         "validation_details": "All molecules passed SMILES validation" if not invalid_molecules else f"{len(invalid_molecules)} molecules failed validation"
     })
 
@@ -2949,6 +3212,24 @@ def predict_missing_reagents(
         "suggested_reagents": [],
     }
 
+    def _attach_constraint_metadata(reactants: Sequence[str], products_out: Sequence[str]) -> None:
+        bundle = _build_species_registry_and_constraints(
+            starting_materials=starting_materials,
+            products=products,
+            conditions_context=conditions_context,
+            missing_reactants=reactants,
+            missing_products=products_out,
+        )
+        report.update(bundle)
+        report["missing_reactants"] = list(bundle["participant_summary"]["missing_reactants"])
+        report["missing_products"] = list(bundle["participant_summary"]["missing_products"])
+        report["suggested_reactants"] = list(bundle["participant_summary"]["missing_reactants"])
+        report["suggested_products"] = list(bundle["participant_summary"]["missing_products"])
+        report["suggested_reagents"] = (
+            list(bundle["participant_summary"]["missing_reactants"])
+            + list(bundle["participant_summary"]["missing_products"])
+        )
+
     if conditions_context:
         report["conditions_guidance"] = conditions_context
     if conditions_source:
@@ -2957,6 +3238,7 @@ def predict_missing_reagents(
         report["conditions_guidance_parse_error"] = conditions_guidance_parse_error
 
     if not deficit_atoms and not surplus_atoms:
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "balanced",
@@ -3062,6 +3344,7 @@ def predict_missing_reagents(
     api_key = get_model_api_key(reagent_model, user_key=_reagent_user_key)
     if not api_key:
         provider_label = get_provider_label(reagent_model)
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "failed",
@@ -3103,6 +3386,7 @@ def predict_missing_reagents(
         raw_response = extract_text_content(ai_message)
         _reagent_usage = getattr(ai_message, "usage", None)
     except Exception as exc:
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "failed",
@@ -3131,6 +3415,7 @@ def predict_missing_reagents(
     if data is None:
         # Text-based fallback (OLMo, Gemini, or tool call extraction failed)
         if raw_response is None:
+            _attach_constraint_metadata([], [])
             report.update(
                 {
                     "status": "no_response",
@@ -3219,6 +3504,7 @@ def predict_missing_reagents(
     
     if total_molecules == 0 and not parse_error:
         # LLM returned empty lists - this is valid when no molecules are needed
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "success",
@@ -3228,6 +3514,7 @@ def predict_missing_reagents(
         )
         return _serialise(report)
     elif total_molecules == 0:
+        _attach_constraint_metadata([], [])
         report.update(
             {
                 "status": "failed",
@@ -3237,10 +3524,7 @@ def predict_missing_reagents(
         return _serialise(report)
 
     # Store the parsed molecules for reporting
-    report["suggested_reactants"] = parsed_reactants
-    report["suggested_products"] = parsed_products
-    # For backward compatibility, combine into suggested_reagents
-    report["suggested_reagents"] = parsed_reactants + parsed_products
+    _attach_constraint_metadata(parsed_reactants, parsed_products)
 
     executed_cli_commands: List[Dict[str, Any]] = []
     cli_failures: List[Dict[str, Any]] = []
@@ -3257,9 +3541,7 @@ def predict_missing_reagents(
         executed_cli_commands.extend(initial_cli.get("executed_cli_commands") or [])
         cli_failures.extend(initial_cli.get("cli_failures") or [])
         cli_applied_fixes.extend(initial_cli.get("cli_applied_fixes") or [])
-        report["suggested_reactants"] = parsed_reactants
-        report["suggested_products"] = parsed_products
-        report["suggested_reagents"] = parsed_reactants + parsed_products
+        _attach_constraint_metadata(parsed_reactants, parsed_products)
 
     # Validate proposed reagents with one retry opportunity.
     # If the first attempt fails due to invalid SMILES, re-prompt the LLM
@@ -3273,6 +3555,7 @@ def predict_missing_reagents(
                 validate_proposed_reagents(parsed_reactants, parsed_products, starting_materials, products)
             )
         except Exception as exc:
+            _attach_constraint_metadata(parsed_reactants, parsed_products)
             report.update(
                 {
                     "status": "failed",
@@ -3292,6 +3575,7 @@ def predict_missing_reagents(
                     "message": "Proposed reagents validated and reaction is now balanced.",
                 }
             )
+            _attach_constraint_metadata(parsed_reactants, parsed_products)
             if _reagent_attempt > 0:
                 report["reagent_retries"] = _reagent_attempt
             if executed_cli_commands:
@@ -3371,9 +3655,7 @@ def predict_missing_reagents(
                         )
 
             if repaired_any:
-                report["suggested_reactants"] = parsed_reactants
-                report["suggested_products"] = parsed_products
-                report["suggested_reagents"] = parsed_reactants + parsed_products
+                _attach_constraint_metadata(parsed_reactants, parsed_products)
                 continue
 
             # Build retry feedback for the LLM.
@@ -3460,9 +3742,7 @@ def predict_missing_reagents(
                     retry_commands = retry_dict.get("rdkit_cli_commands")
                     if isinstance(retry_commands, list):
                         parsed_cli_command_specs = list(retry_commands)
-                    report["suggested_reactants"] = parsed_reactants
-                    report["suggested_products"] = parsed_products
-                    report["suggested_reagents"] = parsed_reactants + parsed_products
+                    _attach_constraint_metadata(parsed_reactants, parsed_products)
                     continue  # Re-validate with corrected molecules.
             except Exception as retry_exc:
                 report["reagent_retry_error"] = str(retry_exc)
@@ -3482,6 +3762,7 @@ def predict_missing_reagents(
             ),
         }
     )
+    _attach_constraint_metadata(parsed_reactants, parsed_products)
     if _reagent_attempt > 0:
         report["reagent_retries"] = _reagent_attempt
 
@@ -3528,11 +3809,18 @@ def predict_missing_reagents_for_candidate(
     This delegates to ``predict_missing_reagents`` using the candidate step's
     ``current_state -> resulting_state`` transition as the balancing problem.
     """
-    from mechanistic_agent.smiles_utils import sanitize_smiles_list
+    from mechanistic_agent.balance import assess_balance_diagnostics
 
-    sanitized_current, invalid_current = sanitize_smiles_list(current_state)
-    sanitized_resulting, invalid_resulting = sanitize_smiles_list(resulting_state)
-    invalid_species = list(invalid_current) + list(invalid_resulting)
+    balance_diagnostics = assess_balance_diagnostics(
+        current_state,
+        resulting_state,
+        include_hydrogens=True,
+        left_label="current_state",
+        right_label="resulting_state",
+    )
+    sanitized_current = [str(item) for item in balance_diagnostics.get("sanitized_left", [])]
+    sanitized_resulting = [str(item) for item in balance_diagnostics.get("sanitized_right", [])]
+    invalid_species = list(balance_diagnostics.get("invalid_species", []))
     if invalid_species or not sanitized_current or not sanitized_resulting:
         return _serialise(
             {
@@ -3541,6 +3829,7 @@ def predict_missing_reagents_for_candidate(
                 "invalid_species": invalid_species,
                 "sanitized_current": sanitized_current,
                 "sanitized_resulting": sanitized_resulting,
+                "balance_diagnostics": balance_diagnostics,
                 "add_reactants": [],
                 "add_products": [],
             }
@@ -3555,6 +3844,7 @@ def predict_missing_reagents_for_candidate(
                     "rescue_mode": True,
                     "failed_checks": list(failed_checks or []),
                     "validation_details": dict(validation_details or {}),
+                    "balance_diagnostics": balance_diagnostics,
                 }
             ),
         )
@@ -3674,6 +3964,7 @@ def predict_missing_reagents_for_candidate(
             "add_reactants": add_reactants,
             "add_products": add_products,
             "dropped_additions": dropped_additions,
+            "balance_diagnostics": balance_diagnostics,
             "rescue_caps": {"reactants": 2, "products": 2},
             "dbe_adjustment_hint": hint,
             "source": "predict_missing_reagents",
@@ -3700,11 +3991,26 @@ def attempt_atom_mapping_for_step(
     if not isinstance(mapped_atoms, list):
         mapped_atoms = []
     compact = []
+    lineage_by_species: Dict[str, Dict[str, Any]] = {}
     for item in mapped_atoms[:12]:
         if not isinstance(item, dict):
             continue
         product_atom = item.get("product_atom")
         src = item.get("source") if isinstance(item.get("source"), dict) else {}
+        product_species = str(product_atom or "").split("#", 1)[0] if product_atom else ""
+        source_species = str(src.get("smiles") or "").strip()
+        if product_species:
+            summary = lineage_by_species.setdefault(
+                product_species,
+                {
+                    "product_species": product_species,
+                    "source_species": [],
+                    "mapped_atom_count": 0,
+                },
+            )
+            if source_species and source_species not in summary["source_species"]:
+                summary["source_species"].append(source_species)
+            summary["mapped_atom_count"] += 1
         compact.append(
             {
                 "product_atom": product_atom,
@@ -3720,7 +4026,10 @@ def attempt_atom_mapping_for_step(
             "status": parsed.get("status", "success"),
             "confidence": confidence,
             "raw_confidence": raw_confidence,
+            "current_state": list(current_state),
+            "resulting_state": list(resulting_state),
             "compact_mapped_atoms": compact,
+            "species_lineage_summary": list(lineage_by_species.values()),
             "unmapped_atoms": parsed.get("llm_response", {}).get("unmapped_atoms", []),
             "raw": parsed,
         }
@@ -5137,7 +5446,7 @@ def propose_intermediates(
             )
         if not low_risk_mode:
             human_prompt += (
-                "Optional reaction-type template guidance (advisory only, do NOT force-fit chemistry):\n"
+                "Optional deterministic harness guidance (advisory only, do NOT force-fit chemistry):\n"
                 f"{guidance_blurb}\n"
                 f"{template_guidance_text}\n\n"
             )
@@ -5657,7 +5966,13 @@ def propose_intermediates(
             item["reaction_smirks"] = repaired
             if repair_reason:
                 item["mechanism_move_repair"] = repair_reason
-            reaction_ok, reaction_diag = _validate_reaction_smirks_payload(repaired)
+            # Proposal-time filtering should only reject malformed SMIRKS payloads.
+            # Full mechanism-step progression checks happen later in deterministic
+            # validation, where current/resulting state context is available.
+            reaction_ok, reaction_diag = _validate_reaction_smirks_payload(
+                repaired,
+                backend_config={"chemistry_backend": "python"},
+            )
             if not reaction_ok:
                 item["validation_error"] = reaction_diag
                 item["chemistry_error_code"] = (
@@ -6265,7 +6580,13 @@ def predict_mechanistic_step(
     if not resulting_state_changed:
         is_unchanged_starting_materials = True
 
-    contains_products = any(product in resulting_state for product in target_products)
+    target_state = assess_target_product_state(
+        current_state=current_state,
+        resulting_state=resulting_state,
+        target_products=target_products,
+        starting_materials=starting_materials,
+    )
+    contains_products = bool(target_state["contains_target_product"])
 
     raw_reaction_smirks: Optional[str] = None
     reaction_smirks_core: Optional[str] = None
@@ -6326,6 +6647,11 @@ def predict_mechanistic_step(
         "predicted_intermediate": predicted_intermediate,
         "electron_pushes": cleaned_pushes,
         "contains_target_product": contains_products,
+        "matched_target_products": list(target_state["matched_target_products"]),
+        "matched_primary_target_products": list(target_state["matched_primary_target_products"]),
+        "primary_target_products": list(target_state["primary_target_products"]),
+        "productive_target_products": list(target_state["productive_target_products"]),
+        "spectator_target_products": list(target_state["spectator_target_products"]),
         "reverse_reaction_detected": is_reverse,
         "unchanged_starting_materials_detected": is_unchanged_starting_materials,
         "resulting_state_changed": resulting_state_changed,

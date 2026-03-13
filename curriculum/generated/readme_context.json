@@ -2,26 +2,6 @@
   "calendar": [
     {
       "checkpoint_id": null,
-      "date": "2026-03-11",
-      "label": "Wednesday lesson",
-      "queue_id": null,
-      "release_kind": "lesson",
-      "scheduled_publish_at_iso": "2026-03-11T17:00:00-06:00",
-      "status": "scheduled",
-      "weekday": "Wednesday"
-    },
-    {
-      "checkpoint_id": null,
-      "date": "2026-03-12",
-      "label": "Thursday lesson",
-      "queue_id": null,
-      "release_kind": "lesson",
-      "scheduled_publish_at_iso": "2026-03-12T17:00:00-06:00",
-      "status": "scheduled",
-      "weekday": "Thursday"
-    },
-    {
-      "checkpoint_id": null,
       "date": "2026-03-13",
       "label": "Friday quiz",
       "queue_id": null,
@@ -99,6 +79,26 @@
       "scheduled_publish_at_iso": "2026-03-24T17:00:00-06:00",
       "status": "scheduled",
       "weekday": "Tuesday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-25",
+      "label": "Wednesday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-25T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Wednesday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-26",
+      "label": "Thursday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-26T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Thursday"
     }
   ],
   "checkpoints": [],
@@ -119,14 +119,107 @@
     "upcoming_reactions": "training_data/flower_curriculum_pngs/index.json"
   },
   "focus_label": "Trainee Curriculum",
-  "generated_at": "2026-03-06T10:35:30.230528-07:00",
-  "latest_leaderboard_row": null,
+  "generated_at": "2026-03-13T15:48:07.905487-06:00",
+  "latest_leaderboard_row": {
+    "aggregate_gate_cases": null,
+    "aggregate_weighting": null,
+    "avg_latency_ms": 174982.5,
+    "case_count": 3,
+    "created_at": 1773282232.965832,
+    "deterministic_pass_rate": 0.0,
+    "eligible_bucket_count": 0,
+    "eligible_weight_sum": 0.0,
+    "eval_run_id": "45f0c72b1609404794c2a5bcd3219040",
+    "eval_set_id": "b8855f9de2c741e6bf2d74117eeada70",
+    "harness_bundle_hash": "71d778b9248efdb38da13789036e9affa01ab56f1f1a1fc56dd1e6c947723520",
+    "is_baseline": false,
+    "is_simulated": false,
+    "mean_quality_score": 0.181889,
+    "model": "anthropic/claude-opus-4.6",
+    "model_family": "claude",
+    "model_name": "anthropic/claude-opus-4.6",
+    "per_step_scores": {},
+    "per_subagent_scores": {
+      "atom_balance_validation": {
+        "case_count": 3,
+        "pass_rate": 0.2222,
+        "quality_score": 0.2222
+      },
+      "atom_mapping": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "balance_analysis": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "bond_electron_validation": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "functional_groups": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "initial_conditions": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "mechanism_step_proposal": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 0.55
+      },
+      "missing_reagents": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "ph_recommendation": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "reaction_type_mapping": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "reflection": {
+        "case_count": 1,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "state_progress_validation": {
+        "case_count": 3,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "step_atom_mapping": {
+        "case_count": 1,
+        "pass_rate": 1.0,
+        "quality_score": 0.85
+      }
+    },
+    "run_group_name": "cli_eval_tier_easy",
+    "status": "failed",
+    "thinking_level": "low",
+    "total_cost": 0.751145,
+    "total_weight_sum": 0.0,
+    "weighted_pass_rate": 0.0,
+    "weighted_quality_score": 0.181889
+  },
   "model_name": "anthropic/claude-opus-4.6",
   "next_slot": {
-    "label": "Wednesday lesson",
-    "release_date": "2026-03-11",
-    "release_kind": "lesson",
-    "scheduled_publish_at_iso": "2026-03-11T17:00:00-06:00"
+    "label": "Friday quiz",
+    "release_date": "2026-03-13",
+    "release_kind": "quiz",
+    "scheduled_publish_at_iso": "2026-03-13T17:00:00-06:00"
   },
   "prompt_asset_links": {
     "opus_base_override": "skills/mechanistic/base_system/models/anthropic__claude-opus-4.6/SKILL.md",
@@ -143,6 +236,11 @@
   "start_date": "2026-03-11",
   "student_label": "trainee",
   "timezone": "America/Denver",
-  "today_slot": null,
+  "today_slot": {
+    "label": "Friday quiz",
+    "release_date": "2026-03-13",
+    "release_kind": "quiz",
+    "scheduled_publish_at_iso": "2026-03-13T17:00:00-06:00"
+  },
   "trainee_name": "Claude Opus"
 }

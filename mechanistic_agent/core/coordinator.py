@@ -10,7 +10,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from mechanistic_agent.model_registry import get_default_model
-from mechanistic_agent.smiles_utils import sanitize_smiles_list
+from mechanistic_agent.smiles_utils import canonicalize_if_valid
 
 from . import model_context
 from .arrow_push import predict_arrow_push_annotation
@@ -363,7 +363,10 @@ class RunCoordinator:
             if isinstance(latest_mapping, dict):
                 state.latest_step_mapping = {
                     "step_index": int(step_mapping_rows[-1].get("attempt") or 0),
+                    "current_state": list(latest_mapping.get("current_state") or []),
+                    "resulting_state": list(latest_mapping.get("resulting_state") or []),
                     "mapped_atoms": list(latest_mapping.get("compact_mapped_atoms") or [])[:12],
+                    "species_lineage_summary": list(latest_mapping.get("species_lineage_summary") or [])[:8],
                     "unmapped_atoms": list(latest_mapping.get("unmapped_atoms") or [])[:12],
                     "confidence": latest_mapping.get("confidence"),
                 }
@@ -1014,6 +1017,219 @@ class RunCoordinator:
         }
 
     @staticmethod
+    def _merge_unique_species(base: List[str], additions: List[str]) -> List[str]:
+        merged = list(base)
+        seen = set(base)
+        for item in additions:
+            if item in seen:
+                continue
+            merged.append(item)
+            seen.add(item)
+        return merged
+
+    @staticmethod
+    def _constraint_replacements_for_species(
+        species: str,
+        proposal_constraints: Dict[str, Any],
+    ) -> List[str]:
+        replacements: List[str] = []
+        for pair in proposal_constraints.get("conjugate_pairs") or []:
+            if not isinstance(pair, dict):
+                continue
+            left = str(pair.get("left") or "").strip()
+            right = str(pair.get("right") or "").strip()
+            if species == left and right:
+                replacements.append(right)
+            elif species == right and left:
+                replacements.append(left)
+        deduped: List[str] = []
+        seen: set[str] = set()
+        for item in replacements:
+            if item in seen:
+                continue
+            deduped.append(item)
+            seen.add(item)
+        return deduped
+
+    @staticmethod
+    def _canonicalize_constraint_species_list(items: Any) -> List[str]:
+        canonical: List[str] = []
+        seen: set[str] = set()
+        if not isinstance(items, list):
+            return canonical
+        for item in items:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            normalized = canonicalize_if_valid(text) or text
+            if normalized in seen:
+                continue
+            canonical.append(normalized)
+            seen.add(normalized)
+        return canonical
+
+    def _build_proposal_constraint_guidance(self, state: RunState) -> Optional[Dict[str, Any]]:
+        missing_output = self._latest_output_by_step(state.run_id, "missing_reagents") or {}
+        proposal_constraints = (
+            dict(missing_output.get("proposal_constraints") or {})
+            if isinstance(missing_output.get("proposal_constraints"), dict)
+            else {}
+        )
+        species_registry = [
+            dict(item)
+            for item in (missing_output.get("species_registry") or [])
+            if isinstance(item, dict)
+        ]
+        participant_summary = (
+            dict(missing_output.get("participant_summary") or {})
+            if isinstance(missing_output.get("participant_summary"), dict)
+            else {}
+        )
+
+        if state.selected_reaction_template and isinstance(state.selected_reaction_template, dict):
+            raw_byproducts = state.selected_reaction_template.get("canonical_byproducts") or []
+            canonical_byproducts = self._canonicalize_constraint_species_list(
+                [str(item) for item in raw_byproducts if isinstance(item, str)]
+            )
+            proposal_constraints["canonical_byproducts"] = self._merge_unique_species(
+                self._canonicalize_constraint_species_list(
+                    list(proposal_constraints.get("canonical_byproducts") or [])
+                ),
+                canonical_byproducts,
+            )
+            proposal_constraints["allowed_generated_species"] = self._merge_unique_species(
+                self._canonicalize_constraint_species_list(
+                    list(proposal_constraints.get("allowed_generated_species") or [])
+                ),
+                canonical_byproducts,
+            )
+
+        atom_mapping_output = self._latest_output_by_step(state.run_id, "atom_mapping") or {}
+        atom_mapping_summary = {}
+        if isinstance(atom_mapping_output, dict):
+            llm_response = atom_mapping_output.get("llm_response")
+            atom_mapping_summary = {
+                "confidence": atom_mapping_output.get("confidence"),
+                "unmapped_atoms": (
+                    list(llm_response.get("unmapped_atoms") or [])[:12]
+                    if isinstance(llm_response, dict)
+                    else []
+                ),
+            }
+
+        if not proposal_constraints and not species_registry and not participant_summary and not atom_mapping_summary:
+            return None
+
+        return {
+            "proposal_constraints": proposal_constraints,
+            "species_registry": species_registry[:12],
+            "participant_summary": participant_summary,
+            "atom_mapping_summary": atom_mapping_summary,
+        }
+
+    def _apply_candidate_constraint_repairs(
+        self,
+        state: RunState,
+        candidate: Dict[str, Any],
+        proposal_constraints: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        resulting_state = candidate.get("resulting_state")
+        if not isinstance(resulting_state, list):
+            return dict(candidate), []
+
+        repaired = dict(candidate)
+        repaired_state = [str(item) for item in resulting_state if str(item).strip()]
+        repair_notes: List[str] = []
+        persistent_species = set(
+            self._canonicalize_constraint_species_list(
+                list(proposal_constraints.get("persistent_species") or [])
+            )
+            + self._canonicalize_constraint_species_list(
+                list(proposal_constraints.get("spectator_species") or [])
+            )
+            + self._canonicalize_constraint_species_list(
+                list(proposal_constraints.get("counterion_species") or [])
+            )
+        )
+
+        for species in list(state.current_state):
+            if species not in persistent_species:
+                continue
+            if species in repaired_state:
+                continue
+            replacements = self._constraint_replacements_for_species(species, proposal_constraints)
+            if replacements and any(item in repaired_state for item in replacements):
+                continue
+            repaired_state.append(species)
+            repair_notes.append(f"carried_persistent_species:{species}")
+
+        if repair_notes:
+            repaired["resulting_state"] = repaired_state
+            repaired["constraint_repairs"] = list(repair_notes)
+        return repaired, repair_notes
+
+    def _prevalidate_candidate_against_constraints(
+        self,
+        state: RunState,
+        candidate: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+        guidance = self._build_proposal_constraint_guidance(state)
+        if not isinstance(guidance, dict):
+            return dict(candidate), None
+        proposal_constraints = guidance.get("proposal_constraints")
+        if not isinstance(proposal_constraints, dict) or not proposal_constraints:
+            return dict(candidate), None
+
+        repaired_candidate, repair_notes = self._apply_candidate_constraint_repairs(
+            state,
+            candidate,
+            proposal_constraints,
+        )
+        resulting_state = repaired_candidate.get("resulting_state")
+        if not isinstance(resulting_state, list):
+            return repaired_candidate, None
+
+        current_state = [str(item) for item in state.current_state if str(item).strip()]
+        resulting_clean = [str(item) for item in resulting_state if str(item).strip()]
+        introduced = [item for item in resulting_clean if item not in current_state]
+        forbidden_new = set(
+            self._canonicalize_constraint_species_list(
+                list(proposal_constraints.get("forbidden_new_species") or [])
+            )
+        )
+        violating_species = sorted(item for item in introduced if item in forbidden_new)
+        if violating_species:
+            return repaired_candidate, {
+                "reason": "forbidden_new_species",
+                "species": violating_species,
+                "environment": proposal_constraints.get("environment"),
+                "repair_notes": repair_notes,
+            }
+
+        persistent_missing: List[str] = []
+        for species in self._canonicalize_constraint_species_list(
+            list(proposal_constraints.get("persistent_species") or [])
+        ):
+            if species not in current_state:
+                continue
+            if species in resulting_clean:
+                continue
+            replacements = self._constraint_replacements_for_species(species, proposal_constraints)
+            if replacements and any(item in resulting_clean for item in replacements):
+                continue
+            persistent_missing.append(species)
+
+        if persistent_missing:
+            return repaired_candidate, {
+                "reason": "persistent_species_removed",
+                "species": persistent_missing,
+                "environment": proposal_constraints.get("environment"),
+                "repair_notes": repair_notes,
+            }
+
+        return repaired_candidate, None
+
+    @staticmethod
     def _build_example_mapping_output(
         *,
         mapping: Dict[str, Any],
@@ -1515,17 +1731,32 @@ class RunCoordinator:
     def _retry_feedback_for_validation(validation_payload: Dict[str, Any]) -> Dict[str, Any]:
         failed_checks: List[str] = []
         guidance_parts: List[str] = []
+        warning_checks: List[str] = []
         validator_hints: Dict[str, str] = {}
         checks = validation_payload.get("checks")
         if isinstance(checks, list):
             for check in checks:
                 if not isinstance(check, dict):
                     continue
-                if check.get("passed") is True:
-                    continue
                 name = str(check.get("name") or "unknown")
-                failed_checks.append(name)
                 details = check.get("details")
+                if check.get("passed") is True:
+                    if isinstance(details, dict) and bool(details.get("warning_only")):
+                        warning_checks.append(name)
+                        warnings = details.get("warnings")
+                        if isinstance(warnings, list):
+                            for warning in warnings:
+                                if isinstance(warning, str) and warning.strip():
+                                    guidance_parts.append(f"{name}: {warning.strip()}")
+                                    break
+                        elif isinstance(warnings, str) and warnings.strip():
+                            guidance_parts.append(f"{name}: {warnings.strip()}")
+                        if bool(details.get("retry_recommended")):
+                            guidance_parts.append(
+                                f"{name}: retry recommended with explicit spectator/byproduct carry-through."
+                            )
+                    continue
+                failed_checks.append(name)
                 if isinstance(details, dict):
                     error_code = details.get("error_code")
                     fix_suggestions = details.get("fix_suggestions")
@@ -1562,6 +1793,7 @@ class RunCoordinator:
                     )
         return {
             "failed_checks": failed_checks,
+            "warning_checks": warning_checks,
             "guidance": "; ".join(guidance_parts) if guidance_parts else "",
             "validator_hints": validator_hints,
         }
@@ -1606,44 +1838,6 @@ class RunCoordinator:
         resulting_state = [str(x) for x in output.get("resulting_state") or []]
         if not current_state or not resulting_state:
             return None
-        sanitized_current, invalid_current = sanitize_smiles_list(current_state)
-        sanitized_resulting, invalid_resulting = sanitize_smiles_list(resulting_state)
-        invalid_species = list(invalid_current) + list(invalid_resulting)
-        if invalid_species or not sanitized_current or not sanitized_resulting:
-            self.store.append_event(
-                state.run_id,
-                "invalid_species_in_rescue_input",
-                {
-                    "attempt": state.step_index + 1,
-                    "candidate_rank": candidate_rank,
-                    "invalid_species": invalid_species,
-                    "current_state_size": len(current_state),
-                    "resulting_state_size": len(resulting_state),
-                },
-                step_name="candidate_rescue",
-            )
-            self.store.append_event(
-                state.run_id,
-                "rescue_skipped_due_to_invalid_species",
-                {
-                    "attempt": state.step_index + 1,
-                    "candidate_rank": candidate_rank,
-                    "invalid_species": invalid_species,
-                },
-                step_name="candidate_rescue",
-            )
-            return StepResult(
-                step_name="candidate_rescue",
-                tool_name="predict_missing_reagents_for_candidate",
-                output={
-                    "status": "failed",
-                    "error": "candidate_rescue_invalid_species",
-                    "invalid_species": invalid_species,
-                    "add_reactants": [],
-                    "add_products": [],
-                },
-                source="deterministic",
-            )
         self.store.append_event(
             state.run_id,
             "candidate_rescue_started",
@@ -1662,12 +1856,37 @@ class RunCoordinator:
         )
         rescue_result = self.missing_reagents_agent.rescue_candidate(
             state,
-            current_state=sanitized_current,
-            resulting_state=sanitized_resulting,
+            current_state=current_state,
+            resulting_state=resulting_state,
             failed_checks=failed_checks,
             validation_details=mechanism_result.validation.as_dict() if mechanism_result.validation else {},
         )
         self._record_step(state, rescue_result)
+        rescue_output = rescue_result.output or {}
+        if str(rescue_output.get("error") or "") == "candidate_rescue_invalid_species":
+            self.store.append_event(
+                state.run_id,
+                "invalid_species_in_rescue_input",
+                {
+                    "attempt": state.step_index + 1,
+                    "candidate_rank": candidate_rank,
+                    "invalid_species": list(rescue_output.get("invalid_species") or []),
+                    "current_state_size": len(current_state),
+                    "resulting_state_size": len(resulting_state),
+                    "balance_diagnostics": rescue_output.get("balance_diagnostics") or {},
+                },
+                step_name="candidate_rescue",
+            )
+            self.store.append_event(
+                state.run_id,
+                "rescue_skipped_due_to_invalid_species",
+                {
+                    "attempt": state.step_index + 1,
+                    "candidate_rank": candidate_rank,
+                    "invalid_species": list(rescue_output.get("invalid_species") or []),
+                },
+                step_name="candidate_rescue",
+            )
         self.store.append_event(
             state.run_id,
             "candidate_rescue_completed",
@@ -1792,6 +2011,34 @@ class RunCoordinator:
                 },
                 step_name=check.name,
             )
+        if bool(details.get("warning_only")):
+            warnings = details.get("warnings")
+            warning_text = ""
+            if isinstance(warnings, list):
+                warning_text = next(
+                    (str(item).strip() for item in warnings if isinstance(item, str) and item.strip()),
+                    "",
+                )
+            elif isinstance(warnings, str):
+                warning_text = warnings.strip()
+            self.store.append_event(
+                state.run_id,
+                "chemistry_backend_soft_warning",
+                {
+                    "check": check.name,
+                    "backend_requested": backend_requested,
+                    "backend_used": backend_used,
+                    "fallback_used": fallback_used,
+                    "fallback_reason": backend_meta.get("fallback_reason"),
+                    "rdkit_cli_error_code": rdkit_cli_error_code or None,
+                    "rdkit_cli_error": rdkit_cli_error or None,
+                    "warning": warning_text or None,
+                    "soft_pass_reason": details.get("soft_pass_reason"),
+                    "retry_recommended": bool(details.get("retry_recommended")),
+                    "known_soft_pass": bool(details.get("known_soft_pass")),
+                },
+                step_name=check.name,
+            )
 
         if fallback_used:
             self.store.append_event(
@@ -1913,6 +2160,7 @@ class RunCoordinator:
         candidates: List[Dict[str, Any]],
         candidate_attempts: List[Tuple[Dict[str, Any], Dict[str, Any]]],
         proposal_output: Dict[str, Any],
+        soft_reason: str = "proceed_on_validation_failure",
     ) -> Optional[BranchCandidate]:
         """Pick the best available candidate for a soft-advance step.
 
@@ -1920,8 +2168,6 @@ class RunCoordinator:
         atom_balance/state_progress, regardless of bond_electron / reaction_smirks.
         Falls back to the rank-1 candidate from the proposal.
         """
-        from .validators import VALIDATOR_ATOM_BALANCE, VALIDATOR_STATE_PROGRESS
-
         best_smiles: Optional[str] = None
         best_resulting: Optional[List[str]] = None
         best_output: Optional[Dict[str, Any]] = None
@@ -1936,12 +2182,12 @@ class RunCoordinator:
             checks = last_validation.get("checks") or []
             # Accept if atom_balance and state_progress pass (even if dbe fails).
             atom_ok = any(
-                c.get("name") == "atom_balance_validation" and c.get("passed")
+                c.get("name") == "atom_balance" and c.get("passed")
                 for c in checks
                 if isinstance(c, dict)
             )
             state_ok = any(
-                c.get("name") == "state_progress_validation" and c.get("passed")
+                c.get("name") == "state_progress" and c.get("passed")
                 for c in checks
                 if isinstance(c, dict)
             )
@@ -1978,8 +2224,8 @@ class RunCoordinator:
             mechanism_output={
                 **(best_output or {}),
                 "soft_advance": True,
-                "soft_advance_reason": "proceed_on_validation_failure",
-                "contains_target_product": False,
+                "soft_advance_reason": soft_reason,
+                "contains_target_product": bool((best_output or {}).get("contains_target_product")),
             },
             resulting_state=best_resulting or [],
             validation_summary={
@@ -1988,6 +2234,65 @@ class RunCoordinator:
                 "checks": [],
             },
         )
+
+    @staticmethod
+    def _validation_check_passed(validation: Dict[str, Any], check_name: str) -> bool:
+        checks = validation.get("checks") if isinstance(validation, dict) else None
+        if not isinstance(checks, list):
+            return False
+        return any(
+            isinstance(check, dict)
+            and str(check.get("name") or "") == check_name
+            and bool(check.get("passed"))
+            for check in checks
+        )
+
+    def _best_balance_pending_candidate(
+        self,
+        *,
+        candidate_attempts: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+    ) -> Optional[BranchCandidate]:
+        for candidate_data, attempt_result in candidate_attempts:
+            validation = attempt_result.get("last_validation")
+            if not isinstance(validation, dict) or not validation:
+                continue
+            failed_checks = {str(item) for item in attempt_result.get("failed_checks") or []}
+            if failed_checks != {"atom_balance"}:
+                continue
+            if not self._validation_check_passed(validation, "state_progress"):
+                continue
+
+            mechanism_output = attempt_result.get("mechanism_output")
+            if not isinstance(mechanism_output, dict) or not mechanism_output:
+                continue
+            resulting_state = [str(item) for item in mechanism_output.get("resulting_state") or []]
+            if not resulting_state:
+                continue
+
+            contains_target = bool(mechanism_output.get("contains_target_product"))
+            current_state = [str(item) for item in mechanism_output.get("current_state") or []]
+            advances_state = bool(resulting_state) and set(resulting_state) != set(current_state)
+            if not contains_target and not advances_state:
+                continue
+
+            smiles = str(candidate_data.get("intermediate_smiles") or "").strip()
+            if not smiles:
+                continue
+
+            return BranchCandidate(
+                rank=int(candidate_data.get("rank") or 0),
+                intermediate_smiles=smiles,
+                intermediate_output=dict(candidate_data),
+                mechanism_output={
+                    **mechanism_output,
+                    "soft_advance": True,
+                    "soft_advance_reason": "balance_pending",
+                    "balance_pending_validation": validation,
+                },
+                resulting_state=resulting_state,
+                validation_summary=validation,
+            )
+        return None
 
     def _pause_for_retry_exhaustion(
         self,
@@ -2385,6 +2690,45 @@ class RunCoordinator:
                 "reason": incomplete_reason,
             }
 
+        candidate, constraint_violation = self._prevalidate_candidate_against_constraints(
+            state,
+            candidate,
+        )
+        smiles = candidate.get("intermediate_smiles", "")
+        if constraint_violation is not None:
+            self.store.append_event(
+                state.run_id,
+                "mechanism_candidate_constraint_rejected",
+                {
+                    "attempt": state.step_index + 1,
+                    "candidate_rank": candidate.get("rank"),
+                    "candidate_smiles": smiles,
+                    "details": dict(constraint_violation),
+                },
+                step_name="mechanism_step_proposal",
+            )
+            validation_payload = {
+                "passed": False,
+                "checks": [
+                    {
+                        "name": "proposal_constraints",
+                        "passed": False,
+                        "details": dict(constraint_violation),
+                    }
+                ],
+            }
+            return {
+                "status": "failed",
+                "branch_candidate": None,
+                "last_validation": validation_payload,
+                "reason": str(constraint_violation.get("reason") or "proposal_constraints"),
+                "failed_checks": ["proposal_constraints"],
+                "validation_signature": self._validation_signature(validation_payload),
+                "candidate_rank": int(candidate.get("rank") or 0),
+                "rescue_attempted": False,
+                "rescue_outcome": "not_applicable",
+            }
+
         # Build a scoped intermediate output for MechanismAgent
         scoped_output: Dict[str, Any] = {
             **proposal_output,
@@ -2399,6 +2743,7 @@ class RunCoordinator:
         repeated_signatures: Dict[str, int] = {}
         rescue_attempted = False
         rescue_outcome = "none"
+        last_mechanism_output: Dict[str, Any] = {}
 
         max_retries = max(1, int(state.run_config.retry_same_candidate_max or 1))
         for retry_index in range(max_retries):
@@ -2454,6 +2799,7 @@ class RunCoordinator:
                 }
             mechanism_result.attempt = state.step_index + 1
             mechanism_result.retry_index = retry_index
+            last_mechanism_output = dict(mechanism_result.output or {})
             try:
                 mechanism_result.validation = validate_mechanism_step_output(
                     mechanism_result.output,
@@ -2484,6 +2830,7 @@ class RunCoordinator:
                     "candidate_rank": int(candidate.get("rank") or 0),
                     "rescue_attempted": rescue_attempted,
                     "rescue_outcome": rescue_outcome,
+                    "mechanism_output": last_mechanism_output,
                 }
             self._record_step(state, mechanism_result)
             self._record_validation_checks(state, mechanism_result=mechanism_result)
@@ -2579,18 +2926,9 @@ class RunCoordinator:
                     maybe_output = dict(mechanism_result.output or {})
                     base_current = [str(x) for x in maybe_output.get("current_state") or []]
                     base_resulting = [str(x) for x in maybe_output.get("resulting_state") or []]
-                    def _merge_unique(base: List[str], additions: List[str]) -> List[str]:
-                        merged = list(base)
-                        seen = set(base)
-                        for item in additions:
-                            if item in seen:
-                                continue
-                            merged.append(item)
-                            seen.add(item)
-                        return merged
                     # Reagents are consumed from the current side; byproducts are added to resulting side.
-                    maybe_output["current_state"] = _merge_unique(base_current, add_reactants)
-                    maybe_output["resulting_state"] = _merge_unique(base_resulting, add_products)
+                    maybe_output["current_state"] = self._merge_unique_species(base_current, add_reactants)
+                    maybe_output["resulting_state"] = self._merge_unique_species(base_resulting, add_products)
                     maybe_output["rescue_additions"] = {
                         "add_reactants": add_reactants,
                         "add_products": add_products,
@@ -2662,6 +3000,7 @@ class RunCoordinator:
                             "candidate_rank": int(candidate.get("rank") or 0),
                             "rescue_attempted": rescue_attempted,
                             "rescue_outcome": rescue_outcome,
+                            "mechanism_output": maybe_output,
                         }
                 else:
                     rescue_outcome = rescue_outcome if rescue_outcome == "invalid_species" else "no_changes"
@@ -2721,6 +3060,7 @@ class RunCoordinator:
                     "candidate_rank": int(candidate.get("rank") or 0),
                     "rescue_attempted": rescue_attempted,
                     "rescue_outcome": rescue_outcome,
+                    "mechanism_output": last_mechanism_output,
                 }
 
             if retry_index < max_retries - 1:
@@ -2759,6 +3099,7 @@ class RunCoordinator:
             "candidate_rank": int(candidate.get("rank") or 0),
             "rescue_attempted": rescue_attempted,
             "rescue_outcome": rescue_outcome,
+            "mechanism_output": last_mechanism_output,
         }
 
     def _apply_candidate(self, state: RunState, candidate: BranchCandidate) -> None:
@@ -3038,6 +3379,11 @@ class RunCoordinator:
         topology = state.run_config.coordination_topology
         profile = harness.get_topology_profile(topology) if harness else TopologyProfile()
         template_guidance = self._build_template_guidance_payload(state)
+        constraint_guidance = self._build_proposal_constraint_guidance(state)
+        if constraint_guidance and isinstance(constraint_guidance, dict):
+            merged = dict(template_guidance or {})
+            merged.update(constraint_guidance)
+            template_guidance = merged
         if proposal_hints and isinstance(proposal_hints, dict):
             merged = dict(template_guidance or {})
             merged.update(proposal_hints)
@@ -3458,8 +3804,6 @@ class RunCoordinator:
         runtime["activated_step"] = state.step_index + 1
         state.run_config.coordination_topology = "sas"
         state.run_config.candidate_rescue_enabled = False
-        state.run_config.step_mapping_enabled = False
-        state.latest_step_mapping = None
         if state.template_guidance_state is not None:
             state.template_guidance_state = TemplateGuidanceState(
                 mode="disabled",
@@ -3475,7 +3819,7 @@ class RunCoordinator:
                 "activated_step": state.step_index + 1,
                 "coordination_topology": "sas",
                 "candidate_rescue_enabled": False,
-                "step_mapping_enabled": False,
+                "step_mapping_enabled": state.run_config.step_mapping_enabled,
                 "details": dict(details or {}),
             },
         )
@@ -4246,12 +4590,63 @@ class RunCoordinator:
                             )
                             return
                         continue
-                    # ── Proceed-on-failure: soft-advance when configured ──────────
+                    # ── Deferred atom-balance soft-advance (unverified only) ─────
+                    if state.mode == "unverified":
+                        balance_pending_candidate = self._best_balance_pending_candidate(
+                            candidate_attempts=candidate_attempts,
+                        )
+                        if balance_pending_candidate is not None:
+                            self.store.append_event(
+                                state.run_id,
+                                "mechanism_step_soft_advance",
+                                {
+                                    "step_index": state.step_index + 1,
+                                    "reason": "balance_pending",
+                                    "failed_checks": last_failed_checks,
+                                    "soft_intermediate_smiles": balance_pending_candidate.intermediate_smiles,
+                                    "soft_resulting_state": list(balance_pending_candidate.resulting_state),
+                                    "balance_pending_validation": balance_pending_candidate.validation_summary,
+                                },
+                                step_name="mechanism_synthesis",
+                            )
+                            soft_validation = StepValidationResult(
+                                checks=[
+                                    StepValidationCheck(
+                                        name="soft_advance",
+                                        passed=False,
+                                        details={
+                                            "reason": "balance_pending",
+                                            "failed_checks": list(last_failed_checks),
+                                            "validation": dict(balance_pending_candidate.validation_summary or {}),
+                                        },
+                                    )
+                                ]
+                            )
+                            soft_step = StepResult(
+                                step_name="mechanism_synthesis",
+                                tool_name="predict_mechanistic_step",
+                                output={
+                                    **(balance_pending_candidate.mechanism_output or {}),
+                                    "soft_advance": True,
+                                    "soft_advance_reason": "balance_pending",
+                                    "failed_checks": list(last_failed_checks),
+                                    "balance_pending_validation": dict(balance_pending_candidate.validation_summary or {}),
+                                },
+                                attempt=state.step_index + 1,
+                                retry_index=0,
+                                source="deterministic",
+                                validation=soft_validation,
+                            )
+                            self._record_step(state, soft_step)
+                            chosen = balance_pending_candidate
+                            validated = [chosen]
+
+                    # ── Proceed-on-failure: generic soft-advance when configured ──
                     # When proceed_on_validation_failure is enabled, instead of
                     # pausing/failing we accept the best available candidate as a
                     # "soft" step (validation_passed = False, marked for post-loop
                     # re-evaluation) and continue the harness.
-                    if state.run_config.proceed_on_validation_failure:
+                    if not validated and state.mode != "verified" and state.run_config.proceed_on_validation_failure:
                         can_proceed = True
                         if state.run_config.proceed_only_on_arrow_push_failure:
                             can_proceed = self._is_arrow_push_only_failure(
@@ -4264,6 +4659,7 @@ class RunCoordinator:
                                 candidates=candidates,
                                 candidate_attempts=candidate_attempts,
                                 proposal_output=proposal_output,
+                                soft_reason="proceed_on_validation_failure",
                             )
                             if soft_candidate is not None:
                                 self.store.append_event(
@@ -4392,7 +4788,7 @@ class RunCoordinator:
                 {
                     "step_index": state.step_index,
                     "contains_target_product": contains_target,
-                    "validation_passed": True,
+                    "validation_passed": not bool(chosen.mechanism_output.get("soft_advance")),
                 },
                 step_name="completion_check",
             )
@@ -4449,6 +4845,150 @@ class RunCoordinator:
             state.run_id,
             "post_loop_phase_completed",
             {"module_count": len(enabled_post_loop)},
+        )
+
+    def _accepted_mechanism_rows(self, run_id: str) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        for row in self.store.list_step_outputs(run_id):
+            if row.get("step_name") != "mechanism_synthesis":
+                continue
+            output = row.get("output")
+            if not isinstance(output, dict):
+                continue
+            validation = row.get("validation") if isinstance(row.get("validation"), dict) else {}
+            if bool(validation.get("passed")):
+                rows.append(row)
+                continue
+            if bool(output.get("soft_advance")) and str(output.get("soft_advance_reason") or "") == "balance_pending":
+                rows.append(row)
+        rows.sort(key=lambda item: (int(item.get("attempt") or 0), int(item.get("retry_index") or 0)))
+        return rows
+
+    def _run_overall_balance_reconciliation(self, state: RunState) -> None:
+        from mechanistic_agent.balance import assess_balance_diagnostics
+
+        accepted_rows = self._accepted_mechanism_rows(state.run_id)
+        final_state = list(state.current_state or [])
+        if accepted_rows:
+            final_output = accepted_rows[-1].get("output") if isinstance(accepted_rows[-1].get("output"), dict) else {}
+            if isinstance(final_output, dict):
+                resulting_state = [str(item) for item in final_output.get("resulting_state") or []]
+                if resulting_state:
+                    final_state = resulting_state
+
+        left_species = [str(item) for item in state.run_input.starting_materials or []]
+        right_species = list(final_state)
+        for row in accepted_rows:
+            output = row.get("output") if isinstance(row.get("output"), dict) else {}
+            if not isinstance(output, dict):
+                continue
+            rescue_additions = output.get("rescue_additions") if isinstance(output.get("rescue_additions"), dict) else {}
+            add_reactants = [str(item) for item in rescue_additions.get("add_reactants") or []]
+            add_products = [str(item) for item in rescue_additions.get("add_products") or []]
+            left_species = self._merge_unique_species(left_species, add_reactants)
+            right_species = self._merge_unique_species(right_species, add_products)
+
+        initial_diagnostics = assess_balance_diagnostics(
+            left_species,
+            right_species,
+            include_hydrogens=True,
+            backend_config=state.run_config,
+            left_label="overall_left",
+            right_label="overall_right",
+        )
+
+        add_reactants: List[str] = []
+        add_products: List[str] = []
+        reconciliation_step_output: Dict[str, Any] = {
+            "status": "not_needed" if initial_diagnostics.get("balanced") else "pending",
+            "accepted_step_count": len(accepted_rows),
+            "initial_left_species": list(left_species),
+            "initial_right_species": list(right_species),
+            "initial_balance": initial_diagnostics,
+        }
+        final_diagnostics = dict(initial_diagnostics)
+        grade = "exact" if bool(initial_diagnostics.get("balanced")) else str(initial_diagnostics.get("classification") or "approximate")
+
+        if (
+            state.mode == "unverified"
+            and not bool(initial_diagnostics.get("balanced"))
+            and str(initial_diagnostics.get("classification") or "") != "invalid_species"
+        ):
+            self.store.append_event(
+                state.run_id,
+                "overall_balance_reconciliation_started",
+                {
+                    "accepted_step_count": len(accepted_rows),
+                    "initial_balance": initial_diagnostics,
+                },
+                step_name="overall_balance_reconciliation",
+            )
+            rescue_output = self.missing_reagents_agent.executor.run_missing_reagents(
+                starting=left_species,
+                products=right_species,
+                conditions_guidance={
+                    "rescue_mode": True,
+                    "overall_balance_reconciliation": True,
+                    "accepted_step_count": len(accepted_rows),
+                    "final_state": final_state,
+                },
+            )
+            add_reactants = [str(item) for item in rescue_output.get("missing_reactants") or rescue_output.get("suggested_reactants") or []]
+            add_products = [str(item) for item in rescue_output.get("missing_products") or rescue_output.get("suggested_products") or []]
+            reconciled_left = self._merge_unique_species(left_species, add_reactants)
+            reconciled_right = self._merge_unique_species(right_species, add_products)
+            final_diagnostics = assess_balance_diagnostics(
+                reconciled_left,
+                reconciled_right,
+                include_hydrogens=True,
+                backend_config=state.run_config,
+                left_label="overall_left",
+                right_label="overall_right",
+            )
+            reconciliation_step_output = {
+                **reconciliation_step_output,
+                **rescue_output,
+                "status": str(rescue_output.get("status") or "completed"),
+                "add_reactants": add_reactants,
+                "add_products": add_products,
+                "reconciled_left_species": reconciled_left,
+                "reconciled_right_species": reconciled_right,
+                "final_balance": final_diagnostics,
+            }
+            if bool(final_diagnostics.get("balanced")) and (add_reactants or add_products):
+                grade = "reconciled"
+            elif str(final_diagnostics.get("classification") or "") == "invalid_species":
+                grade = "invalid_species"
+            else:
+                grade = "approximate"
+
+            reconciliation_step = StepResult(
+                step_name="overall_balance_reconciliation",
+                tool_name="predict_missing_reagents",
+                output=reconciliation_step_output,
+                source="llm",
+            )
+            self._record_step(state, reconciliation_step)
+        elif str(initial_diagnostics.get("classification") or "") == "invalid_species":
+            grade = "invalid_species"
+        elif not bool(initial_diagnostics.get("balanced")):
+            grade = "approximate"
+
+        overall_balance = {
+            "grade": grade,
+            "balanced": bool(final_diagnostics.get("balanced")),
+            "accepted_step_count": len(accepted_rows),
+            "initial_balance": initial_diagnostics,
+            "final_balance": final_diagnostics,
+            "add_reactants": add_reactants,
+            "add_products": add_products,
+            "final_state": final_state,
+        }
+        self.store.append_event(
+            state.run_id,
+            "overall_balance_reconciled",
+            overall_balance,
+            step_name="overall_balance_reconciliation",
         )
 
     def _run_past_failure_reevaluation(self, state: RunState) -> None:
@@ -4694,7 +5234,10 @@ class RunCoordinator:
             compact = (step_mapping.output or {}).get("compact_mapped_atoms") or []
             state.latest_step_mapping = {
                 "step_index": state.step_index,
+                "current_state": list((step_mapping.output or {}).get("current_state") or mapping_current),
+                "resulting_state": list((step_mapping.output or {}).get("resulting_state") or mapping_resulting),
                 "mapped_atoms": compact[:12],
+                "species_lineage_summary": list((step_mapping.output or {}).get("species_lineage_summary") or [])[:8],
                 "unmapped_atoms": (step_mapping.output or {}).get("unmapped_atoms", [])[:12],
                 "confidence": (step_mapping.output or {}).get("confidence"),
             }
@@ -4857,6 +5400,8 @@ class RunCoordinator:
                 # Run post-loop phase (e.g. past-failure re-evaluation) before
                 # making final pass/fail judgement.
                 self._run_post_loop_phase(state, harness)
+                if not state.paused and state.mode == "unverified":
+                    self._run_overall_balance_reconciliation(state)
 
             if state.paused:
                 return
@@ -4883,18 +5428,7 @@ class RunCoordinator:
                 and isinstance(row.get("validation"), dict)
                 and bool(row["validation"].get("passed"))
             ]
-            # Also include soft-advance steps so runs using proceed_on_validation_failure
-            # can still be marked complete (soft-accepted steps may have been corrected
-            # by the post-loop re-evaluation phase).
-            soft_steps = [
-                row
-                for row in step_outputs
-                if row.get("step_name") == "mechanism_synthesis"
-                and isinstance(row.get("output"), dict)
-                and bool((row.get("output") or {}).get("soft_advance"))
-                and bool((row.get("output") or {}).get("reevaluated_passed"))
-            ]
-            all_accepted_steps = mechanism_steps + soft_steps
+            all_accepted_steps = self._accepted_mechanism_rows(run_id)
 
             if not all_accepted_steps and not mechanism_steps:
                 # No valid steps at all — check if we have only soft steps to at
@@ -4933,7 +5467,7 @@ class RunCoordinator:
                 )
                 return
 
-            if not mechanism_steps and not soft_steps:
+            if not mechanism_steps and not all_accepted_steps:
                 self.store.set_run_status(run_id, "failed")
                 self.store.append_event(
                     run_id,
@@ -4960,7 +5494,7 @@ class RunCoordinator:
                     {
                         "mode": state.mode,
                         "mechanism_steps": len(mechanism_steps),
-                        "validated_only": True,
+                        "validated_only": len(all_accepted_steps) == len(mechanism_steps),
                     },
                 )
                 return

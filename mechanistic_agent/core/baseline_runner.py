@@ -24,6 +24,7 @@ from mechanistic_agent.llm import (
     is_gemini_model,
     is_openrouter_model,
 )
+from mechanistic_agent.smiles_utils import assess_target_product_state
 from mechanistic_agent.tool_schemas import PREDICT_FULL_MECHANISM_TOOL, build_tool_choice
 
 # Sentinel group name for baseline runs – checked by leaderboard() to set is_baseline.
@@ -132,12 +133,14 @@ def _steps_to_synthetic_snapshot(
         predicted = str(step.get("predicted_intermediate") or "").strip() or None
         contains_product = bool(step.get("contains_target_product", False))
 
-        # If the model didn't set contains_target_product, infer from products overlap.
         if not contains_product:
-            for p in products:
-                if p in resulting_state:
-                    contains_product = True
-                    break
+            target_state = assess_target_product_state(
+                current_state=current_state,
+                resulting_state=resulting_state,
+                target_products=products,
+                starting_materials=starting_materials,
+            )
+            contains_product = bool(target_state["contains_target_product"])
 
         events.append(
             {

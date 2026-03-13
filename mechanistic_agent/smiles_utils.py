@@ -1,9 +1,10 @@
 """SMILES helpers shared across runtime and data processing code."""
 from __future__ import annotations
 
+import re
 from contextlib import redirect_stderr
 from io import StringIO
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:  # pragma: no cover - optional dependency
     from rdkit.Chem import AddHs, MolFromSmiles, MolToSmiles
@@ -101,6 +102,98 @@ def remove_mapping_and_canonicalize(
     return MolToSmiles(mol, kekuleSmiles=kekulize)
 
 
+def species_match_signature(smiles: str) -> str:
+    """Return a stable signature for cross-boundary species comparisons.
+
+    The signature removes atom mapping, normalizes common aliases, and
+    canonicalizes valid SMILES when possible. Invalid placeholders fall back to
+    trimmed text so tests and synthetic fixtures remain comparable.
+    """
+
+    text = normalize_common_smiles_alias(str(smiles or "").strip())
+    if not text:
+        return ""
+    canonical = remove_mapping_and_canonicalize(text)
+    return str(canonical or text).strip()
+
+
+def normalize_species_for_matching(smiles_list: List[str]) -> List[str]:
+    """Return ordered unique comparison signatures for a species list."""
+
+    out: List[str] = []
+    seen: set[str] = set()
+    for item in smiles_list:
+        signature = species_match_signature(item)
+        if not signature or signature in seen:
+            continue
+        seen.add(signature)
+        out.append(signature)
+    return out
+
+
+def heavy_atom_count_for_matching(smiles: str) -> int:
+    """Return a best-effort heavy-atom count for ranking target products."""
+
+    signature = species_match_signature(smiles)
+    if not signature:
+        return 0
+    if MolFromSmiles is not None:
+        try:
+            mol = MolFromSmiles(signature, sanitize=True)
+            if mol is not None:
+                return int(mol.GetNumHeavyAtoms())
+        except Exception:
+            pass
+    return len(re.findall(r"[A-Z][a-z]?", signature))
+
+
+def assess_target_product_state(
+    *,
+    current_state: List[str],
+    resulting_state: List[str],
+    target_products: List[str],
+    starting_materials: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Classify whether a step has reached the primary target product.
+
+    Spectator products already present in the starting pool are excluded from
+    target completion checks. Among the remaining targets, the heaviest species
+    are treated as the primary products that should trigger completion.
+    """
+
+    current_signatures = normalize_species_for_matching(current_state or [])
+    resulting_signatures = normalize_species_for_matching(resulting_state or [])
+    target_signatures = normalize_species_for_matching(target_products or [])
+    starting_signatures = normalize_species_for_matching(starting_materials or [])
+
+    spectator_targets = [item for item in target_signatures if item in starting_signatures]
+    productive_targets = [item for item in target_signatures if item not in starting_signatures]
+    if not productive_targets:
+        productive_targets = [item for item in target_signatures if item not in current_signatures]
+    if not productive_targets:
+        productive_targets = list(target_signatures)
+
+    primary_targets: List[str] = []
+    if productive_targets:
+        max_heavy_atoms = max(heavy_atom_count_for_matching(item) for item in productive_targets)
+        primary_targets = [
+            item for item in productive_targets if heavy_atom_count_for_matching(item) == max_heavy_atoms
+        ]
+
+    matched_targets = [item for item in target_signatures if item in resulting_signatures]
+    matched_primary_targets = [item for item in primary_targets if item in resulting_signatures]
+
+    return {
+        "contains_target_product": bool(matched_primary_targets),
+        "matched_target_products": matched_targets,
+        "matched_primary_target_products": matched_primary_targets,
+        "primary_target_products": primary_targets,
+        "productive_target_products": productive_targets,
+        "spectator_target_products": spectator_targets,
+        "normalized_resulting_state": resulting_signatures,
+    }
+
+
 def strip_atom_mapping_optional(smiles: Optional[str]) -> Optional[str]:
     """Return a map-free canonical string or the original value on failure."""
 
@@ -127,8 +220,6 @@ def attempt_smiles_recovery(invalid_smiles: str) -> Optional[str]:
     """
     if not invalid_smiles or not isinstance(invalid_smiles, str):
         return None
-
-    import re
 
     # Clean up the SMILES string
     cleaned = normalize_common_smiles_alias(invalid_smiles.strip())

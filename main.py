@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 import sqlite3
 import threading
 import time
@@ -2340,6 +2341,96 @@ def leaderboard_official(
     )
 
 
+def _arena_table_from_leaderboard_items(items: List[Dict[str, Any]]) -> str:
+    """Build Arena Submissions table rows for LEADERBOARD.md."""
+    lines = [
+        "| Date | Model | Score | Outcome | Pass Rate | Avg Latency | Run Group |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    if not items:
+        lines.append("| — | *(pending first submission)* | — | — | — | — | — |")
+        return "\n".join(lines)
+    for row in items:
+        created = row.get("created_at")
+        if created is None:
+            date_str = "—"
+        elif isinstance(created, (int, float)):
+            date_str = datetime.fromtimestamp(float(created)).strftime("%Y-%m-%d")
+        else:
+            date_str = str(created)[:10] if created else "—"
+        model = str(row.get("model_name") or row.get("model") or "unknown")
+        pts = _leaderboard_row_to_pts(row)
+        score_display = f"{pts['total']}/1000"
+        outcome = pts["outcome"]
+        pass_rate = f"{float(row.get('weighted_pass_rate') or row.get('deterministic_pass_rate') or 0.0) * 100.0:.1f}%"
+        avg_ms = float(row.get("avg_latency_ms") or 0.0)
+        avg_s = f"{avg_ms / 1000:.1f}s" if avg_ms > 0 else "—"
+        group = str(row.get("run_group_name") or "n/a")
+        lines.append(f"| {date_str} | `{model}` | {score_display} | {outcome} | {pass_rate} | {avg_s} | `{group}` |")
+    return "\n".join(lines)
+
+
+@app.command(name="update-leaderboard-artifacts")
+def update_leaderboard_artifacts_cmd(
+    refresh_curriculum: bool = typer.Option(
+        True,
+        "--refresh-curriculum/--no-refresh-curriculum",
+        help="Also run curriculum render-readme to refresh curriculum/generated/leaderboard_*.json",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print changes without writing files"),
+) -> None:
+    """Regenerate LEADERBOARD.md Arena table and curriculum/generated/ from live leaderboard data.
+
+    Run after eval-runset-official to sync LEADERBOARD.md and curriculum artifacts.
+    """
+    base = Path.cwd()
+    store = RunStore(base / "data" / "mechanistic.db")
+    try:
+        resolved = resolve_eval_set(
+            store=store,
+            requested_eval_set_id=None,
+            require_purpose="leaderboard_holdout",
+            default_purpose="leaderboard_holdout",
+        )
+    except EvalSetResolutionError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    items = store.leaderboard(eval_set_id=str(resolved.eval_set_id), limit=50)
+    items = _filter_leaderboard_rows(items, completed_only=True)
+
+    arena_table = _arena_table_from_leaderboard_items(items)
+
+    leaderboard_md = base / "LEADERBOARD.md"
+    if not leaderboard_md.exists():
+        typer.echo(f"LEADERBOARD.md not found at {leaderboard_md}", err=True)
+        raise typer.Exit(1)
+
+    content = leaderboard_md.read_text(encoding="utf-8")
+    # Replace Arena Submissions table (from | Date | header through last row before ### Speed)
+    import re
+    pattern = r"\| Date \| Model \| Score \| Outcome \| Pass Rate \| Avg Latency \| Run Group \|\n\|[-|]+\|\n(?:\|[^\n]+\n)*(\n### Speed Calibration)"
+    match = re.search(pattern, content)
+    if match:
+        new_content = content[: match.start()] + arena_table + "\n" + content[match.start(1) :]
+        if dry_run:
+            typer.echo("LEADERBOARD.md Arena table (dry-run):")
+            typer.echo(arena_table)
+        else:
+            leaderboard_md.write_text(new_content, encoding="utf-8")
+            typer.echo(f"Updated {leaderboard_md}")
+    else:
+        typer.echo("Could not find Arena Submissions table in LEADERBOARD.md", err=True)
+        raise typer.Exit(1)
+
+    if refresh_curriculum and not dry_run:
+        typer.echo("Refreshing curriculum/generated/ (leaderboard_*.json, readme_context.json)...")
+        render_curriculum_readme(base, store)
+        gen_dir = base / "curriculum" / "generated"
+        if gen_dir.is_dir():
+            typer.echo(f"Updated {gen_dir}/")
+
+
 @curriculum_app.command("status")
 def curriculum_status_cmd(
     model_name: str = typer.Option(OPUS_MODEL, "--model-name", help="Exact model lane to inspect"),
@@ -2515,7 +2606,7 @@ def eval_cmd(
         help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
     ),
     max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
-    max_runtime: float = typer.Option(300.0, "--max-runtime", help="Per-case timeout in seconds"),
+    max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",
         "--chemistry-backend",
