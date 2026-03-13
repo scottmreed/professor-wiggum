@@ -30,16 +30,16 @@ def test_reaction_type_catalog_matches_taxonomy_labels_exactly() -> None:
     catalog = load_reaction_type_catalog_for_runtime()
     labels = list(catalog.get("taxonomy_labels") or [])
     assert labels == _taxonomy_labels()
-    assert len(labels) == 51
+    assert len(labels) == 53
 
 
 def test_reaction_type_catalog_has_stable_ids() -> None:
     catalog = load_reaction_type_catalog_for_runtime()
     templates = list(catalog.get("templates") or [])
     ids = [str(item.get("type_id") or "") for item in templates if isinstance(item, dict)]
-    assert len(ids) == 51
+    assert len(ids) == 53
     assert ids[0] == "mt_001"
-    assert ids[-1] == "mt_051"
+    assert ids[-1] == "mt_053"
 
 
 def test_runtime_catalog_loads_from_reaction_type_templates_only(tmp_path: Path) -> None:
@@ -53,7 +53,7 @@ def test_runtime_catalog_loads_from_reaction_type_templates_only(tmp_path: Path)
     assert not (training_dir / "rxn_map.txt").exists()
 
     catalog = load_reaction_type_catalog(tmp_path)
-    assert len(list(catalog.get("templates") or [])) == 51
+    assert len(list(catalog.get("templates") or [])) == 53
     assert list(catalog.get("taxonomy_labels") or [])[0]
 
 
@@ -61,4 +61,7 @@ def test_catalog_contains_example_mappings() -> None:
     catalog = load_reaction_type_catalog_for_runtime()
     mappings = list(catalog.get("example_mappings") or [])
     assert mappings
-    assert any(str(row.get("reaction_id", "")).startswith("hb350_") for row in mappings)
+    rid_prefixes = ("flower_", "hb350_")
+    assert any(
+        str(row.get("reaction_id", "")).startswith(p) for row in mappings for p in rid_prefixes
+    )

@@ -1,0 +1,802 @@
+[
+  {
+    "reaction_id": "flower_135501",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_024300",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_252433",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_160718",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_130926",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_054599",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_170958",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_085506",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_086646",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_188703",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_132807",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_060294",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_247575",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_223142",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_222822",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_096616",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_181059",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_127589",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_097191",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_225090",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_231447",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_238032",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_258725",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_078510",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_233521",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_033553",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_111638",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_051329",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_164651",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_131938",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_046045",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_106191",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_255222",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_123671",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_148091",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_155432",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_170594",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_058818",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_086602",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_180307",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_250269",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_081119",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_203797",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_151040",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_165127",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_128401",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_245088",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_000889",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_236372",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_105699",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_112037",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_210299",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_205636",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_093006",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_144138",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_060371",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_159336",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_011125",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_080554",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_259565",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_038967",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_242686",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_250688",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_070188",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_081613",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_009559",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_039712",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_109809",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_038370",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_030284",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_141616",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_025232",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_059272",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_149118",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_088181",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_247650",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_042208",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_245749",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_128170",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_044718",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_220695",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_059351",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_158884",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_139768",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_054531",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_043005",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_163600",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_135635",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_044303",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_066797",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_076305",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_096830",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_029113",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_018916",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_176648",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_081185",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_211476",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_076819",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_026466",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  },
+  {
+    "reaction_id": "flower_213848",
+    "tier": "easy",
+    "mechanism_type_label": "SN2 reaction",
+    "mechanism_type_id": "mt_003",
+    "confidence": 0.35,
+    "rationale": "Fallback by low step count."
+  }
+]

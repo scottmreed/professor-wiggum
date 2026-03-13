@@ -4546,8 +4546,8 @@ FUNCTIONAL_GROUPS = [
         True,
     ),
 
-    # halides / boron
-    ("alkyl_halide", ("[CX4][F,Cl,Br,I]",), True),
+    # halides / boron — alkyl_halide: consume=False so C-Br matches when C is shared with alcohol (e.g. CC(O)Br)
+    ("alkyl_halide", ("[CX4][F,Cl,Br,I]",), False),
     ("boronic_acid", ("[BX3]([OX2H])[OX2H]",), True),
     ("boronate_ester", ("[BX3]([OX2][#6])[OX2][#6]",), True),
 
