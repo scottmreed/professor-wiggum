@@ -55,6 +55,21 @@ python main.py eval \
 
 Use explicit `run_group` names such as `pr_medium_atom_mapping_fix` so leaderboard comparisons stay readable.
 
+For harness-free baseline references (no API server), run all baseline tiers in one command:
+
+```bash
+python main.py baseline --all-tiers --model anthropic/claude-opus-4.6 --thinking-level high
+```
+
+Tier mode reads `training_data/baseline_tier_eval_set_map.json` to resolve tier-specific `eval_set_id` values.
+Tier case IDs default to `training_data/baseline_tiers_clawdiator.json` (fallback: `training_data/eval_tiers.json`).
+
+Harness eval tier sweeps can also run in one command:
+
+```bash
+python main.py eval --eval-set-id eval_set --all-tiers --model anthropic/claude-opus-4.6 --thinking-level low
+```
+
 ## Public Leaderboard Policy
 
 - [LEADERBOARD.md](LEADERBOARD.md) is the human-readable snapshot for quick review.

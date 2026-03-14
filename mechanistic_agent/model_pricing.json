@@ -206,13 +206,27 @@
     "description": "Anthropic's strongest Claude model for coding and long-running professional tasks",
     "reasoning": {
       "parameter": "thinking",
+      "merge_levels": true,
+      "default": "high",
       "levels": {
         "lowest": {
-          "type": "disabled"
+          "thinking": { "type": "disabled" }
+        },
+        "low": {
+          "thinking": { "type": "adaptive" },
+          "effort": "low"
+        },
+        "high": {
+          "thinking": { "type": "adaptive" },
+          "effort": "high"
         },
         "highest": {
-          "type": "enabled",
-          "budget_tokens": 16000
+          "thinking": { "type": "adaptive" },
+          "effort": "high"
+        },
+        "max": {
+          "thinking": { "type": "adaptive" },
+          "effort": "max"
         }
       }
     },
@@ -396,13 +410,31 @@
     "description": "Balanced Claude model with strong reasoning and speed",
     "reasoning": {
       "parameter": "thinking",
+      "merge_levels": true,
+      "default": "high",
       "levels": {
         "lowest": {
-          "type": "disabled"
+          "thinking": { "type": "disabled" }
+        },
+        "low": {
+          "thinking": { "type": "adaptive" },
+          "effort": "low"
+        },
+        "medium": {
+          "thinking": { "type": "adaptive" },
+          "effort": "medium"
+        },
+        "high": {
+          "thinking": { "type": "adaptive" },
+          "effort": "high"
         },
         "highest": {
-          "type": "enabled",
-          "budget_tokens": 10000
+          "thinking": { "type": "adaptive" },
+          "effort": "high"
+        },
+        "max": {
+          "thinking": { "type": "adaptive" },
+          "effort": "max"
         }
       }
     },

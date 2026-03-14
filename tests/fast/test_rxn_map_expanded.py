@@ -52,17 +52,17 @@ def _normalize_smiles(smiles: str) -> str:
     return Chem.MolToSmiles(mol, canonical=True)
 
 
-def test_taxonomy_has_51_stable_entries_and_preserves_labels() -> None:
+def test_taxonomy_has_53_stable_entries_and_preserves_labels() -> None:
     template_payload = _load_json(REACTION_TYPE_TEMPLATES)
     templates = list(template_payload.get("templates") or [])
     templates.sort(key=lambda row: int(str(row.get("type_id") or "mt_999").split("_", 1)[1]))
     lines = [str(row.get("label_exact") or "") for row in templates]
-    assert len(lines) == 51
+    assert len(lines) == 53
 
     payload = _load_json(RXN_MAP_EXPANDED)
     taxonomy = payload["taxonomy"]
-    assert len(taxonomy) == 51
-    assert [entry["type_id"] for entry in taxonomy] == [f"mt_{idx:03d}" for idx in range(1, 52)]
+    assert len(taxonomy) == 53
+    assert [entry["type_id"] for entry in taxonomy] == [f"mt_{idx:03d}" for idx in range(1, 54)]
     assert [entry["label_exact"] for entry in taxonomy] == lines
 
 
@@ -97,7 +97,7 @@ def test_reaction_steps_have_contiguous_indices_dbe_and_aps() -> None:
     assert len(payload["reactions"]) >= 20
 
     template_rows = template_payload.get("templates", [])
-    assert len(template_rows) == 51
+    assert len(template_rows) == 53
     assert template_payload.get("example_mappings")
     by_label = {row["label_exact"]: row for row in template_rows}
     assert "SN2 reaction" in by_label

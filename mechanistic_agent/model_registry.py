@@ -304,15 +304,19 @@ def build_reasoning_payload(
     if not isinstance(reasoning, dict):
         return {}
 
-    parameter = reasoning.get("parameter")
-    if not isinstance(parameter, str) or not parameter:
-        return {}
-
     levels = reasoning.get("levels", {})
     payload = None
     if isinstance(levels, dict):
         payload = levels.get(level)
     if payload is None:
+        return {}
+
+    # Adaptive thinking (e.g. Opus 4.6 / Sonnet 4.6) sends multiple keys (thinking + effort).
+    if reasoning.get("merge_levels") and isinstance(payload, dict):
+        return dict(payload)
+
+    parameter = reasoning.get("parameter")
+    if not isinstance(parameter, str) or not parameter:
         return {}
     return {parameter: payload}
 

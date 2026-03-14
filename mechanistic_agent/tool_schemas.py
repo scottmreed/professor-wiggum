@@ -40,6 +40,39 @@ _CANDIDATE_ITEM = {
     "required": ["name"],
 }
 
+_RDKIT_CLI_COMMAND_SPEC: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "command": {
+            "type": "string",
+            "enum": ["repair-smiles", "edit", "check", "balance", "rings", "schema"],
+            "description": "rdkit_cli subcommand to execute.",
+        },
+        "args": {
+            "type": "object",
+            "description": "JSON argument object passed to `rdkit_cli <command> --json`.",
+        },
+        "run_on": {
+            "type": "string",
+            "enum": ["initial", "retry"],
+            "description": "When to run this command plan. Prefer retry unless low-cost normalization is needed.",
+            "default": "retry",
+        },
+        "apply_to": {
+            "type": "string",
+            "description": (
+                "Optional target field path for repair outputs, e.g. "
+                "'intermediate_smiles', 'resulting_state[0]', 'missing_reactants[0]'."
+            ),
+        },
+        "reason": {
+            "type": "string",
+            "description": "Optional short reason for why this command should be run.",
+        },
+    },
+    "required": ["command", "args"],
+}
+
 # ---------------------------------------------------------------------------
 # 1. assess_initial_conditions
 # ---------------------------------------------------------------------------
@@ -150,6 +183,15 @@ MISSING_REAGENTS_TOOL: Dict[str, Any] = {
                 "notes": {
                     "type": "string",
                     "description": "Optional notes about the balancing.",
+                },
+                "rdkit_cli_commands": {
+                    "type": "array",
+                    "items": _RDKIT_CLI_COMMAND_SPEC,
+                    "description": (
+                        "Optional rdkit_cli command plan. Prefer run_on='retry' for "
+                        "repair-smiles/edit/check/balance/rings unless a lightweight "
+                        "initial check is clearly warranted."
+                    ),
                 },
             },
             "required": ["missing_reactants", "missing_products"],
@@ -435,25 +477,33 @@ _MECHANISM_STEP_CANDIDATE = {
                 "plus any minimal byproducts/reagents needed for atom-balance consistency."
             ),
         },
-                "confidence": {
-                    "type": "string",
-                    "enum": ["high", "medium", "low"],
-                    "description": "Confidence in this candidate being the correct next step.",
-                },
-                "template_alignment": {
-                    "type": "string",
-                    "enum": ["aligned", "partial", "not_aligned", "unknown"],
-                    "description": "Optional alignment of this candidate to the selected reaction-type template.",
-                },
-                "template_alignment_reason": {
-                    "type": "string",
-                    "description": "Optional reason for the template alignment classification.",
-                },
-                "note": {
-                    "type": "string",
-                    "description": "Optional mechanistic reasoning for this candidate.",
-                },
-            },
+        "rdkit_cli_commands": {
+            "type": "array",
+            "items": _RDKIT_CLI_COMMAND_SPEC,
+            "description": (
+                "Optional rdkit_cli command plan for this candidate. Prefer run_on='retry' "
+                "for repair-smiles/edit/rings/check unless a low-cost initial plan is needed."
+            ),
+        },
+        "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"],
+            "description": "Confidence in this candidate being the correct next step.",
+        },
+        "template_alignment": {
+            "type": "string",
+            "enum": ["aligned", "partial", "not_aligned", "unknown"],
+            "description": "Optional alignment of this candidate to the selected reaction-type template.",
+        },
+        "template_alignment_reason": {
+            "type": "string",
+            "description": "Optional reason for the template alignment classification.",
+        },
+        "note": {
+            "type": "string",
+            "description": "Optional mechanistic reasoning for this candidate.",
+        },
+    },
     "required": [
         "rank",
         "intermediate_smiles",

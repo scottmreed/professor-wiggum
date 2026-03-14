@@ -128,10 +128,17 @@ training_data/*
 !training_data/eval_set.json
 !training_data/eval_tiers.json
 !training_data/eval_quality_report.json
+!training_data/baseline_tier_eval_set_map.json
+!training_data/baseline_tiers_clawdiator.json
 
 # FlowER curated subset (source for dev eval)
 !training_data/flower_mechanisms_100.json
 !training_data/flower_mechanisms_100_report.json
+
+# Reaction type taxonomy and derived rxn map (build_rxn_map_expanded.py)
+!training_data/reaction_type_templates.json
+!training_data/rxn_map_expanded.json
+!training_data/eval_mechanism_map.json
 
 # Full index is 65MB — track sample + report only
 # Regenerate full index: see training_data/REGENERATE.md
@@ -158,6 +165,8 @@ training_data/practice_eval/*.png
 # Legacy — stays gitignored
 training_data/local_legacy/
 traces/
+!traces/evidence/
+!traces/evidence/**
 plans/
 evolution_workspace/
 

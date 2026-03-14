@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+from mechanistic_agent.smiles_utils import normalize_species_for_matching
+
 
 def compare_with_known_answers(
     mechanism_rows: List[Dict[str, Any]],
@@ -38,8 +40,8 @@ def compare_with_known_answers(
 
     expected_final: set[str] = set()
     last_expected = expected_steps[-1]
-    for smi in last_expected.get("resulting_state") or []:
-        expected_final.add(str(smi).strip())
+    for smi in normalize_species_for_matching([str(item) for item in last_expected.get("resulting_state") or []]):
+        expected_final.add(smi)
 
     actual_final: set[str] = set()
     if mechanism_rows:
@@ -50,8 +52,8 @@ def compare_with_known_answers(
                 output = json.loads(output)
             except Exception:
                 output = {}
-        for smi in output.get("resulting_state") or []:
-            actual_final.add(str(smi).strip())
+        for smi in normalize_species_for_matching([str(item) for item in output.get("resulting_state") or []]):
+            actual_final.add(smi)
 
     product_overlap = len(expected_final & actual_final)
 

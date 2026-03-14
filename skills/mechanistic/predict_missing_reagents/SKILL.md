@@ -29,6 +29,7 @@ minimal additions that preserve the candidate mechanism.
 - `missing_reactants` (SMILES[]) — species to add to the left side
 - `missing_products` (SMILES[]) — species to add to the right side
 - `verification` (string) — concise balance justification
+- `rdkit_cli_commands` (optional command plan list) — structured retry-oriented `rdkit_cli` actions
 
 ## Tool Schema
 
@@ -52,7 +53,21 @@ minimal additions that preserve the candidate mechanism.
           "items": {"type": "string"},
           "description": "SMILES strings for missing products."
         },
-        "verification": {"type": "string", "description": "Balance justification."}
+        "verification": {"type": "string", "description": "Balance justification."},
+        "rdkit_cli_commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["command", "args"],
+            "properties": {
+              "command": {"type": "string", "enum": ["repair-smiles", "edit", "check", "balance", "rings", "schema"]},
+              "args": {"type": "object"},
+              "run_on": {"type": "string", "enum": ["initial", "retry"]},
+              "apply_to": {"type": "string"},
+              "reason": {"type": "string"}
+            }
+          }
+        }
       }
     }
   }
@@ -67,6 +82,14 @@ When used in step-rescue mode, prefer minimal additions that preserve the candid
 Use strict conservation logic and return only structured additions that improve stoichiometric consistency.
 Avoid speculative additions that are unsupported by atom counts or reaction context.
 Return molecule list entries as SMILES strings only, never natural-language descriptors.
+If you include `rdkit_cli_commands`, emit only structured command plans (never shell text).
+Retry-first command guidance:
+- Prefer no command plan or minimal `run_on: "initial"` checks on the first attempt.
+- Use `repair-smiles` or `edit` mainly for retry correction of invalid entries (with `apply_to`).
+- Use `balance` mainly on retry to provide deficit/surplus diagnostics for the next proposal.
+- Use `rings` only when ring/aromatic validity is uncertain.
+- `check` is generally mechanism-step specific; avoid it here unless explicitly justified.
+- `schema` is optional capability probing and should be rare.
 SMILES format requirements:
 - Use implicit-hydrogen SMILES: water is `O` (not `[H2O]`), ammonia is `N` (not `[NH3]`).
 - Molecular formulas in brackets are NOT valid SMILES: `[H2SO4]` must be `OS(=O)(=O)O`.

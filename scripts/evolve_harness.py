@@ -45,7 +45,12 @@ from mechanistic_agent.flower_curriculum import (
     convert_mechanism_id_to_case,
 )
 from mechanistic_agent.flower_rendering import render_curriculum_pngs
-from mechanistic_agent.model_registry import get_model_family, to_internal_reasoning_level
+from mechanistic_agent.model_registry import (
+    get_model_family,
+    get_reasoning_levels,
+    to_internal_reasoning_level,
+    to_public_reasoning_level,
+)
 from mechanistic_agent.prompt_assets import (
     STEP_TO_CALL_NAME,
     append_call_few_shot_example,
@@ -67,6 +72,21 @@ MINEABLE_SUBAGENTS: Dict[str, str] = {
 }
 
 
+def _resolve_thinking_level(model_name: str, user_level: Optional[str]) -> Optional[str]:
+    """Return thinking level for model; if user_level is None/auto, use highest available."""
+    if user_level and str(user_level).strip().lower() not in ("auto", "none", ""):
+        level = str(user_level).strip().lower()
+        return level if level in ("low", "high", "max") else level
+    levels = get_reasoning_levels(model_name)
+    if not levels:
+        return None
+    for key in ("highest", "high", "max", "xhigh"):
+        if key in levels:
+            return to_public_reasoning_level(key) or "high"
+    last = levels[-1] if levels else None
+    return to_public_reasoning_level(last) if last else None
+
+
 @dataclass
 class EvolutionConfig:
     model_name: str
@@ -85,6 +105,9 @@ class EvolutionConfig:
     seed: int = 42
     step_pass_target: int = 50
     coordination_topology: str = "centralized_mas"
+    thinking_level: Optional[str] = None
+    step_count_filter: Optional[int] = None
+    loop_when_done: bool = False
     train_input: Path = DEFAULT_FLOWER_INPUT
     curriculum_index_path: Path = DEFAULT_INDEX_PATH
     curriculum_index_report_path: Path = DEFAULT_INDEX_REPORT_PATH
@@ -580,10 +603,17 @@ def run_curriculum_batch(
     prepared_batch: Dict[str, Any],
     store: RunStore,
     base_dir: Path,
+    existing_hashes: Optional[Dict[str, set]] = None,
+    best_scores_by_call: Optional[Dict[str, float]] = None,
+    workspace: Optional[Path] = None,
+    evolution_log_path: Optional[Path] = None,
+    selection_meta: Optional[Dict[str, Any]] = None,
+    progress: Optional[Dict[str, Any]] = None,
+    accumulated_examples_mined: Optional[Dict[str, int]] = None,
 ) -> Tuple[str, List[Dict[str, Any]]]:
     registry = RegistrySet(base_dir)
     model_family = get_model_family(config.model_name) or "unknown"
-    internal_reasoning = to_internal_reasoning_level(None)
+    internal_reasoning = to_internal_reasoning_level(config.thinking_level)
     hashes = registry.bundle_hashes()
     runnable_cases = list(prepared_batch["runnable_cases"])
     conversion_failures = list(prepared_batch["conversion_failures"])
@@ -598,7 +628,7 @@ def run_curriculum_batch(
         model=config.model_name,
         model_name=config.model_name,
         model_family=model_family,
-        thinking_level=None,
+        thinking_level=config.thinking_level,
         harness_bundle_hash=hashes.get("prompt_bundle_hash", ""),
         status="running",
     )
@@ -642,7 +672,7 @@ def run_curriculum_batch(
         try:
             model_plan = select_step_models(
                 model_name=config.model_name,
-                thinking_level=None,
+                thinking_level=config.thinking_level,
                 functional_groups_enabled=True,
                 intermediate_prediction_enabled=True,
                 optional_llm_tools=["attempt_atom_mapping", "predict_missing_reagents"],
@@ -746,6 +776,70 @@ def run_curriculum_batch(
                 )
             else:
                 print(f"  [{len(results)}] {case_id}: score={score:.3f} passed={passed} cost=${total_cost:.3f}")
+            if (
+                passed
+                and run_status == "completed"
+                and score >= config.mining_score_threshold
+                and existing_hashes is not None
+                and best_scores_by_call is not None
+                and workspace is not None
+                and evolution_log_path is not None
+                and selection_meta is not None
+                and progress is not None
+                and accumulated_examples_mined is not None
+            ):
+                result_item = results[-1]
+                mined = mine_few_shots([result_item], config, existing_hashes, best_scores_by_call)
+                if mined:
+                    case_scores = {case_id: score}
+                    counts = apply_mined_examples(
+                        mined,
+                        store,
+                        base_dir,
+                        workspace,
+                        config.dry_run,
+                        "curriculum",
+                        case_scores,
+                        model_name=config.model_name,
+                    )
+                    for call_name, count in counts.items():
+                        accumulated_examples_mined[call_name] = accumulated_examples_mined.get(call_name, 0) + count
+                step_count_entry = int(entry.get("step_count", 0))
+                if step_count_entry:
+                    progress["pass_count_by_step"][step_count_entry] = progress["pass_count_by_step"].get(step_count_entry, 0) + 1
+                scores_so_far = [r.get("score") for r in results if r.get("score") is not None]
+                mean_so_far = sum(scores_so_far) / len(scores_so_far) if scores_so_far else 0.0
+                pass_so_far = sum(1 for r in results if r.get("passed"))
+                log = {
+                    "config": {
+                        "model_name": config.model_name,
+                        "harness": config.harness,
+                        "eval_set_id": config.eval_set_id,
+                        "group_size": config.group_size,
+                        "step_pass_target": config.step_pass_target,
+                        "min_score_threshold": config.min_score_threshold,
+                        "mining_score_threshold": config.mining_score_threshold,
+                        "dry_run": config.dry_run,
+                        "coordination_topology": config.coordination_topology,
+                        "thinking_level": config.thinking_level,
+                        "curriculum_index_path": str(config.curriculum_index_path),
+                        "train_input": str(config.train_input),
+                    },
+                    "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "current_step_count": selection_meta.get("current_step_count"),
+                    "step_pass_target": selection_meta.get("step_pass_target"),
+                    "current_step_pass_count_after_run": progress["pass_count_by_step"].get(step_count_entry, 0),
+                    "batch_start_rank": selection_meta.get("batch_start_rank"),
+                    "eval_run_id": eval_run_id,
+                    "mean_score": round(mean_so_far, 4),
+                    "pass_rate": round(pass_so_far / len(results), 4) if results else 0,
+                    "pass_count": pass_so_far,
+                    "attempted_cases": len(results),
+                    "examples_mined": dict(accumulated_examples_mined),
+                    "case_results": [{k: v for k, v in r.items() if k != "step_outputs"} for r in results],
+                    "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                }
+                evolution_log_path.write_text(json.dumps(log, indent=2, default=str))
         except Exception as exc:
             summary = _curriculum_summary(
                 entry,
@@ -820,6 +914,10 @@ def evolve(config: EvolutionConfig) -> None:
     if config.dry_run and config.lookup_cache_path.is_relative_to(base_dir):
         config.lookup_cache_path = runtime_base / config.lookup_cache_path.relative_to(base_dir)
 
+    config.thinking_level = _resolve_thinking_level(config.model_name, config.thinking_level)
+    if config.thinking_level:
+        print(f"Thinking level: {config.thinking_level}")
+
     ensure_index(
         input_path=config.train_input,
         index_path=config.curriculum_index_path,
@@ -828,149 +926,173 @@ def evolve(config: EvolutionConfig) -> None:
     build_lookup_cache(input_path=config.train_input, cache_path=config.lookup_cache_path)
     index_entries = load_curriculum_index(config.curriculum_index_path)
 
-    progress = curriculum_history(
-        store,
-        model_name=config.model_name,
-        harness=config.harness,
-        curriculum_index_path=config.curriculum_index_path,
-    )
-    selection = next_curriculum_candidates(
-        index_entries,
-        attempted_case_ids=progress["attempted_case_ids"],
-        pass_count_by_step=progress["pass_count_by_step"],
-        required_passes_per_step=config.step_pass_target,
-    )
-    candidates = list(selection["candidates"])
-    if not candidates:
-        print("No new eligible curriculum groups remain for this model+harness+index scope.")
-        return
-
-    print(
-        "Current curriculum step: "
-        f"{selection['current_step_count']} "
-        f"({selection['current_step_pass_count']}/{selection['step_pass_target']} passed)"
-    )
-    print(f"Highest successful step count so far: {progress['highest_successful_step_count']}")
-    print(f"Next batch starts at global rank: {selection['batch_start_rank']}")
-
-    prepared_batch = prepare_curriculum_batch(
-        config=config,
-        candidate_entries=candidates,
-        current_step_count=int(selection["current_step_count"]),
-    )
-    if not prepared_batch["runnable_cases"] and not prepared_batch["conversion_failures"]:
-        print("No runnable curriculum cases found at the current step count.")
-        return
-
-    try:
-        render_curriculum_pngs(
-            input_path=config.train_input,
-            index_path=config.curriculum_index_path,
-            cache_path=config.lookup_cache_path,
-            output_dir=runtime_base / "training_data" / "flower_curriculum_pngs",
-            entries=[dict(item["entry"]) for item in prepared_batch["runnable_cases"]],
-            only_missing=True,
+    while True:
+        progress = curriculum_history(
+            store,
+            model_name=config.model_name,
+            harness=config.harness,
+            curriculum_index_path=config.curriculum_index_path,
         )
-    except Exception as e:
-        print(f"Warning: PNG rendering failed ({e}), continuing without visualization...")
-
-    existing_hashes: Dict[str, set] = {}
-    best_scores_by_call: Dict[str, float] = {}
-    for call_name in set(MINEABLE_SUBAGENTS.values()):
-        examples = load_call_few_shot_examples(call_name, runtime_base)
-        existing_hashes[call_name] = {hashlib.sha256(ex.get("output", "").encode()).hexdigest()[:16] for ex in examples}
-        best_scores_by_call[call_name] = best_few_shot_score(call_name, runtime_base)
-
-    if config.dry_run:
-        with pushd(runtime_base):
-            eval_run_id, case_results = run_curriculum_batch(config, prepared_batch=prepared_batch, store=store, base_dir=runtime_base)
-    else:
-        eval_run_id, case_results = run_curriculum_batch(config, prepared_batch=prepared_batch, store=store, base_dir=runtime_base)
-
-    scores = [result["score"] for result in case_results if "score" in result]
-    mean_score = sum(scores) / len(scores) if scores else 0.0
-    pass_count = sum(1 for result in case_results if result.get("passed"))
-    pass_rate = pass_count / len(case_results) if case_results else 0.0
-    current_step_before = int(selection["current_step_count"])
-    current_step_passes_before = int(progress["pass_count_by_step"].get(current_step_before, 0))
-    current_step_passes_after = current_step_passes_before + sum(
-        1
-        for result in case_results
-        if result.get("passed") and int((result.get("entry") or {}).get("step_count") or 0) == current_step_before
-    )
-    step_advance_ready = current_step_passes_after >= config.step_pass_target
-    sa_analysis = analyze_subagent_performance(case_results)
-
-    print(f"\nBatch Summary: mean_score={mean_score:.3f}, pass_rate={pass_rate:.1%}, attempted={len(case_results)}")
-    print(
-        "Step progression: "
-        f"{current_step_passes_after}/{config.step_pass_target} passes at step {current_step_before}; "
-        f"advance_ready={step_advance_ready}"
-    )
-
-    examples_mined: Dict[str, int] = {}
-    stopped_early = mean_score < config.min_score_threshold
-    if any(not result.get("passed") for result in case_results):
-        diag_path = save_error_diagnostics(workspace, "curriculum", case_results, config.dry_run)
-        print(f"Error diagnostics saved to: {diag_path}")
-
-    if mean_score >= config.mining_score_threshold and not stopped_early:
-        case_scores = {result["case_id"]: result["score"] for result in case_results if result.get("score") is not None}
-        mined = mine_few_shots(case_results, config, existing_hashes, best_scores_by_call)
-        if mined:
-            examples_mined = apply_mined_examples(
-                mined,
-                store,
-                runtime_base,
-                workspace,
-                config.dry_run,
-                "curriculum",
-                case_scores,
-                model_name=config.model_name,
+        selection = next_curriculum_candidates(
+            index_entries,
+            attempted_case_ids=progress["attempted_case_ids"],
+            pass_count_by_step=progress["pass_count_by_step"],
+            required_passes_per_step=config.step_pass_target,
+            step_count_override=config.step_count_filter,
+            allow_repeats=False,
+        )
+        candidates = list(selection["candidates"])
+        if not candidates and config.loop_when_done:
+            selection = next_curriculum_candidates(
+                index_entries,
+                attempted_case_ids=progress["attempted_case_ids"],
+                pass_count_by_step=progress["pass_count_by_step"],
+                required_passes_per_step=config.step_pass_target,
+                step_count_override=config.step_count_filter,
+                allow_repeats=True,
             )
-            print(f"Mined few-shots: {examples_mined}")
+            candidates = list(selection["candidates"])
+        if not candidates:
+            print("No new eligible curriculum groups remain for this model+harness+index scope.")
+            return
 
-    log = {
-        "config": {
-            "model_name": config.model_name,
-            "harness": config.harness,
-            "eval_set_id": config.eval_set_id,
-            "group_size": config.group_size,
-            "step_pass_target": config.step_pass_target,
-            "min_score_threshold": config.min_score_threshold,
-            "mining_score_threshold": config.mining_score_threshold,
-            "dry_run": config.dry_run,
-            "coordination_topology": config.coordination_topology,
-            "curriculum_index_path": str(config.curriculum_index_path),
-            "train_input": str(config.train_input),
-        },
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "current_step_count": selection["current_step_count"],
-        "step_pass_target": selection["step_pass_target"],
-        "current_step_pass_count_before_run": selection["current_step_pass_count"],
-        "current_step_pass_count_after_run": current_step_passes_after,
-        "highest_successful_step_count_before_run": progress["highest_successful_step_count"],
-        "batch_start_rank": selection["batch_start_rank"],
-        "eval_run_id": eval_run_id,
-        "mean_score": round(mean_score, 4),
-        "pass_rate": round(pass_rate, 4),
-        "pass_count": pass_count,
-        "attempted_cases": len(case_results),
-        "step_advance_ready": step_advance_ready,
-        "examples_mined": examples_mined,
-        "failing_subagents": sa_analysis["consistently_failing"],
-        "subagent_scores": sa_analysis["subagents"],
-        "case_results": [{k: v for k, v in result.items() if k != "step_outputs"} for result in case_results],
-        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
-    log_path = workspace / "evolution_log.json"
-    log_path.write_text(json.dumps(log, indent=2, default=str))
+        print(
+            "Current curriculum step: "
+            f"{selection['current_step_count']} "
+            f"({selection['current_step_pass_count']}/{selection['step_pass_target']} passed)"
+        )
+        print(f"Highest successful step count so far: {progress['highest_successful_step_count']}")
+        print(f"Next batch starts at global rank: {selection['batch_start_rank']}")
 
-    print(f"\nEvolution log: {log_path}")
-    if config.dry_run:
-        print(f"Dry run — no permanent changes to skills/. Shadow dir: {workspace}")
-    else:
-        print("Full run — few-shot files in skills/mechanistic/ have been updated.")
+        prepared_batch = prepare_curriculum_batch(
+            config=config,
+            candidate_entries=candidates,
+            current_step_count=int(selection["current_step_count"]),
+        )
+        if not prepared_batch["runnable_cases"] and not prepared_batch["conversion_failures"]:
+            print("No runnable curriculum cases found at the current step count.")
+            continue
+
+        try:
+            render_curriculum_pngs(
+                input_path=config.train_input,
+                index_path=config.curriculum_index_path,
+                cache_path=config.lookup_cache_path,
+                output_dir=runtime_base / "training_data" / "flower_curriculum_pngs",
+                entries=[dict(item["entry"]) for item in prepared_batch["runnable_cases"]],
+                only_missing=True,
+            )
+        except Exception as e:
+            print(f"Warning: PNG rendering failed ({e}), continuing without visualization...")
+
+        existing_hashes = {}
+        best_scores_by_call = {}
+        for call_name in set(MINEABLE_SUBAGENTS.values()):
+            examples = load_call_few_shot_examples(call_name, runtime_base)
+            existing_hashes[call_name] = {hashlib.sha256(ex.get("output", "").encode()).hexdigest()[:16] for ex in examples}
+            best_scores_by_call[call_name] = best_few_shot_score(call_name, runtime_base)
+        evolution_log_path = workspace / "evolution_log.json"
+        accumulated_examples_mined: Dict[str, int] = {}
+
+        if config.dry_run:
+            with pushd(runtime_base):
+                eval_run_id, case_results = run_curriculum_batch(
+                    config,
+                    prepared_batch=prepared_batch,
+                    store=store,
+                    base_dir=runtime_base,
+                    existing_hashes=existing_hashes,
+                    best_scores_by_call=best_scores_by_call,
+                    workspace=workspace,
+                    evolution_log_path=evolution_log_path,
+                    selection_meta=selection,
+                    progress=progress,
+                    accumulated_examples_mined=accumulated_examples_mined,
+                )
+        else:
+            eval_run_id, case_results = run_curriculum_batch(
+                config,
+                prepared_batch=prepared_batch,
+                store=store,
+                base_dir=runtime_base,
+                existing_hashes=existing_hashes,
+                best_scores_by_call=best_scores_by_call,
+                workspace=workspace,
+                evolution_log_path=evolution_log_path,
+                selection_meta=selection,
+                progress=progress,
+                accumulated_examples_mined=accumulated_examples_mined,
+            )
+
+        scores = [result["score"] for result in case_results if "score" in result]
+        mean_score = sum(scores) / len(scores) if scores else 0.0
+        pass_count = sum(1 for result in case_results if result.get("passed"))
+        pass_rate = pass_count / len(case_results) if case_results else 0.0
+        current_step_before = int(selection["current_step_count"])
+        current_step_passes_before = int(progress["pass_count_by_step"].get(current_step_before, 0))
+        current_step_passes_after = current_step_passes_before + sum(
+            1
+            for result in case_results
+            if result.get("passed") and int((result.get("entry") or {}).get("step_count") or 0) == current_step_before
+        )
+        step_advance_ready = current_step_passes_after >= config.step_pass_target
+        sa_analysis = analyze_subagent_performance(case_results)
+
+        print(f"\nBatch Summary: mean_score={mean_score:.3f}, pass_rate={pass_rate:.1%}, attempted={len(case_results)}")
+        print(
+            "Step progression: "
+            f"{current_step_passes_after}/{config.step_pass_target} passes at step {current_step_before}; "
+            f"advance_ready={step_advance_ready}"
+        )
+        if accumulated_examples_mined:
+            print(f"Mined few-shots (this batch): {accumulated_examples_mined}")
+
+        stopped_early = mean_score < config.min_score_threshold
+        if any(not result.get("passed") for result in case_results):
+            diag_path = save_error_diagnostics(workspace, "curriculum", case_results, config.dry_run)
+            print(f"Error diagnostics saved to: {diag_path}")
+
+        log = {
+            "config": {
+                "model_name": config.model_name,
+                "harness": config.harness,
+                "eval_set_id": config.eval_set_id,
+                "group_size": config.group_size,
+                "step_pass_target": config.step_pass_target,
+                "min_score_threshold": config.min_score_threshold,
+                "mining_score_threshold": config.mining_score_threshold,
+                "dry_run": config.dry_run,
+                "coordination_topology": config.coordination_topology,
+                "thinking_level": config.thinking_level,
+                "curriculum_index_path": str(config.curriculum_index_path),
+                "train_input": str(config.train_input),
+            },
+            "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "current_step_count": selection["current_step_count"],
+            "step_pass_target": selection["step_pass_target"],
+            "current_step_pass_count_before_run": selection["current_step_pass_count"],
+            "current_step_pass_count_after_run": current_step_passes_after,
+            "highest_successful_step_count_before_run": progress["highest_successful_step_count"],
+            "batch_start_rank": selection["batch_start_rank"],
+            "eval_run_id": eval_run_id,
+            "mean_score": round(mean_score, 4),
+            "pass_rate": round(pass_rate, 4),
+            "pass_count": pass_count,
+            "attempted_cases": len(case_results),
+            "step_advance_ready": step_advance_ready,
+            "examples_mined": dict(accumulated_examples_mined),
+            "failing_subagents": sa_analysis["consistently_failing"],
+            "subagent_scores": sa_analysis["subagents"],
+            "case_results": [{k: v for k, v in result.items() if k != "step_outputs"} for result in case_results],
+            "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        evolution_log_path.write_text(json.dumps(log, indent=2, default=str))
+
+        print(f"\nEvolution log: {evolution_log_path}")
+        if config.dry_run:
+            print(f"Dry run — no permanent changes to skills/. Shadow dir: {workspace}")
+        else:
+            print("Full run — few-shot files in skills/mechanistic/ have been updated.")
 
 
 def main() -> None:
@@ -991,6 +1113,9 @@ def main() -> None:
     parser.add_argument("--max-reproposals-per-step", type=int, default=4, help="Maximum reproposals allowed per mechanism step.")
     parser.add_argument("--seed", type=int, default=42, help="Reserved for deterministic future extensions.")
     parser.add_argument("--coordination-topology", default="centralized_mas", choices=["sas", "centralized_mas", "independent_mas", "decentralized_mas"], help="Coordination topology strategy (default: centralized_mas).")
+    parser.add_argument("--thinking-level", default=None, help="Reasoning level: low, high, max, or auto (default: highest available for the model).")
+    parser.add_argument("--step-count", default="mixed", help="Step count filter: 1, 2, 3, ... 8, or mixed (default: curriculum-driven).")
+    parser.add_argument("--loop", action="store_true", help="When no candidates remain, allow repeats and continue until none.")
     parser.add_argument("--dry-run", action="store_true", help="Store updates in a shadow workspace.")
     parser.add_argument("--train-input", default=str(DEFAULT_FLOWER_INPUT), help="Path to FlowER train.txt.")
     parser.add_argument("--curriculum-index-path", default=str(DEFAULT_INDEX_PATH), help="Curriculum index JSONL path.")
@@ -1004,6 +1129,15 @@ def main() -> None:
             print("Warning: both --group-size and --cases-per-tier provided; using --group-size.")
         else:
             group_size = int(args.cases_per_tier)
+
+    step_count_filter: Optional[int] = None
+    if (args.step_count or "mixed").strip().lower() != "mixed":
+        try:
+            step_count_filter = int(args.step_count)
+            if step_count_filter < 1 or step_count_filter > 20:
+                step_count_filter = None
+        except (TypeError, ValueError):
+            step_count_filter = None
 
     config = EvolutionConfig(
         model_name=args.model_name,
@@ -1022,6 +1156,9 @@ def main() -> None:
         max_reproposals_per_step=max(1, int(args.max_reproposals_per_step)),
         seed=args.seed,
         coordination_topology=args.coordination_topology,
+        thinking_level=args.thinking_level,
+        step_count_filter=step_count_filter,
+        loop_when_done=args.loop,
         train_input=Path(args.train_input),
         curriculum_index_path=Path(args.curriculum_index_path),
         lookup_cache_path=Path(args.lookup_cache_path),
@@ -1033,6 +1170,9 @@ def main() -> None:
     print(f"  Group size: {config.group_size}")
     print(f"  Step pass target: {config.step_pass_target}")
     print(f"  Coordination topology: {config.coordination_topology}")
+    print(f"  Thinking level: {config.thinking_level or 'auto'}")
+    print(f"  Step count filter: {config.step_count_filter or 'mixed'}")
+    print(f"  Loop when done: {config.loop_when_done}")
     print(f"  Curriculum index: {config.curriculum_index_path}")
     print()
     evolve(config)

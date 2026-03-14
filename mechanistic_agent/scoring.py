@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Mapping, Optional
 
+from mechanistic_agent.smiles_utils import normalize_species_for_matching, species_match_signature
+
 
 # Canonical ordered list of subagent IDs used in the harness.
 SUBAGENT_IDS: List[str] = [
@@ -71,12 +73,86 @@ def _normalise_mapping_confidence(value: Any, default: Optional[float] = 0.0) ->
 def _normalized_species(values: Any) -> List[str]:
     if not isinstance(values, list):
         return []
-    out: List[str] = []
-    for item in values:
-        text = str(item).strip()
-        if text:
-            out.append(text)
-    return out
+    return normalize_species_for_matching([str(item) for item in values])
+
+
+def _overall_balance_payload(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+    raw = snapshot.get("overall_balance")
+    if not isinstance(raw, Mapping):
+        return {"grade": "exact", "balanced": True, "final_balance": {"deficit": {}, "surplus": {}}}
+    payload = dict(raw)
+    payload.setdefault("grade", "exact" if payload.get("balanced", True) else "approximate")
+    payload.setdefault("balanced", payload.get("grade") in {"exact", "reconciled"})
+    if not isinstance(payload.get("final_balance"), Mapping):
+        payload["final_balance"] = {
+            "deficit": dict(payload.get("deficit") or {}),
+            "surplus": dict(payload.get("surplus") or {}),
+        }
+    return payload
+
+
+def _overall_balance_component(balance: Mapping[str, Any]) -> float:
+    grade = str(balance.get("grade") or "exact")
+    if grade in {"exact", "reconciled"}:
+        return 1.0
+    if grade == "approximate":
+        return 0.55
+    return 0.0
+
+
+def _overall_balance_penalty(balance: Mapping[str, Any]) -> tuple[float, List[Dict[str, Any]]]:
+    final_balance = balance.get("final_balance") if isinstance(balance.get("final_balance"), Mapping) else {}
+    deficit = final_balance.get("deficit") if isinstance(final_balance, Mapping) else {}
+    surplus = final_balance.get("surplus") if isinstance(final_balance, Mapping) else {}
+    combined: Dict[str, int] = {}
+    for source in (deficit, surplus):
+        if not isinstance(source, Mapping):
+            continue
+        for element, amount in source.items():
+            try:
+                combined[str(element)] = combined.get(str(element), 0) + abs(int(amount))
+            except Exception:
+                continue
+
+    penalty_items: List[Dict[str, Any]] = []
+    penalty_total = 0.0
+    halogens = {"F", "Cl", "Br", "I"}
+    for element, amount in sorted(combined.items()):
+        if amount <= 0:
+            continue
+        if element == "C":
+            per_atom = 0.20
+            cap = 0.40
+            bucket = "backbone"
+        elif element in {"O", "H"}:
+            per_atom = 0.03
+            cap = 0.12
+            bucket = "incidental"
+        elif element in {"N", "S", "P"} or element in halogens:
+            per_atom = 0.08
+            cap = 0.24
+            bucket = "hetero_or_halogen"
+        else:
+            per_atom = 0.08
+            cap = 0.24
+            bucket = "other"
+        value = min(per_atom * amount, cap)
+        penalty_total += value
+        penalty_items.append(
+            {
+                "type": "overall_balance_delta",
+                "element": element,
+                "count": amount,
+                "bucket": bucket,
+                "value": round(value, 4),
+            }
+        )
+
+    if str(balance.get("grade") or "") == "invalid_species":
+        penalty_total += 0.40
+        penalty_items.append({"type": "overall_balance_invalid_species", "value": 0.4})
+
+    return min(penalty_total, 0.40), penalty_items
 
 
 def _validation_check_score(validation: Mapping[str, Any] | None) -> float:
@@ -184,7 +260,7 @@ def _known_targets(expected: Mapping[str, Any] | None) -> List[Dict[str, Any]]:
             for step in steps:
                 if not isinstance(step, Mapping):
                     continue
-                target = str(step.get("target_smiles") or "").strip()
+                target = species_match_signature(step.get("target_smiles") or "")
                 if not target:
                     continue
                 out.append({"step_index": int(step.get("step_index") or 0), "target_smiles": target})
@@ -300,24 +376,37 @@ def score_snapshot_against_known(
 
     validity_component = (sum(validity_scores) / len(validity_scores)) if validity_scores else 0.0
     alignment_component = (sum(alignment_scores) / len(alignment_scores)) if alignment_scores else 0.0
-    penalty_total = min(penalty_total, 0.4)
+    balance_payload = _overall_balance_payload(snapshot)
+    balance_component = _overall_balance_component(balance_payload)
+    balance_penalty_total, balance_penalty_items = _overall_balance_penalty(balance_payload)
+    penalty_total = min(penalty_total + balance_penalty_total, 0.4)
 
-    overall = (0.45 * validity_component) + (0.35 * alignment_component) + (0.20 * final_component) - penalty_total
+    overall = (
+        (0.35 * validity_component)
+        + (0.25 * alignment_component)
+        + (0.20 * final_component)
+        + (0.20 * balance_component)
+        - penalty_total
+    )
     overall = max(0.0, min(overall, 1.0))
     if not final_reached:
         overall = min(overall, 0.55)
 
-    passed = final_reached and overall >= 0.70
+    balance_grade = str(balance_payload.get("grade") or "exact")
+    passed = final_reached and overall >= 0.70 and balance_grade in {"exact", "reconciled"}
     return {
         "score": round(overall, 6),
         "passed": passed,
         "final_product_component": final_component,
         "final_product_reached": final_reached,
+        "overall_balance_grade": balance_grade,
+        "overall_balance_component": round(balance_component, 6),
         "final_known_product": final_known_product,
         "step_validity_component": round(validity_component, 6),
         "known_alignment_component": round(alignment_component, 6),
         "efficiency_penalty_total": round(penalty_total, 6),
-        "penalties": penalty_items,
+        "balance_penalty_total": round(balance_penalty_total, 6),
+        "penalties": penalty_items + balance_penalty_items,
         "accepted_path_step_count": len(accepted),
         "known_step_count": len(known_steps),
         "step_breakdown": step_breakdown,

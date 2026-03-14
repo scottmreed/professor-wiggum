@@ -511,6 +511,10 @@ class RunConfig:
     step_mapping_enabled: bool = True
     arrow_push_annotation_enabled: bool = True
     dbe_policy: Literal["strict", "soft"] = "soft"
+    chemistry_backend: Literal["auto", "rdkit_cli", "python"] = "auto"
+    chemistry_backend_parity: bool = False
+    rdkit_cli_command: str = "rdkit_cli"
+    rdkit_cli_timeout_seconds: float = 5.0
     reaction_template_policy: Literal["off", "auto"] = "auto"
     reaction_template_confidence_threshold: float = 0.65
     reaction_template_margin_threshold: float = 0.10
@@ -534,6 +538,8 @@ class RunConfig:
     ralph_parent_run_id: Optional[str] = None
     proceed_on_validation_failure: bool = True
     proceed_only_on_arrow_push_failure: bool = False
+    runtime_trace_enabled: bool = False
+    runtime_trace_label: Optional[str] = None
 
 
 @dataclass(slots=True)

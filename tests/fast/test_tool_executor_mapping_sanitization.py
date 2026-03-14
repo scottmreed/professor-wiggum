@@ -51,9 +51,9 @@ def test_run_intermediates_strips_mapping_from_llm_inputs(monkeypatch) -> None:
     assert captured["products"] == ["C=O"]
     assert captured["current_state"] == ["CO"]
     assert captured["previous_intermediates"] == ["CO"]
-    assert captured["mapped_starting_materials"] == ["[CH3:1][OH:2]"]
-    assert captured["mapped_products"] == ["[CH2:1]=[O:2]"]
-    assert captured["mapped_current_state"] == ["[CH3:1][OH:2]"]
+    assert captured["mapped_starting_materials"] == []
+    assert captured["mapped_products"] == []
+    assert captured["mapped_current_state"] == []
 
 
 def test_run_candidate_rescue_strips_mapping(monkeypatch) -> None:

@@ -1170,17 +1170,22 @@ def next_curriculum_candidates(
     attempted_case_ids: Iterable[str],
     pass_count_by_step: Dict[int, int] | Dict[str, int] | None = None,
     required_passes_per_step: int = 50,
+    step_count_override: Optional[int] = None,
+    allow_repeats: bool = False,
 ) -> Dict[str, Any]:
-    attempted = set(str(item) for item in attempted_case_ids)
+    attempted = set(str(item) for item in attempted_case_ids) if not allow_repeats else set()
     normalized_pass_counts = {
         int(step_count): int(count)
         for step_count, count in dict(pass_count_by_step or {}).items()
     }
-    current_step_count = current_curriculum_step_count(
-        index_entries,
-        pass_count_by_step=normalized_pass_counts,
-        required_passes_per_step=required_passes_per_step,
-    )
+    if step_count_override is not None:
+        current_step_count = step_count_override
+    else:
+        current_step_count = current_curriculum_step_count(
+            index_entries,
+            pass_count_by_step=normalized_pass_counts,
+            required_passes_per_step=required_passes_per_step,
+        )
     candidates: List[Dict[str, Any]] = []
     for raw_entry in index_entries:
         entry = raw_entry.as_dict() if isinstance(raw_entry, CurriculumIndexEntry) else dict(raw_entry)

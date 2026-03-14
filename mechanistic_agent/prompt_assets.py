@@ -342,6 +342,71 @@ def append_call_few_shot_example(
     return path
 
 
+def write_call_few_shot_examples(
+    call_name: str,
+    examples: List[Dict[str, Any]],
+    *,
+    base_dir: Path | None = None,
+    model_name: str | None = None,
+) -> Path:
+    """Merge-write examples into the appropriate few_shot.jsonl file.
+
+    Deduplicates by example_key. A new example replaces an existing one only
+    if its score is >= the stored score (or the stored entry has no score).
+    Net effect: the file always holds the best-known version of each example.
+
+    Each dict in `examples` must have: input, output.
+    Optional: score, example_key, source_run_quality.
+    """
+    selected_model = str(model_name or _active_model_name() or "").strip() or None
+    path = (
+        (_call_override_dir(normalize_call_name(call_name), selected_model, base_dir) / "few_shot.jsonl")
+        if selected_model
+        else call_few_shot_path(call_name, base_dir)
+    )
+
+    # Load existing entries keyed by example_key.
+    existing: Dict[str, Dict[str, Any]] = {}
+    if path.exists():
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                obj = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+            key = obj.get("example_key") or hashlib.sha256(
+                f"{obj.get('input', '')}\n\0{obj.get('output', '')}".encode("utf-8")
+            ).hexdigest()[:16]
+            existing[key] = obj
+
+    # Merge: new example wins only when its score is better (or existing has none).
+    for ex in examples:
+        key = ex.get("example_key") or hashlib.sha256(
+            f"{ex.get('input', '')}\n\0{ex.get('output', '')}".encode("utf-8")
+        ).hexdigest()[:16]
+        new_score = ex.get("score")
+        old_score = existing.get(key, {}).get("score")
+        if key not in existing or (
+            new_score is not None and (old_score is None or float(new_score) >= float(old_score))
+        ):
+            payload: Dict[str, Any] = {"input": ex["input"], "output": ex["output"]}
+            if new_score is not None:
+                payload["score"] = round(float(new_score), 6)
+            payload["example_key"] = key
+            if ex.get("source_run_quality") in {"clean", "soft", "failed"}:
+                payload["source_run_quality"] = ex["source_run_quality"]
+            existing[key] = payload
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(json.dumps(v, sort_keys=True) for v in existing.values()) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _tool_schema_for_call_name(call_name: str) -> Dict[str, Any] | None:
     from mechanistic_agent.tool_schemas import (
         ASSESS_CONDITIONS_TOOL,

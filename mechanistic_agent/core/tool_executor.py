@@ -75,7 +75,7 @@ class ToolExecutor:
         )
 
     def run_functional_groups(self, smiles: List[str]) -> Dict[str, Any]:
-        return self._parse(fingerprint_functional_groups(smiles))
+        return self._parse(fingerprint_functional_groups(self._sanitize_species_list(smiles)))
 
     def run_missing_reagents(
         self,
@@ -112,9 +112,9 @@ class ToolExecutor:
                 products=self._sanitize_species_list(products),
                 current_state=self._sanitize_species_list(current_state),
                 previous_intermediates=self._sanitize_species_list(previous_intermediates),
-                mapped_starting_materials=list(starting),
-                mapped_products=list(products),
-                mapped_current_state=list(current_state),
+                mapped_starting_materials=[],
+                mapped_products=[],
+                mapped_current_state=[],
                 ph=ph,
                 temperature=temperature,
                 step_index=step_index,

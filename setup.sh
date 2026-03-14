@@ -46,6 +46,14 @@ pip install -r requirements.txt
 echo "🔧 Installing project in development mode..."
 pip install -e .
 
+# Install Node dependencies for rdkit_cli backend
+if command -v npm >/dev/null 2>&1; then
+    echo "🧪 Installing Node dependencies (rdkit_cli backend)..."
+    npm install
+else
+    echo "⚠️ npm not found; rdkit_cli backend will be unavailable until npm install is run."
+fi
+
 # Verify setup
 echo "✅ Verifying setup..."
 python -c "from mechanistic_agent.config import ReactionInputs; print('✅ Package imported successfully')"

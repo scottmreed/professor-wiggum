@@ -21,6 +21,16 @@ bash setup.sh
 source .venv/bin/activate
 ```
 
+## rdkit_cli Backend (Policy-Compliant Install)
+
+If you plan to run with `MECHANISTIC_CHEMISTRY_BACKEND=rdkit_cli`, install the repo-local Node dependency (do not use `npm link`):
+
+```bash
+npm install
+```
+
+This installs `rdkit_cli` into `./node_modules` so backend resolution uses a package path inside the repository.
+
 ## Environment Variables
 
 ```bash

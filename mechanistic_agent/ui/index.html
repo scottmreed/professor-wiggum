@@ -153,24 +153,6 @@
               <input id="maxStepsInput" type="number" min="1" max="20" value="6" />
             </label>
             <label>
-              Frontend mode
-              <select id="frontendModeInput">
-                <option value="predict">Predict mechanism</option>
-              </select>
-            </label>
-          </div>
-          <div class="grid two">
-            <label>
-              Import SMIRKS
-              <textarea id="smirksInput" placeholder="CC.O>>CCO" rows="1"></textarea>
-            </label>
-            <label class="inline-wrap">
-              <span>SMIRKS actions</span>
-              <button id="parseSmirksBtn" type="button" title="Parse a SMIRKS string into starting materials and products">Parse SMIRKS</button>
-            </label>
-          </div>
-          <div class="grid two">
-            <label>
               <span>Orchestration <span class="help-tip" data-tip="Standard = single attempt. RAlph = iterative multi-attempt with budget controls.">?</span></span>
               <select id="orchestrationModeInput">
                 <option value="standard">standard</option>

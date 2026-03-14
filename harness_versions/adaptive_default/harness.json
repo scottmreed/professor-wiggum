@@ -129,10 +129,10 @@
       "config_gate": "optional_llm_tools:predict_missing_reagents",
       "prompt_call_name": "predict_missing_reagents",
       "group_key": null,
-      "description": "LLM call that receives starting materials, products, and the full conditions_guidance JSON from the previous step (including representative pH and acid/base candidates). Returns any missing reactants or products needed to balance the reaction under the recommended conditions.",
+      "description": "LLM call that receives starting materials, products, and the full conditions_guidance JSON from the previous step (including representative pH and acid/base candidates). Returns any missing reactants or products needed to balance the reaction under the recommended conditions, plus deterministic species-role and proposal-constraint metadata used by the mechanism loop.",
       "io_schema": {
         "inputs": ["starting_materials (SMILES[])", "products (SMILES[])", "conditions_guidance (full JSON from Assess Reaction Conditions)"],
-        "outputs": ["missing_reactants (SMILES[])", "missing_products (SMILES[])", "verification"]
+        "outputs": ["missing_reactants (SMILES[])", "missing_products (SMILES[])", "verification", "species_registry", "proposal_constraints"]
       }
     },
     {
@@ -199,7 +199,7 @@
     "max_retries_per_candidate": 3,
     "description": "Core LLM call executed each iteration of the mechanism loop. Proposes up to max_candidates ranked elementary step candidates from current_state. Each candidate is evaluated by post_step_modules; failed candidates trigger retry or backtracking.",
     "io_schema": {
-      "inputs": ["current_state (SMILES[])", "previous_intermediates", "conditions_guidance", "reaction_type", "atom_mapping_context"],
+      "inputs": ["current_state (SMILES[])", "previous_intermediates", "conditions_guidance", "proposal_constraints", "reaction_type", "atom_mapping_context"],
       "outputs": ["candidates (ranked list of intermediate_smiles, resulting_state, reaction_smirks, electron_pushes, step_label)"]
     }
   },

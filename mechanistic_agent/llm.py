@@ -192,7 +192,20 @@ class _OpenAIChatAdapter:
             params["tools"] = tools
         if tool_choice is not None:
             params["tool_choice"] = tool_choice
-        response = self._client.chat.completions.create(**params, timeout=self._timeout)
+        try:
+            response = self._client.chat.completions.create(**params, timeout=self._timeout)
+        except TypeError as exc:
+            # OpenAI SDK validates top-level kwargs. OpenRouter-specific controls
+            # (e.g. `thinking`, `effort`) must be forwarded via extra_body.
+            if not self._model_kwargs or "unexpected keyword argument" not in str(exc):
+                raise
+            retry_params = dict(params)
+            for key in self._model_kwargs:
+                retry_params.pop(key, None)
+            extra_body = dict(retry_params.get("extra_body") or {})
+            extra_body.update(self._model_kwargs)
+            retry_params["extra_body"] = extra_body
+            response = self._client.chat.completions.create(**retry_params, timeout=self._timeout)
         msg = response.choices[0].message
         text = msg.content or ""
         raw_tool_calls = []
