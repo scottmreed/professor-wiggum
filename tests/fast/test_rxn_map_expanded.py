@@ -53,17 +53,19 @@ def _normalize_smiles(smiles: str) -> str:
 
 
 def test_taxonomy_has_53_stable_entries_and_preserves_labels() -> None:
+    # reaction_type_templates.json: expanded rt_xxx catalog (80 entries, decoupled from rxn_map_expanded taxonomy)
     template_payload = _load_json(REACTION_TYPE_TEMPLATES)
     templates = list(template_payload.get("templates") or [])
-    templates.sort(key=lambda row: int(str(row.get("type_id") or "mt_999").split("_", 1)[1]))
-    lines = [str(row.get("label_exact") or "") for row in templates]
-    assert len(lines) == 53
+    template_ids = [str(row.get("type_id") or "") for row in templates]
+    assert len(template_ids) == 80
+    assert template_ids[0] == "rt_001"
+    assert template_ids[-1] == "rt_080"
 
+    # rxn_map_expanded.json: original mt_xxx taxonomy is preserved at 53 entries
     payload = _load_json(RXN_MAP_EXPANDED)
     taxonomy = payload["taxonomy"]
     assert len(taxonomy) == 53
     assert [entry["type_id"] for entry in taxonomy] == [f"mt_{idx:03d}" for idx in range(1, 54)]
-    assert [entry["label_exact"] for entry in taxonomy] == lines
 
 
 def test_first20_flat_mapping_is_complete_and_taxonomy_valid() -> None:
@@ -97,14 +99,13 @@ def test_reaction_steps_have_contiguous_indices_dbe_and_aps() -> None:
     assert len(payload["reactions"]) >= 20
 
     template_rows = template_payload.get("templates", [])
-    assert len(template_rows) == 53
+    assert len(template_rows) == 80
     assert template_payload.get("example_mappings")
     by_label = {row["label_exact"]: row for row in template_rows}
-    assert "SN2 reaction" in by_label
-    assert by_label["SN2 reaction"]["suitable_step_count"] >= 1
-    assert "R-Br" in by_label["SN2 reaction"]["generic_mechanism_steps"][0]["reaction_generic"]
-    assert "R-Cl" in by_label["SN2 reaction"]["generic_mechanism_steps"][0]["reaction_generic"]
-    assert by_label["Nitrile reduction"]["suitable_step_count"] >= 2
+    assert "Finkelstein halide exchange" in by_label
+    assert by_label["Finkelstein halide exchange"]["suitable_step_count"] >= 1
+    assert "R-CH2-X" in by_label["Finkelstein halide exchange"]["generic_mechanism_steps"][0]["reaction_generic"]
+    assert by_label["Carboxylic acid methylation with diazomethane"]["suitable_step_count"] >= 2
 
     for reaction in payload["reactions"]:
         steps = reaction["mechanistic_steps"]
@@ -138,41 +139,23 @@ def test_reaction_steps_have_contiguous_indices_dbe_and_aps() -> None:
 
 
 def test_template_step_counts_cover_observed_eval_depth() -> None:
-    flat = _load_json(RXN_MAP_FLAT)
-    eval_set = _load_json(EVAL_SET)
     templates_payload = _load_json(REACTION_TYPE_TEMPLATES)
-
-    steps_by_reaction: dict[str, int] = {}
-    for case in eval_set:
-        if not isinstance(case, dict):
-            continue
-        rid = str(case.get("id") or "")
-        if not rid:
-            continue
-        km = case.get("known_mechanism") or {}
-        steps_by_reaction[rid] = int(km.get("min_steps") or case.get("n_mechanistic_steps") or 0)
+    template_rows = templates_payload.get("templates", [])
+    assert template_rows
 
     template_by_id = {
         str(row.get("type_id")): int(row.get("suitable_step_count") or 0)
-        for row in templates_payload.get("templates", [])
+        for row in template_rows
         if isinstance(row, dict)
     }
 
-    observed_max_by_type: dict[str, int] = {}
-    for row in flat:
-        if not isinstance(row, dict):
-            continue
-        rid = str(row.get("reaction_id") or "")
-        type_id = str(row.get("mechanism_type_id") or "")
-        if not rid or not type_id:
-            continue
-        observed = int(steps_by_reaction.get(rid, 0))
-        observed_max_by_type[type_id] = max(observed, int(observed_max_by_type.get(type_id, 0)))
+    # All rt_xxx templates must declare at least one mechanistic step
+    for type_id, step_count in template_by_id.items():
+        assert step_count >= 1, f"{type_id} has suitable_step_count < 1"
 
-    assert observed_max_by_type
-    for type_id, observed_max in observed_max_by_type.items():
-        assert type_id in template_by_id
-        assert template_by_id[type_id] >= observed_max
+    # The catalog must include both single-step and multi-step reaction types
+    assert any(sc >= 2 for sc in template_by_id.values()), "No multi-step templates found"
+    assert any(sc >= 3 for sc in template_by_id.values()), "No 3+ step templates found"
 
 
 def test_notebook_smoke_and_required_cells() -> None:

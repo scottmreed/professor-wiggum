@@ -47,10 +47,10 @@ def build_mermaid_source() -> str:
 
 
 def main() -> int:
-    out_dir = PROJECT_ROOT / "docs"
-    out_dir.mkdir(exist_ok=True)
-    mmd_path = out_dir / "harness_flow.mmd"
-    png_path = out_dir / "harness_flow_snapshot.png"
+    out_dir = PROJECT_ROOT / "docs" / "diagrams"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    mmd_path = out_dir / "Harness_Configuration_Flowchart.mmd"
+    png_path = out_dir / "Harness_Configuration_Flowchart.png"
 
     mermaid_src = build_mermaid_source()
     mmd_path.write_text(mermaid_src, encoding="utf-8")
@@ -70,7 +70,7 @@ def main() -> int:
         print("npx not found. Install Node.js and ensure npx is on PATH.", file=sys.stderr)
         return 2
 
-    print(f"Rendered harness diagram to {png_path}")
+    print(f"Rendered harness diagram to {png_path} (source: {mmd_path})")
     return 0
 
 

@@ -35,7 +35,7 @@ def _normalise_template(template: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _type_sort_key(type_id: str) -> tuple[int, str]:
-    match = re.fullmatch(r"mt_(\d+)", str(type_id))
+    match = re.fullmatch(r"(?:mt|rt)_(\d+)", str(type_id))
     if not match:
         return (10_000_000, str(type_id))
     return (int(match.group(1)), str(type_id))
@@ -236,29 +236,41 @@ def suggest_reaction_type_for_example(
         }
 
     if "n+]=[n-" in reactants:
-        picked = _pick("Methyl ester synthesis", 0.68, "Example fallback: diazomethane-like methylation pattern.")
+        picked = _pick(
+            "Carboxylic acid methylation with diazomethane",
+            0.68,
+            "Example fallback: diazomethane-like methylation pattern.",
+        )
         if picked:
             return picked
     if "[i-]" in reactants and ("cl" in reactants or "br" in reactants):
-        picked = _pick("SN2 reaction", 0.60, "Example fallback: halide exchange substitution motif.")
+        picked = _pick(
+            "Finkelstein halide exchange",
+            0.60,
+            "Example fallback: halide exchange substitution motif.",
+        )
         if picked:
             return picked
     if "c(=o)cl" in reactants and ("o" in reactants or "oc" in reactants):
         picked = _pick(
-            "Nucleophilic attack to (thio)carbonyl",
+            "Amide formation from acid chloride and amine",
             0.62,
             "Example fallback: acyl chloride + nucleophile addition/substitution motif.",
         )
         if picked:
             return picked
     if "cc#n" in reactants and ("n=" in products_blob or "n(" in products_blob):
-        picked = _pick("Imine formation", 0.52, "Example fallback: nitrile/nitrogen pattern suggests imine manifold.")
+        picked = _pick(
+            "Oxime formation from carbonyl compound",
+            0.52,
+            "Example fallback: nitrile/nitrogen pattern suggests imine-like manifold.",
+        )
         if picked:
             return picked
 
     # Safe default keeps examples mapped to at least one suggested template.
     return _pick(
-        "Nucleophilic attack to (thio)carbonyl",
+        "Acetate ester hydrolysis",
         0.35,
         "Example fallback: default mechanistic-template suggestion.",
     )

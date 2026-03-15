@@ -164,4 +164,4 @@ If you see the second set of patterns, the right response is not to add more gua
 
 ## References
 
-- [2512.08296v2.pdf](file:///Users/scottreed/Desktop/Mechanistic/Refs/2512.08296v2.pdf) - Guide to harness design
+- **Towards a Science of Scaling Agent Systems** — Yubin Kim, Ken Gu, Chanwoo Park, Chunjong Park, Samuel Schmidgall, A. Ali Heydari, Yao Yan, Zhihan Zhang, Yuchen Zhuang, Mark Malhotra, Paul Pu Liang, Hae Won Park, Yuzhe Yang, Xuhai Xu, Yilun Du, Shwetak Patel, Tim Althoff, Daniel McDuff, Xin Liu. *arXiv preprint arXiv:2512.08296*, 2025. [arxiv.org/abs/2512.08296](https://arxiv.org/abs/2512.08296) — guide to harness design.

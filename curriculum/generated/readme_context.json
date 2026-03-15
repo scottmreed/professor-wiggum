@@ -114,7 +114,7 @@
     "calendar": "curriculum/generated/readme_context.json",
     "checkpoints": "curriculum/checkpoints/",
     "history": "docs/history_and_reproducibility.md",
-    "leaderboard": "curriculum/generated/leaderboard_anthropic__claude-opus-4.6.json",
+    "leaderboard": "curriculum/generated/leaderboard_anthropic_claude-opus-4.6.json",
     "operations": "docs/curriculum_operations.md",
     "upcoming_reactions": "training_data/flower_curriculum_pngs/index.json"
   },

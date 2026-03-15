@@ -116,8 +116,6 @@ coverage/
 
 # Generated images and visualizations
 data/*_step_*.png
-docs/harness_flow.mmd
-
 # Example images downloaded at build time
 frontend/public/assets/example-*.png
 
@@ -137,6 +135,7 @@ training_data/*
 
 # Reaction type taxonomy and derived rxn map (build_rxn_map_expanded.py)
 !training_data/reaction_type_templates.json
+!training_data/reaction_type_templates_examples.json
 !training_data/rxn_map_expanded.json
 !training_data/eval_mechanism_map.json
 
@@ -145,6 +144,10 @@ training_data/*
 !training_data/flower_mechanism_index_sample.jsonl
 !training_data/flower_mechanism_index_report.json
 !training_data/REGENERATE.md
+
+# Reaction template PNGs (generated, local only — do not track)
+training_data/rxn_templates/
+training_data/rxn_template_examples/
 
 # Curriculum PNGs — track index only, not images
 !training_data/flower_curriculum_pngs/

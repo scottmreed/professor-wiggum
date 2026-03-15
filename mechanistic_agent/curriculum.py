@@ -21,7 +21,15 @@ OPUS_MODEL = "anthropic/claude-opus-4.6"
 COURSE_PATH = Path("curriculum/course.yaml")
 CHECKPOINTS_DIR = Path("curriculum/checkpoints")
 GENERATED_DIR = Path("curriculum/generated")
-LEADERBOARD_JSON_PATH = GENERATED_DIR / "leaderboard_opus.json"
+
+
+def _leaderboard_filename_for_model(model_name: str) -> str:
+    """Leaderboard JSON filename for a model (family_model, single underscore)."""
+    slug = str(model_name or OPUS_MODEL).replace("/", "_")
+    return f"leaderboard_{slug}.json"
+
+
+LEADERBOARD_JSON_PATH = GENERATED_DIR / _leaderboard_filename_for_model(OPUS_MODEL)
 README_CONTEXT_PATH = GENERATED_DIR / "readme_context.json"
 
 DEFAULT_COURSE_CONFIG: Dict[str, Any] = {
@@ -432,7 +440,7 @@ def build_readme_context(base_dir: Path, store: RunStore, *, model_name: str = O
             }
         )
     model_slug = str(model_name or OPUS_MODEL).replace("/", "__")
-    leaderboard_filename = f"leaderboard_{model_slug}.json"
+    leaderboard_filename = _leaderboard_filename_for_model(model_name or OPUS_MODEL)
     models_dir = base_dir / "skills" / "mechanistic" / "propose_mechanism_step" / "models"
     registered_trainees = []
     if models_dir.is_dir():
@@ -548,7 +556,7 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
         )
     else:
         for t in registered_trainees:
-            t_lb = f"curriculum/generated/leaderboard_{t['slug']}.json"
+            t_lb = f"curriculum/generated/{_leaderboard_filename_for_model(t['slug'].replace('__', '/'))}"
             lines.append(f"- [`{t['slug']}`]({t['path']}) — quality: `—` pass-rate: `—` [leaderboard]({t_lb})")
         if not registered_trainees:
             lines.append("- No trainees registered yet.")
@@ -558,8 +566,8 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
         summary = cp.get("summary") or {}
         manifest_path = cp.get("manifest_path") or ""
         manifest_link = f" [{cp.get('release_kind')} manifest]({manifest_path})" if manifest_path else ""
-        cp_slug = str(cp.get("model_name") or model_name or OPUS_MODEL).replace("/", "__")
-        lb_link = f" [leaderboard](curriculum/generated/leaderboard_{cp_slug}.json)"
+        cp_slug = str(cp.get("model_name") or model_name or OPUS_MODEL)
+        lb_link = f" [leaderboard](curriculum/generated/{_leaderboard_filename_for_model(cp_slug)})"
         quality = float(summary.get("mean_quality_score") or 0.0)
         entry = (
             f"- `{cp.get('release_date')}` `{cp.get('release_kind')}` "
@@ -590,7 +598,7 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
             "The default mechanistic harness orchestrates pre-loop analysis, an iterative mechanism-step proposal loop, and post-step validation. "
             "The diagram below matches the flow shown in the frontend app's Progress panel:",
             "",
-            "![Harness flow diagram](docs/harness_flow_snapshot.png)",
+            "![Harness flow diagram](docs/diagrams/Harness_Configuration_Flowchart.png)",
             "",
             "- **Pre-loop** (runs once): Check Atom Balance -> Identify Functional Groups -> Recommend pH -> Assess Reaction Conditions -> "
             "Predict Missing Reagents -> Map Atoms -> Map To Reaction Type",
@@ -598,7 +606,7 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
             "-> Retry or Continue? -> Target Products Reached? (yes -> Run Complete; no -> loop back)",
             "- **Decision gates**: Retry/Backtrack routing when validation fails; Paused when no branch points remain",
             "",
-            "Regenerate the snapshot with `python scripts/capture_harness_mermaid.py`.",
+            "Regenerate the diagram with `python scripts/capture_harness_mermaid.py` (writes docs/diagrams/Harness_Configuration_Flowchart.mmd and .png).",
             "",
             "### Quick Start",
             "",
@@ -881,10 +889,10 @@ def publish_curriculum_release(
     }
     _write_json(checkpoint_path, manifest)
 
-    _model_slug_pub = str(queue_row.get("model_name") or OPUS_MODEL).replace("/", "__")
+    _model_name_pub = str(queue_row.get("model_name") or OPUS_MODEL)
     git_files = [
         str(CHECKPOINTS_DIR / release_date[:4] / f"{release_date}.json"),
-        str(GENERATED_DIR / f"leaderboard_{_model_slug_pub}.json"),
+        str(GENERATED_DIR / _leaderboard_filename_for_model(_model_name_pub)),
         str(README_CONTEXT_PATH),
         "README.md",
     ]
