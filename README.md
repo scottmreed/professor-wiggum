@@ -4,7 +4,9 @@
 
 ## Setup
 
-See [SETUP.md](SETUP.md) for installation, environment variables, RDKit, and test instructions. If you will use the `rdkit_cli` chemistry backend, run `npm install` in the repo root (no `npm link`). You can also contribute without cloning the repo; see [CONTRIBUTING.md](CONTRIBUTING.md).
+See [SETUP.md](SETUP.md) for installation, environment variables, RDKit, and test instructions. You can also contribute without cloning the repo; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+**Data reference:** Eval and curriculum data are derived from FlowER — *Electron flow matching for generative reaction mechanism prediction.* Nature 645, 115–123 (2025). DOI: [10.1038/s41586-025-09426-9](https://doi.org/10.1038/s41586-025-09426-9).
 
 ## Orchestration Modes
 
@@ -22,10 +24,10 @@ Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/
 
 ## Trainee Progress Snapshot
 
-- [Opus family calendar](curriculum/calendars/opus-4.6.md) — active curriculum for `anthropic/claude-opus-4.6`
-- [Sonnet family calendar](curriculum/calendars/sonnet.md) — placeholder, no calendar yet
-- [GPT family calendar](curriculum/calendars/gpt.md) — placeholder, no calendar yet
-- [Gemini family calendar](curriculum/calendars/gemini.md) — placeholder, no calendar yet
+- **Opus family** — [calendar](curriculum/calendars/opus-4.6.md) (active curriculum for `anthropic/claude-opus-4.6`) · [leaderboard](curriculum/generated/leaderboard_anthropic_claude-opus-4.6.json)
+- **Sonnet family** — [calendar](curriculum/calendars/sonnet.md) (placeholder, no calendar yet) · [leaderboard](curriculum/generated/leaderboard_anthropic_claude-sonnet-4.json)
+- **GPT family** — [calendar](curriculum/calendars/gpt.md) (placeholder, no calendar yet) · [leaderboard](curriculum/generated/leaderboard_openai_gpt-5.4.json)
+- **Gemini family** — [calendar](curriculum/calendars/google-gemini.md) (placeholder, no calendar yet) · [leaderboard](curriculum/generated/leaderboard_google_gemini.json)
 
 ## Checkpoints
 
@@ -126,13 +128,13 @@ python main.py eval --eval-set-id eval_set --all-tiers --model anthropic/claude-
 
 The default mechanistic harness orchestrates pre-loop analysis, an iterative mechanism-step proposal loop, and post-step validation. The diagram below matches the flow shown in the frontend app's Progress panel:
 
-![Harness flow diagram](docs/harness_flow_snapshot.png)
+![Harness flow diagram](docs/diagrams/Harness_Configuration_Flowchart.png)
 
 - **Pre-loop** (runs once): Check Atom Balance -> Identify Functional Groups -> Recommend pH -> Assess Reaction Conditions -> Predict Missing Reagents (now also emits species roles and proposal constraints) -> Map Atoms -> Map To Reaction Type
 - **Loop**: Propose Next Mechanism Step (LLM) -> Validate Mechanism Step -> Bond/Electron, Atom Balance, State Progress validators -> Retry or Continue? -> Target Products Reached? (yes -> Run Complete; no -> loop back)
 - **Decision gates**: Retry/Backtrack routing when validation fails; Paused when no branch points remain
 
-Regenerate the snapshot with `python scripts/capture_harness_mermaid.py`.
+Regenerate the diagram with `python scripts/capture_harness_mermaid.py` (writes `docs/diagrams/Harness_Configuration_Flowchart.mmd` and `.png`).
 
 ### Contribution Methods
 

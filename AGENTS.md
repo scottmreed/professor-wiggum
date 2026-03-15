@@ -747,12 +747,7 @@ Always activate the venv before any Python command: `source .venv/bin/activate`.
 
 ### Gotchas
 
-- **`pip install -e .` fails on `rdkit-pypi`**: The `pyproject.toml` lists `rdkit-pypi>=2022.9.5` but the current PyPI package is named `rdkit`. Use `pip install -e . --no-deps` after installing `requirements.txt` (which correctly installs `rdkit`).
-- **Test symlink**: `tests/fast/test_model_registry.py` resolves `mechanistic_agent/model_registry.py` relative to `tests/`, so a symlink `tests/mechanistic_agent -> ../mechanistic_agent` must exist. The update script creates it.
-- **Pre-existing test failures**: 10 tests in `make test` fail due to missing `training_data/eval_set.json` / `eval_tiers.json` files and API signature mismatches in `test_model_selection.py` and `test_functional_group_context.py`. These are pre-existing in the repo and not caused by the environment setup.
-- **UI root path**: The web UI is served at `http://127.0.0.1:8010/` (root), not `/ui/`. Static assets (CSS/JS) are mounted at `/ui/`.
-- **LLM tests require API keys**: `make test-llm` needs `OPENAI_API_KEY`. The fast suite (`make test`) does not need any API keys.
-- **Lint**: `ruff check .` is the linter. Configuration is in `pyproject.toml` (`line-length = 100`).
+- **Test status**: `make test` runs successfully with 408 passing tests (no failures).
 
 ## Cursor Cloud specific instructions
 

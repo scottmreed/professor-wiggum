@@ -33,12 +33,12 @@ jobs:
 
       - name: Commit refreshed curriculum files
         run: |
-          if git diff --quiet -- README.md curriculum/generated/readme_context.json curriculum/generated/leaderboard_opus.json; then
+          if git diff --quiet -- README.md curriculum/generated/; then
             echo "No curriculum README changes."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md curriculum/generated/readme_context.json curriculum/generated/leaderboard_opus.json
+          git add README.md curriculum/generated/
           git commit -m "docs(curriculum): refresh readme context"
           git push

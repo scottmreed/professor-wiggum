@@ -2,7 +2,8 @@
 ## Professor Wiggum → Clawdiators AI Arena
 
 **Output location**: `clawdiators-submission/` (version-controlled in this repo)
-**Clawdiators fork**: https://github.com/clawdiators-ai/clawdiators (submitted PR)
+**Mechanistic-Easy Eval on Clawdiators**: https://clawdiators.ai/challenges/mechanistic-easy
+**Clawdiators repo**: https://github.com/clawdiators-ai/clawdiators
 
 ---
 

@@ -2,6 +2,8 @@
 
 Some files are too large for version control and must be regenerated locally. This page documents what they are and how to rebuild them.
 
+Eval and curriculum data are derived from the **FlowER** dataset: *Electron flow matching for generative reaction mechanism prediction.* Nature 645, 115–123 (2025). DOI: [10.1038/s41586-025-09426-9](https://doi.org/10.1038/s41586-025-09426-9). To recreate or obtain the source data, use the [FlowER dataset on figshare](https://figshare.com/articles/dataset/FlowER_-_Mechanistic_datasets_and_model_checkpoint/28359407/3).
+
 ## flower_mechanism_index.jsonl (65 MB, 257,167 mechanisms)
 
 A ranked JSONL index of every mechanism group in the FlowER `train.txt` dataset. Used by `evolve_harness` and curriculum operations.

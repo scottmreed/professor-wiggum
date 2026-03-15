@@ -28,32 +28,36 @@ Every mergeable PR must show leaderboard improvement on its required eval gate.
 
 ## Check Current SOTA
 
-Use the public Markdown leaderboard to see the current bar before opening a PR.
+Use the public Markdown leaderboard to see the current bar and where there is room for improvement.
 
-1. Find the eval set ID:
-```bash
-sqlite3 data/mechanistic.db "select id, name, version from eval_sets order by created_at desc;"
-```
-2. Regenerate the Markdown leaderboard:
-```bash
-source .venv/bin/activate
-python main.py leaderboard --eval-set-id <eval_set_id> --limit 20 --markdown --output LEADERBOARD.md
-```
-3. Read [LEADERBOARD.md](LEADERBOARD.md):
-If completed rows exist, the rank 1 completed row is the current SOTA for that eval scope. If the file is still a placeholder, the first official `anthropic/claude-opus-4.6` row becomes the initial baseline.
-4. Compare your PR results against that row and state the delta in the PR description.
+1. **Read [LEADERBOARD.md](LEADERBOARD.md)**  
+   If completed rows exist, the rank 1 completed row is the current SOTA for that eval scope. If the file is still a placeholder or has no completed rows for your tier, the first completed row you add for that scope establishes the initial baseline. Compare your PR results against that row and state the delta in the PR description.
 
-Recommended eval naming:
+2. **Run evals** (before claiming a new SOTA). Run the eval tier required by your track (see Core rule table). Results are stored in `data/mechanistic.db`.
+
+3. **If you have run evals and improved on the leaderboard**, regenerate the Markdown leaderboard so your commit includes an up-to-date snapshot:
+   - Find the eval set ID:
+   ```bash
+   sqlite3 data/mechanistic.db "select id, name, version from eval_sets order by created_at desc;"
+   ```
+   - Regenerate the leaderboard:
+   ```bash
+   source .venv/bin/activate
+   python main.py leaderboard --eval-set-id <eval_set_id> --limit 20 --markdown --output LEADERBOARD.md
+   ```
+
+**Recommended eval naming (when adding novel reactions or running evals)**  
+You can use existing FlowER-derived eval sets or create new eval sets from deeper in the FlowER data. FlowER data is from: *Electron flow matching for generative reaction mechanism prediction.* Nature 645, 115–123 (2025). DOI: [10.1038/s41586-025-09426-9](https://doi.org/10.1038/s41586-025-09426-9). To recreate or extend the data, see the [FlowER dataset on figshare](https://figshare.com/articles/dataset/FlowER_-_Mechanistic_datasets_and_model_checkpoint/28359407/3) and [training_data/REGENERATE.md](training_data/REGENERATE.md). When running evals, use an explicit `run_group` so leaderboard comparisons stay readable:
 
 ```bash
 python main.py eval \
   --eval-set-id <eval_set_id> \
   --tier medium \
   --harness default \
-  --run-group pr_medium_<short_slug>
+  --run-group medium_<short_descriptive_slug>
 ```
 
-Use explicit `run_group` names such as `pr_medium_atom_mapping_fix` so leaderboard comparisons stay readable.
+Example: `medium_few_shot_conditions_v2` or `medium_harness_default_mar2026` (a short slug describing the change, not a PR title).
 
 For harness-free baseline references (no API server), run all baseline tiers in one command:
 
@@ -64,6 +68,8 @@ python main.py baseline --all-tiers --model anthropic/claude-opus-4.6 --thinking
 Tier mode reads `training_data/baseline_tier_eval_set_map.json` to resolve tier-specific `eval_set_id` values.
 Tier case IDs default to `training_data/baseline_tiers_clawdiator.json` (fallback: `training_data/eval_tiers.json`).
 
+**Tier requirement for merge.** You do not have to run all three tiers (easy/medium/hard) to merge. Each track requires improvement on its **required** tier only (e.g. medium for Tracks 1, 2, 4; easy for Track 3). When the leaderboard is empty for that scope, the first completed run for the required tier establishes the baseline and a PR can merge if it meets the track’s gate.
+
 Harness eval tier sweeps can also run in one command:
 
 ```bash
@@ -73,8 +79,7 @@ python main.py eval --eval-set-id eval_set --all-tiers --model anthropic/claude-
 ## Public Leaderboard Policy
 
 - [LEADERBOARD.md](LEADERBOARD.md) is the human-readable snapshot for quick review.
-- Regenerate it for any PR that claims a new SOTA or changes an eval gate.
-- Do not hand-edit leaderboard scores.
+- Regenerate it for any PR that claims a new SOTA or changes an eval gate. Use the CLI only: `python main.py leaderboard --eval-set-id <eval_set_id> --limit 20 --markdown --output LEADERBOARD.md` (or, after official holdout runs, `python main.py update-leaderboard-artifacts` to refresh the Arena table and curriculum artifacts). Do not edit leaderboard scores or table rows by hand.
 - Single-reaction submissions do not update `LEADERBOARD.md`.
 
 ## Local-Only Drafts and Dry Runs
@@ -115,7 +120,7 @@ PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py --call <call_name>
 
 ## Practice Eval Set
 
-A 20-reaction practice eval set is provided for local testing. It uses the same format and FlowER source as the official eval set but contains **completely disjoint reactions**.
+A 20-reaction practice eval set is provided for local testing. It uses the same format and FlowER source (see [FlowER dataset on figshare](https://figshare.com/articles/dataset/FlowER_-_Mechanistic_datasets_and_model_checkpoint/28359407/3) and [training_data/REGENERATE.md](training_data/REGENERATE.md)) as the official eval set but contains **completely disjoint reactions**.
 
 ```bash
 source .venv/bin/activate
