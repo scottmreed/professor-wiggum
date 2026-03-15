@@ -9,6 +9,7 @@ import typer
 
 import main as main_module
 from main import (
+    _build_development_leaderboard_status,
     _build_baseline_tier_execution_plan,
     _list_attempted_eval_case_ids_for_scope,
     _load_baseline_tier_eval_set_map,
@@ -61,6 +62,87 @@ def _write_eval_tiers(base: Path, *, easy: list[str], medium: list[str], hard: l
         ),
         encoding="utf-8",
     )
+
+
+def _write_development_leaderboard_policy(
+    base: Path,
+    *,
+    initial_tier: str = "easy",
+    initial_case_count: int = 10,
+    next_case_count: int = 10,
+    extend_increment: int = 10,
+    active_sources: dict[str, str] | None = None,
+) -> None:
+    training = base / "training_data"
+    training.mkdir(parents=True, exist_ok=True)
+    (training / "development_leaderboard_policy.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "comparison_scope": "model_name+thinking_level",
+                "tier_order": ["easy", "medium", "hard"],
+                "initial_qualifying": {
+                    "tier": initial_tier,
+                    "case_count": initial_case_count,
+                },
+                "extend": {"case_increment": extend_increment},
+                "next_tier": {"case_count": next_case_count},
+                "tier_definition_sources": {
+                    "eval_tiers": {"path": "training_data/eval_tiers.json"},
+                    "baseline_tiers_clawdiator": {"path": "training_data/baseline_tiers_clawdiator.json"},
+                },
+                "active_tier_sources": active_sources
+                or {
+                    "easy": "eval_tiers",
+                    "medium": "baseline_tiers_clawdiator",
+                    "hard": "baseline_tiers_clawdiator",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _seed_eval_set_cases(store: RunStore, *, name: str, case_ids: list[str], purpose: str = "general") -> str:
+    return store.add_eval_set(
+        name=name,
+        version="v1",
+        source_path=None,
+        sha256=None,
+        cases=[
+            {
+                "case_id": case_id,
+                "input": {
+                    "starting_materials": ["CCBr", "[Cl-]"],
+                    "products": ["CCCl", "[Br-]"],
+                    "temperature_celsius": 25.0,
+                    "ph": None,
+                },
+                "expected": {"products": ["CCCl", "[Br-]"]},
+            }
+            for case_id in case_ids
+        ],
+        active=True,
+        purpose=purpose,
+        exposed_in_ui=(purpose != "leaderboard_holdout"),
+    )
+
+
+def _write_tier_map(base: Path, *, easy_id: str, medium_id: str, hard_id: str) -> Path:
+    training = base / "training_data"
+    training.mkdir(parents=True, exist_ok=True)
+    path = training / "tier_map.json"
+    path.write_text(
+        json.dumps(
+            {
+                "easy": {"eval_set_id": easy_id},
+                "medium": {"eval_set_id": medium_id},
+                "hard": {"eval_set_id": hard_id},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
 
 
 def test_normalize_requested_baseline_tiers_order_and_dedup() -> None:
@@ -502,11 +584,17 @@ def test_eval_all_tiers_uses_tier_map_and_suffixes_run_group(
 
     calls: list[dict] = []
 
-    def _fake_eval_cmd(**kwargs):  # noqa: ANN003
+    def _fake_execute(**kwargs):  # noqa: ANN003
         calls.append(dict(kwargs))
+        return {
+            "completed": 1,
+            "failed": 0,
+            "eval_run_id": f"run_{kwargs['run_group']}",
+            "eval_case_ids_hash": "hash",
+        }
 
     monkeypatch.chdir(base)
-    monkeypatch.setattr(main_module, "eval_cmd", _fake_eval_cmd)
+    monkeypatch.setattr(main_module, "_execute_harness_eval_run", _fake_execute)
 
     eval_cmd(
         eval_set_id="ignored",
@@ -528,9 +616,9 @@ def test_eval_all_tiers_uses_tier_map_and_suffixes_run_group(
         allow_holdout=False,
     )
 
-    assert [c["eval_set_id"] for c in calls] == [easy_id, medium_id, hard_id]
+    assert [c["resolved_eval_set"].eval_set_id for c in calls] == [easy_id, medium_id, hard_id]
     assert [c["run_group"] for c in calls] == ["grp_easy", "grp_medium", "grp_hard"]
-    assert [len(c["case_ids"]) for c in calls] == [1, 1, 1]
+    assert [len(c["selected_case_ids"]) for c in calls] == [1, 1, 1]
 
 
 def test_baseline_all_tiers_fail_fast_when_any_tier_has_no_unrun_cases(
@@ -741,7 +829,7 @@ def test_eval_all_tiers_fail_fast_when_any_tier_has_no_unrun_cases(
     )
 
     monkeypatch.chdir(base)
-    monkeypatch.setattr(main_module, "eval_cmd", lambda **_kwargs: None)
+    monkeypatch.setattr(main_module, "_execute_harness_eval_run", lambda **_kwargs: None)
 
     with pytest.raises(typer.BadParameter, match="0 unrun cases"):
         eval_cmd(
@@ -810,11 +898,17 @@ def test_eval_all_tiers_allow_repeats_bypasses_unrun_filter(
 
     calls: list[dict] = []
 
-    def _fake_eval_cmd(**kwargs):  # noqa: ANN003
+    def _fake_execute(**kwargs):  # noqa: ANN003
         calls.append(dict(kwargs))
+        return {
+            "completed": 1,
+            "failed": 0,
+            "eval_run_id": f"run_{kwargs['run_group']}",
+            "eval_case_ids_hash": "hash",
+        }
 
     monkeypatch.chdir(base)
-    monkeypatch.setattr(main_module, "eval_cmd", _fake_eval_cmd)
+    monkeypatch.setattr(main_module, "_execute_harness_eval_run", _fake_execute)
 
     eval_cmd(
         eval_set_id="ignored",
@@ -836,4 +930,261 @@ def test_eval_all_tiers_allow_repeats_bypasses_unrun_filter(
         allow_holdout=False,
     )
 
-    assert [c["eval_set_id"] for c in calls] == [easy_id, medium_id, hard_id]
+    assert [c["resolved_eval_set"].eval_set_id for c in calls] == [easy_id, medium_id, hard_id]
+
+
+def test_eval_run_db_adds_metadata_json_for_legacy_schema(tmp_path: Path) -> None:
+    db_path = tmp_path / "data" / "mechanistic.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE eval_runs (
+                id TEXT PRIMARY KEY,
+                eval_set_id TEXT NOT NULL,
+                run_group_name TEXT,
+                model TEXT,
+                model_name TEXT,
+                model_family TEXT,
+                thinking_level TEXT,
+                harness_bundle_hash TEXT,
+                status TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    store = RunStore(db_path)
+    row = store.create_eval_run(
+        eval_set_id="eval",
+        run_group_name="grp",
+        model="anthropic/claude-opus-4.6",
+        model_name="anthropic/claude-opus-4.6",
+        model_family="claude",
+        thinking_level="high",
+        harness_bundle_hash="hash",
+        metadata={"route_kind": "seed"},
+        status="completed",
+    )
+
+    fetched = store.get_eval_run(row)
+    assert fetched is not None
+    assert fetched["metadata"]["route_kind"] == "seed"
+
+
+def test_development_leaderboard_status_uses_policy_selected_sources(tmp_path: Path) -> None:
+    base = tmp_path
+    _write_eval_tiers(base, easy=[f"easy_{i:02d}" for i in range(1, 13)], medium=[], hard=[])
+    training = base / "training_data"
+    (training / "baseline_tiers_clawdiator.json").write_text(
+        json.dumps(
+            {
+                "_meta": {"source": "pytest"},
+                "easy": ["alt_easy_01", "alt_easy_02"],
+                "medium": [f"medium_{i:02d}" for i in range(1, 15)],
+                "hard": [f"hard_{i:02d}" for i in range(1, 15)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_development_leaderboard_policy(base)
+
+    store = RunStore(base / "data" / "mechanistic.db")
+    easy_id = _seed_eval_set_cases(store, name="easy_set", case_ids=[f"easy_{i:02d}" for i in range(1, 13)])
+    medium_id = _seed_eval_set_cases(store, name="medium_set", case_ids=[f"medium_{i:02d}" for i in range(1, 15)])
+    hard_id = _seed_eval_set_cases(store, name="hard_set", case_ids=[f"hard_{i:02d}" for i in range(1, 15)])
+    tier_map_path = _write_tier_map(base, easy_id=easy_id, medium_id=medium_id, hard_id=hard_id)
+
+    status = _build_development_leaderboard_status(
+        base=base,
+        store=store,
+        model_name="anthropic/claude-opus-4.6",
+        thinking_level="high",
+        requested_tier="easy",
+        tier_map_path=str(tier_map_path),
+        tier_definitions_path=None,
+        allow_holdout=False,
+    )
+
+    assert status["tier_contexts"]["easy"]["source_name"] == "eval_tiers"
+    assert status["tier_contexts"]["medium"]["source_name"] == "baseline_tiers_clawdiator"
+    assert status["recommended_route"]["key"] == "seed"
+    assert status["recommended_route"]["case_ids"] == [f"easy_{i:02d}" for i in range(1, 11)]
+
+
+def test_development_leaderboard_status_finds_same_extend_and_next_routes(tmp_path: Path) -> None:
+    base = tmp_path
+    easy_ids = [f"easy_{i:02d}" for i in range(1, 21)]
+    medium_ids = [f"medium_{i:02d}" for i in range(1, 16)]
+    hard_ids = [f"hard_{i:02d}" for i in range(1, 16)]
+    _write_eval_tiers(base, easy=easy_ids, medium=[], hard=[])
+    training = base / "training_data"
+    (training / "baseline_tiers_clawdiator.json").write_text(
+        json.dumps(
+            {
+                "_meta": {"source": "pytest"},
+                "easy": easy_ids,
+                "medium": medium_ids,
+                "hard": hard_ids,
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_development_leaderboard_policy(base)
+
+    store = RunStore(base / "data" / "mechanistic.db")
+    easy_id = _seed_eval_set_cases(store, name="easy_set", case_ids=easy_ids)
+    medium_id = _seed_eval_set_cases(store, name="medium_set", case_ids=medium_ids)
+    hard_id = _seed_eval_set_cases(store, name="hard_set", case_ids=hard_ids)
+    tier_map_path = _write_tier_map(base, easy_id=easy_id, medium_id=medium_id, hard_id=hard_id)
+
+    eval_run_id = store.create_eval_run(
+        eval_set_id=easy_id,
+        run_group_name="seed_easy",
+        model="anthropic/claude-opus-4.6",
+        model_name="anthropic/claude-opus-4.6",
+        model_family="claude",
+        thinking_level="high",
+        harness_bundle_hash="hash",
+        metadata={
+            "planner_version": 1,
+            "route_kind": "seed",
+            "tier_name": "easy",
+            "selected_case_count": 10,
+            "selected_case_ids_hash": main_module.case_ids_hash(easy_ids[:10]),
+            "policy_snapshot": {},
+            "source_eval_run_id": None,
+            "source_case_ids_hash": None,
+            "is_policy_canonical_slice": True,
+        },
+        status="completed",
+    )
+    for idx, case_id in enumerate(easy_ids[:10], start=1):
+        store.record_eval_run_result(
+            eval_run_id=eval_run_id,
+            case_id=case_id,
+            run_id=None,
+            score=0.5 + (idx / 1000.0),
+            passed=True,
+            cost={"total_cost": 0.01},
+            latency_ms=1.0,
+            summary={},
+        )
+
+    status = _build_development_leaderboard_status(
+        base=base,
+        store=store,
+        model_name="anthropic/claude-opus-4.6",
+        thinking_level="high",
+        requested_tier="easy",
+        tier_map_path=str(tier_map_path),
+        tier_definitions_path=None,
+        allow_holdout=False,
+    )
+
+    route_keys = [route["key"] for route in status["routes"]]
+    assert route_keys == ["same", "extend", "next"]
+    assert status["routes"][0]["case_ids"] == easy_ids[:10]
+    assert status["routes"][1]["case_ids"] == easy_ids[:20]
+    assert status["routes"][2]["tier_name"] == "medium"
+    assert status["routes"][2]["case_ids"] == medium_ids[:10]
+
+
+def test_eval_tier_status_only_and_custom_route_use_execute_helper(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    base = tmp_path
+    easy_ids = [f"easy_{i:02d}" for i in range(1, 13)]
+    medium_ids = [f"medium_{i:02d}" for i in range(1, 13)]
+    hard_ids = [f"hard_{i:02d}" for i in range(1, 13)]
+    _write_eval_tiers(base, easy=easy_ids, medium=[], hard=[])
+    training = base / "training_data"
+    (training / "baseline_tiers_clawdiator.json").write_text(
+        json.dumps(
+            {
+                "_meta": {"source": "pytest"},
+                "easy": easy_ids,
+                "medium": medium_ids,
+                "hard": hard_ids,
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_development_leaderboard_policy(base)
+
+    store = RunStore(base / "data" / "mechanistic.db")
+    easy_id = _seed_eval_set_cases(store, name="easy_set", case_ids=easy_ids)
+    medium_id = _seed_eval_set_cases(store, name="medium_set", case_ids=medium_ids)
+    hard_id = _seed_eval_set_cases(store, name="hard_set", case_ids=hard_ids)
+    tier_map_path = _write_tier_map(base, easy_id=easy_id, medium_id=medium_id, hard_id=hard_id)
+
+    executed: list[dict[str, object]] = []
+
+    def _fake_execute(**kwargs):  # noqa: ANN003
+        executed.append(dict(kwargs))
+        return {
+            "completed": 1,
+            "failed": 0,
+            "eval_run_id": "eval-run-1",
+            "eval_case_ids_hash": "hash",
+        }
+
+    monkeypatch.chdir(base)
+    monkeypatch.setattr(main_module, "_execute_harness_eval_run", _fake_execute)
+
+    eval_cmd(
+        eval_set_id="ignored",
+        model_name="anthropic/claude-opus-4.6",
+        thinking_level="high",
+        tier="easy",
+        all_tiers=False,
+        tier_map_path=str(tier_map_path),
+        tier_definitions_path=None,
+        run_group_prefix="grp",
+        case_ids=None,
+        harness="default",
+        run_group=None,
+        max_cases=25,
+        max_steps=10,
+        max_runtime=60.0,
+        allow_repeats=False,
+        leaderboard_status_only=True,
+        json_output=False,
+        allow_holdout=False,
+    )
+
+    assert executed == []
+    assert "Development leaderboard planner" in capsys.readouterr().out
+
+    eval_cmd(
+        eval_set_id="ignored",
+        model_name="anthropic/claude-opus-4.6",
+        thinking_level="high",
+        tier="easy",
+        all_tiers=False,
+        tier_map_path=str(tier_map_path),
+        tier_definitions_path=None,
+        run_group_prefix="grp",
+        case_ids=["easy_03", "easy_01"],
+        harness="default",
+        run_group=None,
+        max_cases=25,
+        max_steps=10,
+        max_runtime=60.0,
+        allow_repeats=False,
+        leaderboard_route="custom",
+        json_output=False,
+        allow_holdout=False,
+    )
+
+    assert executed
+    assert executed[0]["selected_case_ids"] == ["easy_03", "easy_01"]
+    assert executed[0]["planner_metadata"]["route_kind"] == "custom"

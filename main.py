@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 import sqlite3
+import sys
 import threading
 import time
 import uuid
@@ -571,6 +572,9 @@ BASELINE_TIER_NAMES: tuple[str, str, str] = ("easy", "medium", "hard")
 BASELINE_TIER_MAP_DEFAULT_PATH: Path = Path("training_data") / "baseline_tier_eval_set_map.json"
 BASELINE_TIER_DEFINITIONS_DEFAULT_PATH: Path = Path("training_data") / "baseline_tiers_clawdiator.json"
 EVAL_TIERS_DEFAULT_PATH: Path = Path("training_data") / "eval_tiers.json"
+DEVELOPMENT_LEADERBOARD_POLICY_DEFAULT_PATH: Path = (
+    Path("training_data") / "development_leaderboard_policy.json"
+)
 
 
 def _load_eval_tier_ids(tier_file: Path) -> Dict[str, List[str]]:
@@ -660,6 +664,603 @@ def _load_baseline_tier_eval_set_map(path: Path) -> Dict[str, str]:
             f"Tier map file {path} is missing required tiers: {', '.join(missing_tiers)}"
         )
     return resolved
+
+
+def _load_development_leaderboard_policy(base: Path) -> Dict[str, Any]:
+    path = (base / DEVELOPMENT_LEADERBOARD_POLICY_DEFAULT_PATH).resolve()
+    if not path.exists():
+        raise typer.BadParameter(
+            f"Development leaderboard policy file not found: {path}"
+        )
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"Invalid JSON in development leaderboard policy {path}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise typer.BadParameter(f"Development leaderboard policy must be a JSON object: {path}")
+
+    tier_order = list(raw.get("tier_order") or BASELINE_TIER_NAMES)
+    if tier_order != list(BASELINE_TIER_NAMES):
+        raise typer.BadParameter(
+            "Development leaderboard policy tier_order must be easy, medium, hard"
+        )
+    initial = raw.get("initial_qualifying") or {}
+    if str(initial.get("tier") or "").strip().lower() not in BASELINE_TIER_NAMES:
+        raise typer.BadParameter("Development leaderboard policy initial_qualifying.tier is invalid")
+    try:
+        initial_case_count = int(initial.get("case_count") or 0)
+    except Exception as exc:
+        raise typer.BadParameter(
+            "Development leaderboard policy initial_qualifying.case_count must be an integer"
+        ) from exc
+    if initial_case_count < 1:
+        raise typer.BadParameter("Development leaderboard policy initial_qualifying.case_count must be >= 1")
+
+    next_case_count = int((raw.get("next_tier") or {}).get("case_count") or 0)
+    extend_increment = int((raw.get("extend") or {}).get("case_increment") or 0)
+    if next_case_count < 1 or extend_increment < 1:
+        raise typer.BadParameter("Development leaderboard policy next_tier.case_count and extend.case_increment must be >= 1")
+
+    source_defs = raw.get("tier_definition_sources") or {}
+    if not isinstance(source_defs, dict):
+        raise typer.BadParameter("Development leaderboard policy tier_definition_sources must be an object")
+    active_sources = raw.get("active_tier_sources") or {}
+    if not isinstance(active_sources, dict):
+        raise typer.BadParameter("Development leaderboard policy active_tier_sources must be an object")
+
+    normalized_source_defs: Dict[str, Dict[str, Any]] = {}
+    for source_name, payload in source_defs.items():
+        if not isinstance(payload, dict):
+            raise typer.BadParameter(
+                f"Development leaderboard policy source '{source_name}' must be an object"
+            )
+        rel_path = str(payload.get("path") or "").strip()
+        if not rel_path:
+            raise typer.BadParameter(
+                f"Development leaderboard policy source '{source_name}' must define path"
+            )
+        normalized_source_defs[str(source_name)] = {
+            "path": rel_path,
+        }
+
+    for tier_name in BASELINE_TIER_NAMES:
+        source_name = str(active_sources.get(tier_name) or "").strip()
+        if source_name not in normalized_source_defs:
+            raise typer.BadParameter(
+                f"Development leaderboard policy tier '{tier_name}' references unknown source '{source_name}'"
+            )
+
+    return {
+        "path": str(path),
+        "version": int(raw.get("version") or 1),
+        "description": str(raw.get("description") or "").strip(),
+        "tier_order": tier_order,
+        "initial_qualifying": {
+            "tier": str(initial.get("tier") or "").strip().lower(),
+            "case_count": initial_case_count,
+        },
+        "extend": {"case_increment": extend_increment},
+        "next_tier": {"case_count": next_case_count},
+        "tier_definition_sources": normalized_source_defs,
+        "active_tier_sources": {
+            tier_name: str(active_sources.get(tier_name) or "").strip()
+            for tier_name in BASELINE_TIER_NAMES
+        },
+        "comparison_scope": str(raw.get("comparison_scope") or "model_name+thinking_level"),
+    }
+
+
+def _resolve_development_tier_contexts(
+    *,
+    base: Path,
+    store: RunStore,
+    tier_map_path: Optional[str],
+    tier_definitions_path: Optional[str],
+    allow_holdout: bool,
+) -> Dict[str, Dict[str, Any]]:
+    policy = _load_development_leaderboard_policy(base)
+    resolved_tier_map_path = (
+        Path(tier_map_path).expanduser().resolve()
+        if tier_map_path
+        else (base / BASELINE_TIER_MAP_DEFAULT_PATH).resolve()
+    )
+    tier_eval_set_ids = _load_baseline_tier_eval_set_map(resolved_tier_map_path)
+
+    loaded_sources: Dict[str, Dict[str, Any]] = {}
+    for source_name, payload in policy["tier_definition_sources"].items():
+        if tier_definitions_path:
+            path = Path(tier_definitions_path).expanduser().resolve()
+        else:
+            path = (base / str(payload.get("path") or "")).resolve()
+        loaded_sources[source_name] = {
+            "path": str(path),
+            "tiers": _load_eval_tier_ids(path),
+        }
+
+    contexts: Dict[str, Dict[str, Any]] = {}
+    for tier_name in policy["tier_order"]:
+        eval_set_id = str(tier_eval_set_ids.get(tier_name) or "").strip()
+        if not eval_set_id:
+            raise typer.BadParameter(f"Tier '{tier_name}' has no configured eval_set_id in tier map")
+        try:
+            resolved_eval_set = resolve_eval_set(
+                store=store,
+                requested_eval_set_id=eval_set_id,
+            )
+        except EvalSetResolutionError as exc:
+            raise typer.BadParameter(
+                f"Tier '{tier_name}' references unknown eval_set_id '{eval_set_id}': {exc}"
+            ) from exc
+        if resolved_eval_set.purpose == "leaderboard_holdout" and not allow_holdout:
+            raise typer.BadParameter(
+                f"Tier '{tier_name}' references holdout eval set '{eval_set_id}', "
+                "which is not allowed for development eval planning."
+            )
+
+        source_name = str(policy["active_tier_sources"].get(tier_name) or "")
+        source_payload = loaded_sources[source_name]
+        tier_case_ids = list((source_payload.get("tiers") or {}).get(tier_name) or [])
+        by_id = {
+            str(case.get("case_id") or ""): case
+            for case in resolved_eval_set.cases
+            if str(case.get("case_id") or "")
+        }
+        selected_case_ids = [case_id for case_id in tier_case_ids if case_id in by_id]
+        contexts[tier_name] = {
+            "tier": tier_name,
+            "eval_set_id": eval_set_id,
+            "resolved_eval_set": resolved_eval_set,
+            "source_name": source_name,
+            "source_path": str(source_payload["path"]),
+            "case_ids": selected_case_ids,
+            "case_count": len(selected_case_ids),
+        }
+
+    return {
+        "policy": policy,
+        "tiers": contexts,
+        "tier_map_path": str(resolved_tier_map_path),
+    }
+
+
+def _summarize_eval_run_results(
+    *,
+    run: Dict[str, Any],
+    results: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    scores = [float(item["score"]) for item in results if isinstance(item.get("score"), (int, float))]
+    if not scores:
+        return {}
+    passes = [item.get("pass_bool") for item in results if item.get("pass_bool") is not None]
+    pass_rate = (sum(1 for item in passes if item) / len(passes)) if passes else 0.0
+    total_cost = 0.0
+    for item in results:
+        cost = item.get("cost")
+        if not isinstance(cost, dict):
+            continue
+        value = cost.get("total_cost")
+        if isinstance(value, (int, float)):
+            total_cost += float(value)
+    case_ids = [
+        str(item.get("case_id") or "").strip()
+        for item in results
+        if str(item.get("case_id") or "").strip()
+    ]
+    return {
+        "eval_run_id": str(run.get("id") or ""),
+        "run_group_name": str(run.get("run_group_name") or ""),
+        "status": str(run.get("status") or ""),
+        "created_at": float(run.get("created_at") or 0.0),
+        "mean_quality_score": sum(scores) / len(scores),
+        "deterministic_pass_rate": pass_rate,
+        "total_cost": total_cost,
+        "case_count": len(case_ids),
+        "case_ids": case_ids,
+        "metadata": dict(run.get("metadata") or {}),
+    }
+
+
+def _planner_sort_key(row: Dict[str, Any]) -> tuple[float, float, float]:
+    return (
+        -float(row.get("mean_quality_score") or 0.0),
+        -float(row.get("deterministic_pass_rate") or 0.0),
+        float(row.get("total_cost") or 0.0),
+    )
+
+
+def _planner_case_ids_match_canonical_prefix(
+    *,
+    run_summary: Dict[str, Any],
+    tier_name: str,
+    canonical_case_ids: Sequence[str],
+) -> bool:
+    metadata = run_summary.get("metadata") or {}
+    selected_count = int(metadata.get("selected_case_count") or 0) if metadata else 0
+    selected_hash = str(metadata.get("selected_case_ids_hash") or "") if metadata else ""
+    metadata_tier = str(metadata.get("tier_name") or "") if metadata else ""
+    if selected_count > 0 and selected_hash and metadata_tier == tier_name:
+        expected_case_ids = list(canonical_case_ids[:selected_count])
+        return (
+            len(expected_case_ids) == selected_count
+            and bool(metadata.get("is_policy_canonical_slice"))
+            and selected_hash == case_ids_hash(expected_case_ids)
+        )
+
+    run_case_ids = {
+        str(case_id).strip()
+        for case_id in (run_summary.get("case_ids") or [])
+        if str(case_id).strip()
+    }
+    if not run_case_ids:
+        return False
+    expected_case_ids = list(canonical_case_ids[: len(run_case_ids)])
+    return len(expected_case_ids) == len(run_case_ids) and set(expected_case_ids) == run_case_ids
+
+
+def _collect_development_canonical_rows(
+    *,
+    store: RunStore,
+    tier_contexts: Mapping[str, Dict[str, Any]],
+    model_name: str,
+    thinking_level: Optional[str],
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    normalized_model_name = str(model_name or "").strip()
+    normalized_thinking = str(thinking_level or "").strip().lower()
+
+    for tier_name, context in tier_contexts.items():
+        canonical_case_ids = list(context.get("case_ids") or [])
+        if not canonical_case_ids:
+            continue
+        eval_set_id = str(context.get("eval_set_id") or "")
+        runs = store.list_eval_runs(eval_set_id=eval_set_id)
+        run_ids = [
+            str(run.get("id") or "")
+            for run in runs
+            if (
+                str(run.get("id") or "")
+                and str(run.get("status") or "").lower() == "completed"
+                and str(run.get("model_name") or run.get("model") or "").strip() == normalized_model_name
+                and str(run.get("thinking_level") or "").strip().lower() == normalized_thinking
+            )
+        ]
+        if not run_ids:
+            continue
+        results_by_run = store.list_eval_run_results_many(run_ids)
+        for run in runs:
+            run_id = str(run.get("id") or "")
+            if run_id not in run_ids:
+                continue
+            summary = _summarize_eval_run_results(
+                run=run,
+                results=results_by_run.get(run_id, []),
+            )
+            if not summary:
+                continue
+            if not _planner_case_ids_match_canonical_prefix(
+                run_summary=summary,
+                tier_name=tier_name,
+                canonical_case_ids=canonical_case_ids,
+            ):
+                continue
+            summary.update(
+                {
+                    "tier_name": tier_name,
+                    "eval_set_id": eval_set_id,
+                    "source_name": str(context.get("source_name") or ""),
+                }
+            )
+            rows.append(summary)
+    return rows
+
+
+def _build_development_leaderboard_status(
+    *,
+    base: Path,
+    store: RunStore,
+    model_name: str,
+    thinking_level: Optional[str],
+    requested_tier: str,
+    tier_map_path: Optional[str],
+    tier_definitions_path: Optional[str],
+    allow_holdout: bool,
+) -> Dict[str, Any]:
+    context_bundle = _resolve_development_tier_contexts(
+        base=base,
+        store=store,
+        tier_map_path=tier_map_path,
+        tier_definitions_path=tier_definitions_path,
+        allow_holdout=allow_holdout,
+    )
+    policy = dict(context_bundle["policy"])
+    tier_contexts = dict(context_bundle["tiers"])
+    tier_order = list(policy["tier_order"])
+    rows = _collect_development_canonical_rows(
+        store=store,
+        tier_contexts=tier_contexts,
+        model_name=model_name,
+        thinking_level=thinking_level,
+    )
+
+    rows_by_tier: Dict[str, List[Dict[str, Any]]] = {tier_name: [] for tier_name in tier_order}
+    for row in rows:
+        rows_by_tier.setdefault(str(row.get("tier_name") or ""), []).append(row)
+
+    current_winner: Optional[Dict[str, Any]] = None
+    current_winner_tier: Optional[str] = None
+    for tier_name in reversed(tier_order):
+        tier_rows = rows_by_tier.get(tier_name) or []
+        if not tier_rows:
+            continue
+        current_winner = sorted(tier_rows, key=_planner_sort_key)[0]
+        current_winner_tier = tier_name
+        break
+
+    policy_snapshot = {
+        "version": policy["version"],
+        "path": policy["path"],
+        "comparison_scope": policy["comparison_scope"],
+        "initial_qualifying": dict(policy["initial_qualifying"]),
+        "extend": dict(policy["extend"]),
+        "next_tier": dict(policy["next_tier"]),
+        "active_tier_sources": dict(policy["active_tier_sources"]),
+    }
+
+    routes: List[Dict[str, Any]] = []
+    if current_winner is None:
+        seed_tier = str(policy["initial_qualifying"]["tier"])
+        seed_count = int(policy["initial_qualifying"]["case_count"])
+        seed_context = tier_contexts[seed_tier]
+        seed_case_ids = list(seed_context.get("case_ids") or [])[:seed_count]
+        if not seed_case_ids:
+            raise typer.BadParameter(
+                f"Development leaderboard seed route has 0 available cases for tier '{seed_tier}'"
+            )
+        routes.append(
+            {
+                "key": "seed",
+                "label": "Seed",
+                "tier_name": seed_tier,
+                "eval_set_id": str(seed_context.get("eval_set_id") or ""),
+                "case_ids": seed_case_ids,
+                "case_count": len(seed_case_ids),
+                "description": (
+                    f"Run the policy seed slice on {seed_tier} "
+                    f"({len(seed_case_ids)} case(s)); this establishes the first qualifying row."
+                ),
+                "requires_better_score": False,
+                "source_eval_run_id": None,
+                "source_case_ids_hash": None,
+                "planner_metadata": {
+                    "planner_version": policy["version"],
+                    "route_kind": "seed",
+                    "tier_name": seed_tier,
+                    "selected_case_count": len(seed_case_ids),
+                    "selected_case_ids_hash": case_ids_hash(seed_case_ids),
+                    "policy_snapshot": policy_snapshot,
+                    "source_eval_run_id": None,
+                    "source_case_ids_hash": None,
+                    "is_policy_canonical_slice": True,
+                },
+            }
+        )
+    else:
+        winner_tier = str(current_winner_tier or current_winner.get("tier_name") or "")
+        winner_context = tier_contexts[winner_tier]
+        winner_case_count = int(current_winner.get("case_count") or 0)
+        winner_case_ids = list(winner_context.get("case_ids") or [])[:winner_case_count]
+        winner_case_hash = case_ids_hash(winner_case_ids)
+        routes.append(
+            {
+                "key": "same",
+                "label": "Same",
+                "tier_name": winner_tier,
+                "eval_set_id": str(winner_context.get("eval_set_id") or ""),
+                "case_ids": winner_case_ids,
+                "case_count": len(winner_case_ids),
+                "description": (
+                    f"Rerun the current canonical {winner_tier} slice "
+                    f"({len(winner_case_ids)} case(s)); must beat the current winner."
+                ),
+                "requires_better_score": True,
+                "source_eval_run_id": str(current_winner.get("eval_run_id") or ""),
+                "source_case_ids_hash": winner_case_hash,
+                "planner_metadata": {
+                    "planner_version": policy["version"],
+                    "route_kind": "same",
+                    "tier_name": winner_tier,
+                    "selected_case_count": len(winner_case_ids),
+                    "selected_case_ids_hash": winner_case_hash,
+                    "policy_snapshot": policy_snapshot,
+                    "source_eval_run_id": str(current_winner.get("eval_run_id") or ""),
+                    "source_case_ids_hash": winner_case_hash,
+                    "is_policy_canonical_slice": True,
+                },
+            }
+        )
+
+        extend_increment = int(policy["extend"]["case_increment"])
+        tier_case_ids = list(winner_context.get("case_ids") or [])
+        if winner_case_count < len(tier_case_ids):
+            extend_case_ids = tier_case_ids[: min(len(tier_case_ids), winner_case_count + extend_increment)]
+            routes.append(
+                {
+                    "key": "extend",
+                    "label": "Extend",
+                    "tier_name": winner_tier,
+                    "eval_set_id": str(winner_context.get("eval_set_id") or ""),
+                    "case_ids": extend_case_ids,
+                    "case_count": len(extend_case_ids),
+                    "description": (
+                        f"Extend the current {winner_tier} canonical slice from {winner_case_count} "
+                        f"to {len(extend_case_ids)} case(s); must beat the current winner."
+                    ),
+                    "requires_better_score": True,
+                    "source_eval_run_id": str(current_winner.get("eval_run_id") or ""),
+                    "source_case_ids_hash": winner_case_hash,
+                    "planner_metadata": {
+                        "planner_version": policy["version"],
+                        "route_kind": "extend",
+                        "tier_name": winner_tier,
+                        "selected_case_count": len(extend_case_ids),
+                        "selected_case_ids_hash": case_ids_hash(extend_case_ids),
+                        "policy_snapshot": policy_snapshot,
+                        "source_eval_run_id": str(current_winner.get("eval_run_id") or ""),
+                        "source_case_ids_hash": winner_case_hash,
+                        "is_policy_canonical_slice": True,
+                    },
+                }
+            )
+
+        winner_index = tier_order.index(winner_tier)
+        if winner_index + 1 < len(tier_order):
+            next_tier = tier_order[winner_index + 1]
+            next_context = tier_contexts[next_tier]
+            next_case_count = int(policy["next_tier"]["case_count"])
+            next_case_ids = list(next_context.get("case_ids") or [])[:next_case_count]
+            if next_case_ids:
+                routes.append(
+                    {
+                        "key": "next",
+                        "label": "Next tier",
+                        "tier_name": next_tier,
+                        "eval_set_id": str(next_context.get("eval_set_id") or ""),
+                        "case_ids": next_case_ids,
+                        "case_count": len(next_case_ids),
+                        "description": (
+                            f"Move up to {next_tier} and run the policy seed slice "
+                            f"({len(next_case_ids)} case(s)); any completed scored row qualifies."
+                        ),
+                        "requires_better_score": False,
+                        "source_eval_run_id": str(current_winner.get("eval_run_id") or ""),
+                        "source_case_ids_hash": winner_case_hash,
+                        "planner_metadata": {
+                            "planner_version": policy["version"],
+                            "route_kind": "next",
+                            "tier_name": next_tier,
+                            "selected_case_count": len(next_case_ids),
+                            "selected_case_ids_hash": case_ids_hash(next_case_ids),
+                            "policy_snapshot": policy_snapshot,
+                            "source_eval_run_id": str(current_winner.get("eval_run_id") or ""),
+                            "source_case_ids_hash": winner_case_hash,
+                            "is_policy_canonical_slice": True,
+                        },
+                    }
+                )
+
+    requested_tier_has_cases = bool((tier_contexts.get(requested_tier) or {}).get("case_ids"))
+    return {
+        "policy": policy,
+        "tier_contexts": tier_contexts,
+        "requested_tier": requested_tier,
+        "requested_tier_has_cases": requested_tier_has_cases,
+        "current_winner": current_winner,
+        "current_winner_tier": current_winner_tier,
+        "routes": routes,
+        "recommended_route": routes[0] if routes else None,
+    }
+
+
+def _print_development_leaderboard_status(
+    *,
+    status: Dict[str, Any],
+    model_name: str,
+    thinking_level: Optional[str],
+    include_custom_hint: bool = True,
+) -> None:
+    typer.echo(
+        "Development leaderboard planner: "
+        f"model={model_name} thinking={thinking_level or 'none'} "
+        f"scope={status['policy']['comparison_scope']}"
+    )
+    active_sources = ", ".join(
+        f"{tier}={status['tier_contexts'][tier]['source_name']}"
+        for tier in status["policy"]["tier_order"]
+    )
+    typer.echo(f"  Active tier sources: {active_sources}")
+
+    winner = status.get("current_winner")
+    if winner is None:
+        seed = status["policy"]["initial_qualifying"]
+        typer.echo(
+            "  Current winner: none. "
+            f"The policy seed route starts at {seed['tier']} with {seed['case_count']} case(s)."
+        )
+    else:
+        typer.echo(
+            "  Current winner: "
+            f"tier={winner['tier_name']} cases={winner['case_count']} "
+            f"score={winner['mean_quality_score']:.4f} pass_rate={winner['deterministic_pass_rate']:.4f} "
+            f"run={winner['eval_run_id']}"
+        )
+        if winner.get("run_group_name"):
+            typer.echo(f"    run_group={winner['run_group_name']}")
+
+    if status["requested_tier"] != (status.get("current_winner_tier") or status["policy"]["initial_qualifying"]["tier"]):
+        typer.echo(
+            f"  Requested tier '{status['requested_tier']}' is not the current planner tier; "
+            "the planner is following the highest qualifying tier for this model + thinking scope."
+        )
+
+    typer.echo("  Available routes:")
+    for index, route in enumerate(status.get("routes") or [], start=1):
+        better_text = " must beat current winner" if route.get("requires_better_score") else ""
+        typer.echo(
+            f"    {index}. {route['key']} -> tier={route['tier_name']} "
+            f"cases={route['case_count']} eval_set_id={route['eval_set_id']}{better_text}"
+        )
+        typer.echo(f"       {route['description']}")
+
+    if include_custom_hint:
+        typer.echo(
+            "    custom -> preserve manual tier selection. "
+            "Use --leaderboard-route custom or pass --case-id to bypass planner case selection."
+        )
+
+
+def _is_interactive_tty() -> bool:
+    stdin = getattr(sys, "stdin", None)
+    stdout = getattr(sys, "stdout", None)
+    return bool(stdin and stdout and stdin.isatty() and stdout.isatty())
+
+
+def _select_development_route(
+    *,
+    status: Dict[str, Any],
+    requested_route: str,
+    auto_confirm: bool,
+    json_output: bool,
+) -> Dict[str, Any]:
+    routes = list(status.get("routes") or [])
+    if not routes:
+        raise typer.BadParameter("No development leaderboard routes are available for this scope")
+
+    route_by_key = {str(route["key"]): route for route in routes}
+    if requested_route != "auto":
+        selected = route_by_key.get(requested_route)
+        if selected is None:
+            raise typer.BadParameter(
+                f"Requested leaderboard route '{requested_route}' is not available for this scope"
+            )
+        return selected
+
+    recommended = dict(status.get("recommended_route") or routes[0])
+    if json_output or auto_confirm or not _is_interactive_tty():
+        return recommended
+
+    selection_map = {str(index): route for index, route in enumerate(routes, start=1)}
+    prompt = "Select route"
+    typed = input(f"{prompt} [{'/'.join(selection_map.keys())}/custom] (default 1): ").strip().lower()
+    if not typed:
+        return selection_map["1"]
+    if typed == "custom":
+        raise typer.BadParameter(
+            "Interactive custom selection is only available via --leaderboard-route custom or --case-id."
+        )
+    selected = selection_map.get(typed)
+    if selected is None:
+        raise typer.BadParameter(f"Unknown route selection: {typed}")
+    return selected
 
 
 def _build_baseline_tier_execution_plan(
@@ -2560,288 +3161,31 @@ def curriculum_build_lookup_cmd() -> None:
     typer.echo("Done.")
 
 
-@app.command(name="eval")
-def eval_cmd(
-    eval_set_id: str = typer.Option(..., "--eval-set-id", help="Eval set to run against (ignored if --tier/--all-tiers)"),
-    model_name: str = typer.Option(
-        get_default_model(), "--model-name", "--model",
-        help="Model identifier (e.g. gpt-5.4, claude-opus-4.6)",
-    ),
-    thinking_level: Optional[str] = typer.Option(
-        None, "--thinking-level", "--reasoning", help="Thinking level: low, high, or max (model-dependent)",
-    ),
-    tier: Optional[str] = typer.Option(None, "--tier", help="Tier name: easy, medium, or hard"),
-    all_tiers: bool = typer.Option(
-        False,
-        "--all-tiers",
-        help="Run easy, medium, and hard eval tiers in one command",
-    ),
-    tier_map_path: Optional[str] = typer.Option(
-        None,
-        "--tier-map-path",
-        help="Path to tier eval-set mapping JSON (default: training_data/baseline_tier_eval_set_map.json)",
-    ),
-    tier_definitions_path: Optional[str] = typer.Option(
-        None,
-        "--tier-definitions-path",
-        help=(
-            "Path to tier case-id definitions JSON "
-            "(default: training_data/baseline_tiers_clawdiator.json, fallback: training_data/eval_tiers.json)"
-        ),
-    ),
-    run_group_prefix: str = typer.Option(
-        "cli_eval_tier",
-        "--run-group-prefix",
-        help="Run-group prefix for --all-tiers mode; final name is <prefix>_<tier>",
-    ),
-    case_ids: Optional[List[str]] = typer.Option(None, "--case-id", help="Specific case IDs to run (repeatable)"),
-    harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
-    run_group: Optional[str] = typer.Option(None, "--run-group", help="Run group name for leaderboard"),
-    max_cases: int = typer.Option(
-        25, "--max-cases",
-        help="Max cases per run (per tier when using --tier/--all-tiers)",
-    ),
-    max_per_tier: Optional[int] = typer.Option(
-        None, "--max-per-tier",
-        help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
-    ),
-    max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
-    max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
-    chemistry_backend: str = typer.Option(
-        "auto",
-        "--chemistry-backend",
-        help="Chemistry backend: python (default, no CLI), rdkit_cli, or auto",
-    ),
-    rdkit_cli_command: Optional[str] = typer.Option(
-        None,
-        "--rdkit-cli-command",
-        help="Optional rdkit_cli executable command/path (used when chemistry backend is rdkit_cli/auto)",
-    ),
-    chemistry_backend_parity: bool = typer.Option(
-        False,
-        "--chemistry-backend-parity",
-        help="Enable dual-run parity compare (Python authoritative on mismatch)",
-    ),
-    allow_repeats: bool = typer.Option(
-        False,
-        "--allow-repeats",
-        help="Allow rerunning cases already attempted for this model + thinking level",
-    ),
-    json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
-    trace_runtime: bool = typer.Option(
-        True,
-        "--trace-runtime/--no-trace-runtime",
-        help="Emit compact per-step runtime trace lines during eval runs.",
-    ),
-    allow_holdout: bool = typer.Option(False, "--allow-holdout", hidden=True),
-) -> None:
-    """Run a full harness eval set and record results on the leaderboard.
-
-    Uses the harness pipeline (not baseline single-shot) to evaluate each case.
-    Results are stored in the DB and appear on the leaderboard.
-
-    Use --tier or --all-tiers to run tiered evals (easy/medium/hard). Use --max-cases
-    or --max-per-tier to limit how many examples run per tier. Use -h/--help to list
-    all options.
-    """
-    from typer.models import OptionInfo
-
-    from mechanistic_agent.core import RunCoordinator
+def _execute_harness_eval_run(
+    *,
+    store: RunStore,
+    registry: RegistrySet,
+    resolved_eval_set: Any,
+    model_name: str,
+    thinking_level: Optional[str],
+    harness: str,
+    run_group: Optional[str],
+    max_cases: int,
+    max_steps: int,
+    max_runtime: float,
+    chemistry_backend: str,
+    rdkit_cli_command: Optional[str],
+    chemistry_backend_parity: bool,
+    json_output: bool,
+    trace_runtime: bool,
+    selected_case_ids: Optional[Sequence[str]] = None,
+    planner_metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     from mechanistic_agent.scoring import score_snapshot_against_known, score_subagents_from_step_outputs
 
-    def _unwrap_option(value, fallback=None):  # type: ignore[no-untyped-def]
-        if isinstance(value, OptionInfo):
-            return value.default if value.default is not None else fallback
-        return value if value is not None else fallback
-
-    # When eval_cmd is called programmatically (e.g. from eval_runset_official_cmd),
-    # parameters may still carry Typer's OptionInfo defaults. Normalize them here so
-    # the rest of the function can assume plain Python types.
-    eval_set_id = _unwrap_option(eval_set_id)
-    model_name = _unwrap_option(model_name)
-    thinking_level = _unwrap_option(thinking_level)
-    tier = _unwrap_option(tier)
-    all_tiers = bool(_unwrap_option(all_tiers, False))
-    tier_map_path = _unwrap_option(tier_map_path)
-    tier_definitions_path = _unwrap_option(tier_definitions_path)
-    run_group_prefix = _unwrap_option(run_group_prefix, "")
-    case_ids = _unwrap_option(case_ids)
-    harness = _unwrap_option(harness, "default")
-    run_group = _unwrap_option(run_group)
-    max_cases = int(_unwrap_option(max_cases, 25))
-    max_per_tier = _unwrap_option(max_per_tier)
-    max_steps = int(_unwrap_option(max_steps, 10))
-    max_runtime = float(_unwrap_option(max_runtime, 300.0))
-    chemistry_backend = str(_unwrap_option(chemistry_backend, "auto") or "auto").strip().lower()
-    rdkit_cli_command = _unwrap_option(rdkit_cli_command)
-    chemistry_backend_parity = bool(_unwrap_option(chemistry_backend_parity, False))
-    allow_repeats = bool(_unwrap_option(allow_repeats, False))
-    json_output = bool(_unwrap_option(json_output, False))
-    trace_runtime = bool(_unwrap_option(trace_runtime, True))
-    allow_holdout = bool(_unwrap_option(allow_holdout, False))
-
-    if thinking_level is not None:
-        thinking_level = thinking_level.strip().lower()
-        if thinking_level not in {"low", "high", "max"}:
-            raise typer.BadParameter("thinking-level must be one of: low, high, max")
-    model_name = _canonicalize_model_name_or_raise(model_name)
-
-    if tier and tier not in {"easy", "medium", "hard"}:
-        raise typer.BadParameter("tier must be one of: easy, medium, hard")
-    if chemistry_backend not in {"python", "rdkit_cli", "auto"}:
-        raise typer.BadParameter("chemistry-backend must be one of: python, rdkit_cli, auto")
-    requested_tiers = _normalize_requested_baseline_tiers(
-        ([tier] if tier else None),
-        all_tiers=all_tiers,
-    )
-    run_group_prefix = run_group_prefix.strip()
-    if not run_group_prefix:
-        raise typer.BadParameter("run-group-prefix must not be empty")
-    _max_per_tier: Optional[int] = max_per_tier if isinstance(max_per_tier, int) else None
-    if _max_per_tier is not None and _max_per_tier < 1:
-        raise typer.BadParameter("--max-per-tier must be at least 1 when set")
-
-    base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
-    registry = RegistrySet(base)
+    resolved_eval_set_id = str(resolved_eval_set.eval_set_id)
     model_family = get_model_family(model_name) or "unknown"
     internal_reasoning = to_internal_reasoning_level(thinking_level)
-
-    if requested_tiers:
-        if eval_set_id and not json_output:
-            typer.echo("Ignoring --eval-set-id because --tier/--all-tiers was provided.")
-        resolved_tier_map_path = (
-            Path(tier_map_path).expanduser().resolve()
-            if tier_map_path
-            else (base / BASELINE_TIER_MAP_DEFAULT_PATH).resolve()
-        )
-        resolved_tier_definitions_path = _resolve_baseline_tier_definitions_path(
-            base=base,
-            override_path=tier_definitions_path,
-        )
-        tier_eval_set_ids = _load_baseline_tier_eval_set_map(resolved_tier_map_path)
-        execution_plan = _build_baseline_tier_execution_plan(
-            base=base,
-            store=store,
-            requested_tiers=requested_tiers,
-            tier_eval_set_ids=tier_eval_set_ids,
-            tier_definitions_path=resolved_tier_definitions_path,
-            allow_holdout=allow_holdout,
-        )
-
-        aggregated: List[Dict[str, Any]] = []
-        for item in execution_plan:
-            tier_name = str(item.get("tier") or "")
-            tier_eval_set_id = str(item.get("eval_set_id") or "")
-            tier_case_ids = list(item.get("case_ids") or [])
-            if not allow_repeats:
-                tier_case_ids = _filter_unrun_case_ids_for_model(
-                    store=store,
-                    case_ids=tier_case_ids,
-                    model_name=model_name,
-                    thinking_level=thinking_level,
-                    model_family=model_family,
-                )
-                if not tier_case_ids:
-                    raise typer.BadParameter(
-                        f"Tier '{tier_name}' has 0 unrun cases for model={model_name} "
-                        f"thinking={thinking_level or 'none'}; pass --allow-repeats to rerun."
-                    )
-            tier_run_group = f"{run_group_prefix}_{tier_name}"
-            tier_limit = _max_per_tier if _max_per_tier is not None else max_cases
-            if not json_output:
-                typer.echo(
-                    f"\nRunning harness eval tier '{tier_name}' "
-                    f"(eval_set_id={tier_eval_set_id}, cases={len(tier_case_ids)}, max={tier_limit})..."
-                )
-
-            eval_cmd(
-                eval_set_id=tier_eval_set_id,
-                model_name=model_name,
-                thinking_level=thinking_level,
-                tier=None,
-                all_tiers=False,
-                tier_map_path=tier_map_path,
-                tier_definitions_path=tier_definitions_path,
-                run_group_prefix=run_group_prefix,
-                case_ids=tier_case_ids,
-                harness=harness,
-                run_group=tier_run_group,
-                max_cases=tier_limit,
-                max_per_tier=None,
-                max_steps=max_steps,
-                max_runtime=max_runtime,
-                chemistry_backend=chemistry_backend,
-                rdkit_cli_command=rdkit_cli_command,
-                chemistry_backend_parity=chemistry_backend_parity,
-                allow_repeats=allow_repeats,
-                json_output=False,
-                trace_runtime=trace_runtime,
-                allow_holdout=allow_holdout,
-            )
-            latest = None
-            for row in store.list_eval_runs(eval_set_id=tier_eval_set_id):
-                if str(row.get("run_group_name") or "") == tier_run_group:
-                    latest = row
-                    break
-            if latest:
-                aggregated.append(
-                    {
-                        "tier": tier_name,
-                        "eval_set_id": tier_eval_set_id,
-                        "eval_run_id": str(latest.get("id") or ""),
-                        "run_group_name": tier_run_group,
-                        "status": latest.get("status"),
-                    }
-                )
-
-        if json_output:
-            typer.echo(
-                json.dumps(
-                    {
-                        "mode": "eval_tiers",
-                        "model": model_name,
-                        "thinking_level": thinking_level,
-                        "harness": harness,
-                        "tier_map_path": str(resolved_tier_map_path),
-                        "tier_definitions_path": str(resolved_tier_definitions_path),
-                        "results": aggregated,
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            typer.echo("\nAll requested harness eval tiers complete.")
-        return
-
-    try:
-        resolved_eval_set = resolve_eval_set(
-            store=store,
-            requested_eval_set_id=eval_set_id,
-        )
-    except EvalSetResolutionError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    resolved_eval_set_id = str(resolved_eval_set.eval_set_id)
-    is_holdout = resolved_eval_set.purpose == "leaderboard_holdout"
-    if is_holdout and not allow_holdout:
-        raise typer.BadParameter(
-            "leaderboard_holdout eval sets are restricted to 'eval-runset-official'"
-        )
-
-    # Load eval tier data if needed
-    tier_case_ids: Optional[List[str]] = None
-    if tier:
-        resolved_tier_definitions_path = _resolve_baseline_tier_definitions_path(
-            base=base,
-            override_path=tier_definitions_path,
-        )
-        try:
-            tier_data = _load_eval_tier_ids(resolved_tier_definitions_path)
-        except typer.BadParameter as exc:
-            typer.echo(f"Warning: {exc}; ignoring --tier")
-        else:
-            tier_case_ids = tier_data.get(tier, [])
-
     hashes = registry.bundle_hashes(model_name=model_name)
     eval_run_id = store.create_eval_run(
         eval_set_id=resolved_eval_set_id,
@@ -2851,66 +3195,29 @@ def eval_cmd(
         model_family=model_family,
         thinking_level=thinking_level,
         harness_bundle_hash=hashes.get("prompt_bundle_hash", ""),
+        metadata=planner_metadata,
         status="running",
     )
 
-    all_cases = list(resolved_eval_set.cases)
-    if not all_cases:
-        typer.echo(f"No cases found for eval set {resolved_eval_set_id}")
-        store.set_eval_run_status(eval_run_id, "failed")
-        raise typer.Exit(code=1)
-
-    # Case selection (explicit --case-id stays deterministic/user-controlled).
-    if case_ids:
+    if selected_case_ids:
         selected = select_eval_cases(
-            cases=all_cases,
-            case_ids=case_ids,
-            tier_case_ids=None,
+            cases=resolved_eval_set.cases,
+            case_ids=selected_case_ids,
             max_cases=max_cases,
         )
     else:
-        candidate_cases = select_eval_cases(
-            cases=all_cases,
-            case_ids=None,
-            tier_case_ids=tier_case_ids,
-            max_cases=None,
+        selected = select_eval_cases(
+            cases=resolved_eval_set.cases,
+            max_cases=max_cases,
         )
-        candidate_case_ids = [
-            str(item.get("case_id") or "")
-            for item in candidate_cases
-            if str(item.get("case_id") or "")
-        ]
-        selected_case_ids = list(candidate_case_ids)
-        if not allow_repeats and not is_holdout:
-            selected_case_ids = _filter_unrun_case_ids_for_model(
-                store=store,
-                case_ids=candidate_case_ids,
-                model_name=model_name,
-                thinking_level=thinking_level,
-                model_family=model_family,
-            )
-            if not selected_case_ids:
-                typer.echo(
-                    "No unrun cases remain for the selected scope/model/thinking. "
-                    "Pass --allow-repeats to rerun cases."
-                )
-                store.set_eval_run_status(eval_run_id, "failed")
-                raise typer.Exit(code=1)
-        selected_case_id_set = set(selected_case_ids)
-        selected = [
-            case for case in candidate_cases
-            if str(case.get("case_id") or "") in selected_case_id_set
-        ]
-        if max_cases > 0 and len(selected) > max_cases:
-            selected = selected[:max_cases]
 
     if not selected:
         typer.echo("No cases matched the selection criteria")
         store.set_eval_run_status(eval_run_id, "failed")
         raise typer.Exit(code=1)
 
-    selected_case_ids = [str(item.get("case_id") or "") for item in selected if str(item.get("case_id") or "")]
-    selected_case_ids_digest = case_ids_hash(selected_case_ids)
+    selected_case_ids_list = [str(item.get("case_id") or "") for item in selected if str(item.get("case_id") or "")]
+    selected_case_ids_digest = case_ids_hash(selected_case_ids_list)
     typer.echo(
         f"Running {len(selected)} cases with model={model_name} harness={harness} "
         f"eval_set_id={resolved_eval_set_id} case_ids_hash={selected_case_ids_digest}"
@@ -2924,6 +3231,7 @@ def eval_cmd(
     backend_usage_counts: Dict[str, int] = {}
     backend_fallback_cases = 0
     backend_error_counts: Dict[str, int] = {}
+
     for case in selected:
         case_id = str(case.get("case_id") or "")
         input_payload = case.get("input") or {}
@@ -3000,7 +3308,6 @@ def eval_cmd(
             except Exception:
                 pass
 
-            # Get cost from run snapshot
             cost_summary = snapshot.get("cost_summary") or {}
             run_cost = cost_summary.get("total_cost") or {}
 
@@ -3072,12 +3379,18 @@ def eval_cmd(
             )
             failed += 1
             typer.echo(f"  [{completed + failed}] {case_id}: FAILED ({exc})")
-            all_graded.append({"score": 0.0, "passed": False, "final_product_reached": False,
-                                "known_alignment_component": 0.0, "step_validity_component": 0.0})
+            all_graded.append(
+                {
+                    "score": 0.0,
+                    "passed": False,
+                    "final_product_reached": False,
+                    "known_alignment_component": 0.0,
+                    "step_validity_component": 0.0,
+                }
+            )
 
     store.set_eval_run_status(eval_run_id, "completed")
 
-    # Clawdiators-style aggregate score summary
     if all_graded and not json_output:
         pts = _graded_to_clawdiators_pts(all_graded, all_latencies)
         sep = "=" * 60
@@ -3118,22 +3431,496 @@ def eval_cmd(
         "failed": failed,
         "eval_set_id": resolved_eval_set_id,
         "eval_case_ids_hash": selected_case_ids_digest,
-        "chemistry_backend_usage": backend_usage_counts,
-        "chemistry_backend_fallback_cases": backend_fallback_cases,
-        "rdkit_cli_error_counts": backend_error_counts,
+        "avg_latency_ms": round(sum(all_latencies) / len(all_latencies), 1) if all_latencies else 0.0,
+        "backend_usage_counts": backend_usage_counts,
+        "backend_fallback_cases": backend_fallback_cases,
+        "backend_error_counts": backend_error_counts,
+        "planner_metadata": planner_metadata or {},
     }
     if json_output:
         typer.echo(json.dumps(result_obj, indent=2))
+    return result_obj
+
+
+@app.command(name="eval")
+def eval_cmd(
+    eval_set_id: str = typer.Option(..., "--eval-set-id", help="Eval set to run against (ignored if --tier/--all-tiers)"),
+    model_name: str = typer.Option(
+        get_default_model(), "--model-name", "--model",
+        help="Model identifier (e.g. gpt-5.4, claude-opus-4.6)",
+    ),
+    thinking_level: Optional[str] = typer.Option(
+        None, "--thinking-level", "--reasoning", help="Thinking level: low, high, or max (model-dependent)",
+    ),
+    tier: Optional[str] = typer.Option(None, "--tier", help="Tier name: easy, medium, or hard"),
+    all_tiers: bool = typer.Option(
+        False,
+        "--all-tiers",
+        help="Run easy, medium, and hard eval tiers in one command",
+    ),
+    tier_map_path: Optional[str] = typer.Option(
+        None,
+        "--tier-map-path",
+        help="Path to tier eval-set mapping JSON (default: training_data/baseline_tier_eval_set_map.json)",
+    ),
+    tier_definitions_path: Optional[str] = typer.Option(
+        None,
+        "--tier-definitions-path",
+        help=(
+            "Path to tier case-id definitions JSON "
+            "(default: training_data/baseline_tiers_clawdiator.json, fallback: training_data/eval_tiers.json)"
+        ),
+    ),
+    run_group_prefix: str = typer.Option(
+        "cli_eval_tier",
+        "--run-group-prefix",
+        help="Run-group prefix for --all-tiers mode; final name is <prefix>_<tier>",
+    ),
+    case_ids: Optional[List[str]] = typer.Option(None, "--case-id", help="Specific case IDs to run (repeatable)"),
+    harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
+    run_group: Optional[str] = typer.Option(None, "--run-group", help="Run group name for leaderboard"),
+    max_cases: int = typer.Option(
+        25, "--max-cases",
+        help="Max cases per run (per tier when using --tier/--all-tiers)",
+    ),
+    max_per_tier: Optional[int] = typer.Option(
+        None, "--max-per-tier",
+        help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
+    ),
+    max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
+    max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
+    chemistry_backend: str = typer.Option(
+        "auto",
+        "--chemistry-backend",
+        help="Chemistry backend: python (default, no CLI), rdkit_cli, or auto",
+    ),
+    rdkit_cli_command: Optional[str] = typer.Option(
+        None,
+        "--rdkit-cli-command",
+        help="Optional rdkit_cli executable command/path (used when chemistry backend is rdkit_cli/auto)",
+    ),
+    chemistry_backend_parity: bool = typer.Option(
+        False,
+        "--chemistry-backend-parity",
+        help="Enable dual-run parity compare (Python authoritative on mismatch)",
+    ),
+    allow_repeats: bool = typer.Option(
+        False,
+        "--allow-repeats",
+        help="Allow rerunning cases already attempted for this model + thinking level",
+    ),
+    leaderboard_route: str = typer.Option(
+        "auto",
+        "--leaderboard-route",
+        help="Development leaderboard route: auto, same, extend, next, or custom",
+    ),
+    leaderboard_status_only: bool = typer.Option(
+        False,
+        "--leaderboard-status-only",
+        help="Show development leaderboard route status for a tier flow and exit",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Auto-confirm the recommended development leaderboard route in TTY mode",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
+    trace_runtime: bool = typer.Option(
+        True,
+        "--trace-runtime/--no-trace-runtime",
+        help="Emit compact per-step runtime trace lines during eval runs.",
+    ),
+    allow_holdout: bool = typer.Option(False, "--allow-holdout", hidden=True),
+) -> None:
+    """Run a full harness eval set and record results on the leaderboard.
+
+    Uses the harness pipeline (not baseline single-shot) to evaluate each case.
+    Results are stored in the DB and appear on the leaderboard.
+
+    Use --tier or --all-tiers to run tiered evals (easy/medium/hard). Use --max-cases
+    or --max-per-tier to limit how many examples run per tier. Use -h/--help to list
+    all options.
+    """
+    from typer.models import OptionInfo
+
+    def _unwrap_option(value, fallback=None):  # type: ignore[no-untyped-def]
+        if isinstance(value, OptionInfo):
+            return value.default if value.default is not None else fallback
+        return value if value is not None else fallback
+
+    # When eval_cmd is called programmatically (e.g. from eval_runset_official_cmd),
+    # parameters may still carry Typer's OptionInfo defaults. Normalize them here so
+    # the rest of the function can assume plain Python types.
+    eval_set_id = _unwrap_option(eval_set_id)
+    model_name = _unwrap_option(model_name)
+    thinking_level = _unwrap_option(thinking_level)
+    tier = _unwrap_option(tier)
+    all_tiers = bool(_unwrap_option(all_tiers, False))
+    tier_map_path = _unwrap_option(tier_map_path)
+    tier_definitions_path = _unwrap_option(tier_definitions_path)
+    run_group_prefix = _unwrap_option(run_group_prefix, "")
+    case_ids = _unwrap_option(case_ids)
+    harness = _unwrap_option(harness, "default")
+    run_group = _unwrap_option(run_group)
+    max_cases = int(_unwrap_option(max_cases, 25))
+    max_per_tier = _unwrap_option(max_per_tier)
+    max_steps = int(_unwrap_option(max_steps, 10))
+    max_runtime = float(_unwrap_option(max_runtime, 300.0))
+    chemistry_backend = str(_unwrap_option(chemistry_backend, "auto") or "auto").strip().lower()
+    rdkit_cli_command = _unwrap_option(rdkit_cli_command)
+    chemistry_backend_parity = bool(_unwrap_option(chemistry_backend_parity, False))
+    allow_repeats = bool(_unwrap_option(allow_repeats, False))
+    leaderboard_route = str(_unwrap_option(leaderboard_route, "auto") or "auto").strip().lower()
+    leaderboard_status_only = bool(_unwrap_option(leaderboard_status_only, False))
+    yes = bool(_unwrap_option(yes, False))
+    json_output = bool(_unwrap_option(json_output, False))
+    trace_runtime = bool(_unwrap_option(trace_runtime, True))
+    allow_holdout = bool(_unwrap_option(allow_holdout, False))
+
+    if thinking_level is not None:
+        thinking_level = thinking_level.strip().lower()
+        if thinking_level not in {"low", "high", "max"}:
+            raise typer.BadParameter("thinking-level must be one of: low, high, max")
+    model_name = _canonicalize_model_name_or_raise(model_name)
+
+    if tier and tier not in {"easy", "medium", "hard"}:
+        raise typer.BadParameter("tier must be one of: easy, medium, hard")
+    if leaderboard_route not in {"auto", "same", "extend", "next", "custom"}:
+        raise typer.BadParameter("leaderboard-route must be one of: auto, same, extend, next, custom")
+    if chemistry_backend not in {"python", "rdkit_cli", "auto"}:
+        raise typer.BadParameter("chemistry-backend must be one of: python, rdkit_cli, auto")
+    requested_tiers = _normalize_requested_baseline_tiers(
+        ([tier] if tier else None),
+        all_tiers=all_tiers,
+    )
+    run_group_prefix = run_group_prefix.strip()
+    if not run_group_prefix:
+        raise typer.BadParameter("run-group-prefix must not be empty")
+    _max_per_tier: Optional[int] = max_per_tier if isinstance(max_per_tier, int) else None
+    if _max_per_tier is not None and _max_per_tier < 1:
+        raise typer.BadParameter("--max-per-tier must be at least 1 when set")
+
+    base = Path.cwd()
+    store = RunStore(base / "data" / "mechanistic.db")
+    registry = RegistrySet(base)
+    model_family = get_model_family(model_name) or "unknown"
+    if requested_tiers:
+        if eval_set_id and not json_output:
+            typer.echo("Ignoring --eval-set-id because --tier/--all-tiers was provided.")
+        if all_tiers and not json_output:
+            typer.echo(
+                "Development leaderboard route planner is bypassed for --all-tiers; "
+                "running the explicit sweep instead."
+            )
+        resolved_tier_map_path = (
+            Path(tier_map_path).expanduser().resolve()
+            if tier_map_path
+            else (base / BASELINE_TIER_MAP_DEFAULT_PATH).resolve()
+        )
+        resolved_tier_definitions_path = _resolve_baseline_tier_definitions_path(
+            base=base,
+            override_path=tier_definitions_path,
+        )
+        tier_eval_set_ids = _load_baseline_tier_eval_set_map(resolved_tier_map_path)
+        execution_plan = _build_baseline_tier_execution_plan(
+            base=base,
+            store=store,
+            requested_tiers=requested_tiers,
+            tier_eval_set_ids=tier_eval_set_ids,
+            tier_definitions_path=resolved_tier_definitions_path,
+            allow_holdout=allow_holdout,
+        )
+
+        if not all_tiers:
+            requested_tier = requested_tiers[0]
+            status = _build_development_leaderboard_status(
+                base=base,
+                store=store,
+                model_name=model_name,
+                thinking_level=thinking_level,
+                requested_tier=requested_tier,
+                tier_map_path=tier_map_path,
+                tier_definitions_path=tier_definitions_path,
+                allow_holdout=allow_holdout,
+            )
+            if not json_output:
+                _print_development_leaderboard_status(
+                    status=status,
+                    model_name=model_name,
+                    thinking_level=thinking_level,
+                )
+            if leaderboard_status_only:
+                if json_output:
+                    typer.echo(json.dumps(status, indent=2, default=str))
+                return
+
+            requested_context = status["tier_contexts"][requested_tier]
+            planner_bypassed = bool(case_ids) or leaderboard_route == "custom"
+            selected_tier = requested_tier
+            resolved_eval_set = requested_context["resolved_eval_set"]
+            planner_metadata: Optional[Dict[str, Any]] = None
+
+            if planner_bypassed:
+                if not json_output:
+                    if case_ids:
+                        typer.echo("Development leaderboard planner bypassed because --case-id was provided.")
+                    else:
+                        typer.echo("Development leaderboard planner bypassed by --leaderboard-route custom.")
+                selected_case_ids = [
+                    str(case_id).strip()
+                    for case_id in (case_ids or [])
+                    if str(case_id).strip()
+                ]
+                if not selected_case_ids:
+                    selected_case_ids = list(requested_context.get("case_ids") or [])
+                    if not allow_repeats:
+                        selected_case_ids = _filter_unrun_case_ids_for_model(
+                            store=store,
+                            case_ids=selected_case_ids,
+                            model_name=model_name,
+                            thinking_level=thinking_level,
+                            model_family=model_family,
+                        )
+                        if not selected_case_ids:
+                            raise typer.BadParameter(
+                                f"Tier '{requested_tier}' has 0 unrun cases for model={model_name} "
+                                f"thinking={thinking_level or 'none'}; pass --allow-repeats to rerun."
+                            )
+                    if max_cases > 0:
+                        selected_case_ids = selected_case_ids[:max_cases]
+                planner_metadata = {
+                    "planner_version": status["policy"]["version"],
+                    "route_kind": "custom",
+                    "tier_name": requested_tier,
+                    "selected_case_count": len(selected_case_ids),
+                    "selected_case_ids_hash": case_ids_hash(selected_case_ids),
+                    "policy_snapshot": {
+                        "version": status["policy"]["version"],
+                        "path": status["policy"]["path"],
+                        "comparison_scope": status["policy"]["comparison_scope"],
+                        "active_tier_sources": dict(status["policy"]["active_tier_sources"]),
+                    },
+                    "source_eval_run_id": None,
+                    "source_case_ids_hash": None,
+                    "is_policy_canonical_slice": False,
+                }
+            else:
+                selected_route = _select_development_route(
+                    status=status,
+                    requested_route=leaderboard_route,
+                    auto_confirm=yes,
+                    json_output=json_output,
+                )
+                selected_tier = str(selected_route["tier_name"])
+                resolved_eval_set = status["tier_contexts"][selected_tier]["resolved_eval_set"]
+                selected_case_ids = list(selected_route["case_ids"])
+                planner_metadata = dict(selected_route["planner_metadata"])
+                if not json_output:
+                    typer.echo(
+                        f"Selected development leaderboard route '{selected_route['key']}' "
+                        f"for tier '{selected_tier}'."
+                    )
+
+            tier_run_group = run_group or f"{run_group_prefix}_{selected_tier}"
+            result_obj = _execute_harness_eval_run(
+                store=store,
+                registry=registry,
+                resolved_eval_set=resolved_eval_set,
+                model_name=model_name,
+                thinking_level=thinking_level,
+                harness=harness,
+                run_group=tier_run_group,
+                max_cases=max_cases,
+                max_steps=max_steps,
+                max_runtime=max_runtime,
+                chemistry_backend=chemistry_backend,
+                rdkit_cli_command=rdkit_cli_command,
+                chemistry_backend_parity=chemistry_backend_parity,
+                json_output=json_output,
+                trace_runtime=trace_runtime,
+                selected_case_ids=selected_case_ids,
+                planner_metadata=planner_metadata,
+            )
+            if not json_output:
+                typer.echo(
+                    f"\nHarness eval complete: completed={result_obj['completed']} failed={result_obj['failed']} "
+                    f"eval_run_id={result_obj['eval_run_id']} case_ids_hash={result_obj['eval_case_ids_hash']}"
+                )
+            return
+
+        aggregated: List[Dict[str, Any]] = []
+        for item in execution_plan:
+            tier_name = str(item.get("tier") or "")
+            tier_eval_set_id = str(item.get("eval_set_id") or "")
+            tier_case_ids = list(item.get("case_ids") or [])
+            if not allow_repeats:
+                tier_case_ids = _filter_unrun_case_ids_for_model(
+                    store=store,
+                    case_ids=tier_case_ids,
+                    model_name=model_name,
+                    thinking_level=thinking_level,
+                    model_family=model_family,
+                )
+                if not tier_case_ids:
+                    raise typer.BadParameter(
+                        f"Tier '{tier_name}' has 0 unrun cases for model={model_name} "
+                        f"thinking={thinking_level or 'none'}; pass --allow-repeats to rerun."
+                    )
+            tier_run_group = f"{run_group_prefix}_{tier_name}"
+            tier_limit = _max_per_tier if _max_per_tier is not None else max_cases
+            if not json_output:
+                typer.echo(
+                    f"\nRunning harness eval tier '{tier_name}' "
+                    f"(eval_set_id={tier_eval_set_id}, cases={len(tier_case_ids)}, max={tier_limit})..."
+                )
+
+            result_obj = _execute_harness_eval_run(
+                store=store,
+                registry=registry,
+                resolved_eval_set=item["resolved_eval_set"],
+                model_name=model_name,
+                thinking_level=thinking_level,
+                harness=harness,
+                run_group=tier_run_group,
+                max_cases=tier_limit,
+                max_steps=max_steps,
+                max_runtime=max_runtime,
+                chemistry_backend=chemistry_backend,
+                rdkit_cli_command=rdkit_cli_command,
+                chemistry_backend_parity=chemistry_backend_parity,
+                json_output=False,
+                trace_runtime=trace_runtime,
+                selected_case_ids=tier_case_ids,
+                planner_metadata=None,
+            )
+            aggregated.append(
+                {
+                    "tier": tier_name,
+                    "eval_set_id": tier_eval_set_id,
+                    "eval_run_id": str(result_obj.get("eval_run_id") or ""),
+                    "run_group_name": tier_run_group,
+                    "status": "completed",
+                }
+            )
+
+        if json_output:
+            typer.echo(
+                json.dumps(
+                    {
+                        "mode": "eval_tiers",
+                        "model": model_name,
+                        "thinking_level": thinking_level,
+                        "harness": harness,
+                        "tier_map_path": str(resolved_tier_map_path),
+                        "tier_definitions_path": str(resolved_tier_definitions_path),
+                        "results": aggregated,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            typer.echo("\nAll requested harness eval tiers complete.")
+        return
+
+    if leaderboard_status_only:
+        raise typer.BadParameter("--leaderboard-status-only requires --tier")
+    if leaderboard_route != "auto":
+        raise typer.BadParameter("--leaderboard-route is only supported with --tier")
+    if yes:
+        raise typer.BadParameter("--yes is only supported with --tier")
+
+    try:
+        resolved_eval_set = resolve_eval_set(
+            store=store,
+            requested_eval_set_id=eval_set_id,
+        )
+    except EvalSetResolutionError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    resolved_eval_set_id = str(resolved_eval_set.eval_set_id)
+    is_holdout = resolved_eval_set.purpose == "leaderboard_holdout"
+    if is_holdout and not allow_holdout:
+        raise typer.BadParameter(
+            "leaderboard_holdout eval sets are restricted to 'eval-runset-official'"
+        )
+
+    tier_case_ids: Optional[List[str]] = None
+    if tier:
+        resolved_tier_definitions_path = _resolve_baseline_tier_definitions_path(
+            base=base,
+            override_path=tier_definitions_path,
+        )
+        try:
+            tier_data = _load_eval_tier_ids(resolved_tier_definitions_path)
+        except typer.BadParameter as exc:
+            typer.echo(f"Warning: {exc}; ignoring --tier")
+        else:
+            tier_case_ids = tier_data.get(tier, [])
+
+    all_cases = list(resolved_eval_set.cases)
+    if not all_cases:
+        typer.echo(f"No cases found for eval set {resolved_eval_set_id}")
+        raise typer.Exit(code=1)
+
+    if case_ids:
+        selected_case_ids = [
+            str(case_id).strip()
+            for case_id in case_ids
+            if str(case_id).strip()
+        ]
     else:
-        typer.echo(f"\nEval complete: {completed} completed, {failed} failed")
-        if backend_usage_counts:
-            typer.echo(f"Chemistry backend usage: {backend_usage_counts}")
-            typer.echo(f"Cases with fallback: {backend_fallback_cases}")
-            if backend_error_counts:
-                top_backend_errors = sorted(backend_error_counts.items(), key=lambda item: item[1], reverse=True)[:3]
-                typer.echo(f"Top rdkit_cli errors: {top_backend_errors}")
-        typer.echo(f"Eval run ID: {eval_run_id}")
-        typer.echo(f"View results: python main.py leaderboard --eval-set-id {resolved_eval_set_id}")
+        candidate_cases = select_eval_cases(
+            cases=all_cases,
+            case_ids=None,
+            tier_case_ids=tier_case_ids,
+            max_cases=None,
+        )
+        candidate_case_ids = [
+            str(item.get("case_id") or "")
+            for item in candidate_cases
+            if str(item.get("case_id") or "")
+        ]
+        selected_case_ids = list(candidate_case_ids)
+        if not allow_repeats and not is_holdout:
+            selected_case_ids = _filter_unrun_case_ids_for_model(
+                store=store,
+                case_ids=candidate_case_ids,
+                model_name=model_name,
+                thinking_level=thinking_level,
+                model_family=model_family,
+            )
+            if not selected_case_ids:
+                typer.echo(
+                    "No unrun cases remain for the selected scope/model/thinking. "
+                    "Pass --allow-repeats to rerun cases."
+                )
+                raise typer.Exit(code=1)
+        if max_cases > 0:
+            selected_case_ids = selected_case_ids[:max_cases]
+
+    result_obj = _execute_harness_eval_run(
+        store=store,
+        registry=registry,
+        resolved_eval_set=resolved_eval_set,
+        model_name=model_name,
+        thinking_level=thinking_level,
+        harness=harness,
+        run_group=run_group,
+        max_cases=max_cases,
+        max_steps=max_steps,
+        max_runtime=max_runtime,
+        chemistry_backend=chemistry_backend,
+        rdkit_cli_command=rdkit_cli_command,
+        chemistry_backend_parity=chemistry_backend_parity,
+        json_output=json_output,
+        trace_runtime=trace_runtime,
+        selected_case_ids=selected_case_ids,
+        planner_metadata=None,
+    )
+    if not json_output:
+        typer.echo(
+            f"\nHarness eval complete: completed={result_obj['completed']} failed={result_obj['failed']} "
+            f"eval_run_id={result_obj['eval_run_id']} case_ids_hash={result_obj['eval_case_ids_hash']}"
+        )
 
 
 @app.command(name="eval-runset-official")

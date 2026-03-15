@@ -324,6 +324,7 @@ class RunStore:
                     model_family TEXT,
                     thinking_level TEXT,
                     harness_bundle_hash TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
                     status TEXT NOT NULL,
                     created_at REAL NOT NULL,
                     FOREIGN KEY(eval_set_id) REFERENCES eval_sets(id) ON DELETE CASCADE
@@ -535,6 +536,7 @@ class RunStore:
             self._ensure_column(conn, "eval_runs", "model_name", "TEXT")
             self._ensure_column(conn, "eval_runs", "model_family", "TEXT")
             self._ensure_column(conn, "eval_runs", "thinking_level", "TEXT")
+            self._ensure_column(conn, "eval_runs", "metadata_json", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(conn, "eval_sets", "purpose", "TEXT NOT NULL DEFAULT 'general'")
             self._ensure_column(conn, "eval_sets", "exposed_in_ui_bool", "INTEGER NOT NULL DEFAULT 1")
             conn.execute(
@@ -2278,6 +2280,7 @@ class RunStore:
         model_name: Optional[str] = None,
         model_family: Optional[str] = None,
         thinking_level: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         status: str = "running",
     ) -> str:
         row_id = uuid.uuid4().hex
@@ -2286,8 +2289,8 @@ class RunStore:
                 """
                 INSERT INTO eval_runs(
                     id, eval_set_id, run_group_name, model, model_name, model_family,
-                    thinking_level, harness_bundle_hash, status, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    thinking_level, harness_bundle_hash, metadata_json, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row_id,
@@ -2298,6 +2301,7 @@ class RunStore:
                     model_family,
                     thinking_level,
                     harness_bundle_hash,
+                    self._json_dumps(metadata or {}),
                     status,
                     time.time(),
                 ),
@@ -2406,7 +2410,12 @@ class RunStore:
         query += " ORDER BY created_at DESC"
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
-        return [dict(row) for row in rows]
+        output: List[Dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = self._json_loads(item.pop("metadata_json", None), {})
+            output.append(item)
+        return output
 
     def list_case_attempt_history(
         self,
@@ -2581,7 +2590,9 @@ class RunStore:
             ).fetchone()
         if row is None:
             return None
-        return dict(row)
+        item = dict(row)
+        item["metadata"] = self._json_loads(item.pop("metadata_json", None), {})
+        return item
 
     @staticmethod
     def _extract_case_step_count(case: Dict[str, Any]) -> int:

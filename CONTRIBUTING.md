@@ -20,6 +20,22 @@ Every mergeable PR must show leaderboard improvement on its required eval gate.
 
 “No regression” is not enough for Tracks 1 through 4. Acceptance requires a measurable improvement against the current leaderboard reference for the same eval scope.
 
+## Infra Exception
+
+Eval and leaderboard workflow infrastructure changes are the one explicit exception to the leaderboard-improvement rule.
+
+Examples:
+
+- `main.py eval` route-planner behavior
+- leaderboard documentation and policy files
+- eval-run metadata or reproducibility plumbing
+
+These PRs are mergeable without claiming a new leaderboard improvement if they:
+
+- do not claim a harness-quality improvement
+- include targeted fast tests for the new workflow behavior
+- keep the existing track gates intact for actual prompt, subagent, model, or harness changes
+
 ## Clone Expectations
 
 - Track 5 usually does not require a git clone. You can submit a single reaction through the UI or API and provide traces or notes for review.
@@ -59,6 +75,17 @@ python main.py eval \
 
 Example: `medium_few_shot_conditions_v2` or `medium_harness_default_mar2026` (a short slug describing the change, not a PR title).
 
+For policy-driven single-tier development runs, use the route planner documented in [docs/development_leaderboard_routes.md](docs/development_leaderboard_routes.md). The planner status can be inspected with:
+
+```bash
+python main.py eval \
+  --eval-set-id ignored \
+  --tier easy \
+  --model anthropic/claude-opus-4.6 \
+  --thinking-level high \
+  --leaderboard-status-only
+```
+
 For harness-free baseline references (no API server), run all baseline tiers in one command:
 
 ```bash
@@ -66,7 +93,9 @@ python main.py baseline --all-tiers --model anthropic/claude-opus-4.6 --thinking
 ```
 
 Tier mode reads `training_data/baseline_tier_eval_set_map.json` to resolve tier-specific `eval_set_id` values.
-Tier case IDs default to `training_data/baseline_tiers_clawdiator.json` (fallback: `training_data/eval_tiers.json`).
+The active tier inventory for planner-managed `eval --tier` runs comes from the policy in [training_data/development_leaderboard_policy.json](training_data/development_leaderboard_policy.json), which selects between [training_data/eval_tiers.json](training_data/eval_tiers.json) and [training_data/baseline_tiers_clawdiator.json](training_data/baseline_tiers_clawdiator.json) per tier.
+
+**Tier requirement for merge.** You do not have to run all three tiers (easy/medium/hard) to merge. Each track requires improvement on its **required** tier only (e.g. medium for Tracks 1, 2, 4; easy for Track 3). When the leaderboard is empty for that scope, the first completed run for the required tier establishes the baseline and a PR can merge if it meets the track’s gate.
 
 **Tier requirement for merge.** You do not have to run all three tiers (easy/medium/hard) to merge. Each track requires improvement on its **required** tier only (e.g. medium for Tracks 1, 2, 4; easy for Track 3). When the leaderboard is empty for that scope, the first completed run for the required tier establishes the baseline and a PR can merge if it meets the track’s gate.
 

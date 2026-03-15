@@ -721,6 +721,19 @@ python main.py eval --eval-set-id eval_set --all-tiers --model anthropic/claude-
 In `--all-tiers` mode, `--eval-set-id` is ignored and eval-set IDs come from
 `training_data/baseline_tier_eval_set_map.json`.
 
+For single-tier development leaderboard runs, `python main.py eval --tier ...`
+now uses the policy-driven planner documented in
+`docs/development_leaderboard_routes.md`. The planner:
+
+- compares within exact `model + thinking`
+- reads route policy from `training_data/development_leaderboard_policy.json`
+- treats `training_data/eval_tiers.json` and
+  `training_data/baseline_tiers_clawdiator.json` as synchronized views, with
+  the active per-tier source selected by policy
+- offers `same`, `extend`, `next`, or `custom` routes and persists planner
+  metadata on eval runs
+- is bypassed for `--all-tiers`, `baseline`, and `eval-runset-official`
+
 See `training_data/README.md` for full details.
 
 ## Important Notes
