@@ -97,6 +97,8 @@ The active tier inventory for planner-managed `eval --tier` runs comes from the 
 
 **Tier requirement for merge.** You do not have to run all three tiers (easy/medium/hard) to merge. Each track requires improvement on its **required** tier only (e.g. medium for Tracks 1, 2, 4; easy for Track 3). When the leaderboard is empty for that scope, the first completed run for the required tier establishes the baseline and a PR can merge if it meets the track’s gate.
 
+**Tier requirement for merge.** You do not have to run all three tiers (easy/medium/hard) to merge. Each track requires improvement on its **required** tier only (e.g. medium for Tracks 1, 2, 4; easy for Track 3). When the leaderboard is empty for that scope, the first completed run for the required tier establishes the baseline and a PR can merge if it meets the track’s gate.
+
 Harness eval tier sweeps can also run in one command:
 
 ```bash
