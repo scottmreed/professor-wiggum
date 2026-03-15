@@ -77,6 +77,85 @@ python main.py serve --host 0.0.0.0 --port 9000 --reload
 
 ---
 
+## `eval`
+
+**Purpose:** Run the full harness pipeline against a development eval set or tier and record results on the leaderboard.
+
+Use `eval` when you want a leaderboard-visible harness run. In plain eval-set mode it behaves like the existing harness evaluator. In tier mode (`--tier`) it now uses the development leaderboard route planner, which checks the current leaderboard status for the exact `model + thinking` scope and proposes the next qualifying route.
+
+Tier planner behavior:
+
+- `--tier` loads the development policy from [training_data/development_leaderboard_policy.json](../training_data/development_leaderboard_policy.json)
+- the policy decides which tier inventory view is active per tier
+- interactive terminals prompt for route confirmation unless `--yes` is passed
+- non-interactive runs auto-select the recommended route
+- `--case-id` or `--leaderboard-route custom` bypass planner case selection
+- `--all-tiers` is an explicit sweep and bypasses the planner
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--eval-set-id` | Eval set to run against. Ignored in tier / all-tier flows because tier mapping drives the eval set. | required |
+| `--tier` | Tier name: `easy`, `medium`, or `hard` | — |
+| `--all-tiers` | Run easy, medium, and hard as an explicit sweep | `false` |
+| `--tier-map-path` | Tier → eval-set mapping JSON | `training_data/baseline_tier_eval_set_map.json` |
+| `--tier-definitions-path` | Override tier inventory JSON for advanced/testing use | policy source paths |
+| `--leaderboard-route` | Planner route: `auto`, `same`, `extend`, `next`, or `custom` | `auto` |
+| `--leaderboard-status-only` | Print planner status and exit | `false` |
+| `--yes` | Auto-confirm the recommended planner route in TTY mode | `false` |
+| `--case-id` | Repeatable explicit case IDs; bypasses planner case selection | — |
+| `--run-group-prefix` | Prefix for tier flows; single-tier defaults to `<prefix>_<selected-tier>` | `cli_eval_tier` |
+| `--run-group` | Explicit run-group name | — |
+| `--model-name` / `--model` | Model identifier | from config |
+| `--thinking-level` | Thinking level: `low`, `high`, or `max` | — |
+| `--harness` | Harness name from `harness_versions/` | `default` |
+| `--max-cases` | Max cases per run | `25` |
+| `--max-per-tier` | Max cases per tier in `--all-tiers` mode | — |
+| `--max-steps` | Max mechanism steps per case | `10` |
+| `--max-runtime` | Per-case timeout in seconds | `600` |
+| `--allow-repeats` | Allow rerunning already-attempted cases in non-planner custom flows | `false` |
+| `--json` | Emit JSON output | `false` |
+
+**Examples:**
+
+```bash
+# Show the planner status for a development tier flow
+python main.py eval \
+  --eval-set-id ignored \
+  --tier easy \
+  --model anthropic/claude-opus-4.6 \
+  --thinking-level high \
+  --leaderboard-status-only
+
+# Run the recommended route
+python main.py eval \
+  --eval-set-id ignored \
+  --tier easy \
+  --model anthropic/claude-opus-4.6 \
+  --thinking-level high
+
+# Force the extend route
+python main.py eval \
+  --eval-set-id ignored \
+  --tier easy \
+  --model anthropic/claude-opus-4.6 \
+  --thinking-level high \
+  --leaderboard-route extend
+
+# Bypass planner selection with explicit cases
+python main.py eval \
+  --eval-set-id ignored \
+  --tier easy \
+  --model anthropic/claude-opus-4.6 \
+  --thinking-level high \
+  --leaderboard-route custom \
+  --case-id flower_135501 \
+  --case-id flower_024300
+```
+
+See [Development leaderboard routes](development_leaderboard_routes.md) for the route rules, active tier sources, and current policy semantics.
+
+---
+
 ## `baseline`
 
 **Purpose:** Run harness-free, single-shot baseline mechanism predictions for evaluation or quick checks.
@@ -131,5 +210,6 @@ python main.py baseline --eval-set-id eval_set --model openai/gpt-5.4 --json
 ## See also
 
 - [Custom eval sets](custom_eval_sets.md) — defining and importing eval sets.
+- [Development leaderboard routes](development_leaderboard_routes.md) — policy-driven tier access for `main.py eval`.
 - [AGENTS.md](../AGENTS.md) — runtime architecture, endpoints, and leaderboard/holdout behavior.
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — contribution tracks and eval tier requirements.

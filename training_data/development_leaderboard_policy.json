@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "description": "Policy-driven route planner for development leaderboard access on `python main.py eval --tier ...`.",
+  "comparison_scope": "model_name+thinking_level",
+  "tier_order": [
+    "easy",
+    "medium",
+    "hard"
+  ],
+  "initial_qualifying": {
+    "tier": "easy",
+    "case_count": 10
+  },
+  "extend": {
+    "case_increment": 10
+  },
+  "next_tier": {
+    "case_count": 10
+  },
+  "tier_definition_sources": {
+    "eval_tiers": {
+      "path": "training_data/eval_tiers.json"
+    },
+    "baseline_tiers_clawdiator": {
+      "path": "training_data/baseline_tiers_clawdiator.json"
+    }
+  },
+  "active_tier_sources": {
+    "easy": "eval_tiers",
+    "medium": "baseline_tiers_clawdiator",
+    "hard": "baseline_tiers_clawdiator"
+  }
+}
