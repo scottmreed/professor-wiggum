@@ -206,15 +206,15 @@ def test_backend_parity_mismatch_uses_python(monkeypatch):
 def test_resolve_rdkit_cli_prefers_npm_local_over_path(monkeypatch):
     monkeypatch.setattr(
         "mechanistic_agent.core.chemistry_backend._allowed_rdkit_cli_roots",
-        lambda: (["/repo/node_modules/rdkit_cli"], []),
+        lambda: (["/repo/node_modules/rdkit-agent"], []),
     )
     monkeypatch.setattr(
         "mechanistic_agent.core.chemistry_backend._local_npm_bin",
-        lambda: "/repo/node_modules/.bin/rdkit_cli",
+        lambda: "/repo/node_modules/.bin/rdkit-agent",
     )
 
     def _exists(path: str) -> bool:
-        return path == "/repo/node_modules/.bin/rdkit_cli"
+        return path == "/repo/node_modules/.bin/rdkit-agent"
 
     monkeypatch.setattr("mechanistic_agent.core.chemistry_backend.os.path.exists", _exists)
     monkeypatch.setattr(
@@ -223,48 +223,48 @@ def test_resolve_rdkit_cli_prefers_npm_local_over_path(monkeypatch):
     )
     monkeypatch.setattr(
         "mechanistic_agent.core.chemistry_backend.os.path.realpath",
-        lambda path: "/repo/node_modules/rdkit_cli/bin/rdkit_cli.js"
-        if path == "/repo/node_modules/.bin/rdkit_cli"
+        lambda path: "/repo/node_modules/rdkit-agent/bin/rdkit_cli.js"
+        if path == "/repo/node_modules/.bin/rdkit-agent"
         else path,
     )
     monkeypatch.setattr(
         "mechanistic_agent.core.chemistry_backend.shutil.which",
-        lambda name: "/usr/local/bin/rdkit_cli" if name == "rdkit_cli" else None,
+        lambda name: "/usr/local/bin/rdkit-agent" if name == "rdkit-agent" else None,
     )
-    cfg = ChemistryBackendConfig.from_config({"rdkit_cli_command": "rdkit_cli"})
+    cfg = ChemistryBackendConfig.from_config({"rdkit_cli_command": "rdkit-agent"})
     resolution = resolve_rdkit_cli_command(cfg)
     assert resolution.source == "npm_local_bin"
-    assert resolution.command_parts == ["/repo/node_modules/.bin/rdkit_cli"]
+    assert resolution.command_parts == ["/repo/node_modules/.bin/rdkit-agent"]
     assert resolution.rejected is False
 
 
 def test_resolve_rdkit_cli_rejects_linked_path_binary(monkeypatch):
     monkeypatch.setattr(
         "mechanistic_agent.core.chemistry_backend._allowed_rdkit_cli_roots",
-        lambda: (["/repo/node_modules/rdkit_cli"], ["/Users/scott/PycharmProjects/rdkit-cli"]),
+        lambda: (["/repo/node_modules/rdkit-agent"], ["/Users/scott/PycharmProjects/rdkit-agent"]),
     )
     monkeypatch.setattr(
         "mechanistic_agent.core.chemistry_backend._local_npm_bin",
-        lambda: "/repo/node_modules/.bin/rdkit_cli",
+        lambda: "/repo/node_modules/.bin/rdkit-agent",
     )
     monkeypatch.setattr("mechanistic_agent.core.chemistry_backend.os.path.exists", lambda _path: False)
     monkeypatch.setattr(
         "mechanistic_agent.core.chemistry_backend.shutil.which",
-        lambda name: "/opt/homebrew/bin/rdkit_cli" if name == "rdkit_cli" else None,
+        lambda name: "/opt/homebrew/bin/rdkit-agent" if name == "rdkit-agent" else None,
     )
     monkeypatch.setattr(
         "mechanistic_agent.core.chemistry_backend.os.path.realpath",
-        lambda path: "/Users/scott/PycharmProjects/rdkit-cli/bin/rdkit_cli.js"
-        if path == "/opt/homebrew/bin/rdkit_cli"
+        lambda path: "/Users/scott/PycharmProjects/rdkit-agent/bin/rdkit_cli.js"
+        if path == "/opt/homebrew/bin/rdkit-agent"
         else path,
     )
-    cfg = ChemistryBackendConfig.from_config({"rdkit_cli_command": "rdkit_cli"})
+    cfg = ChemistryBackendConfig.from_config({"rdkit_cli_command": "rdkit-agent"})
     resolution = resolve_rdkit_cli_command(cfg)
     assert resolution.command_parts is None
     assert resolution.source == "path"
     assert resolution.rejected is True
     assert resolution.rejection_reason == "path_binary_outside_npm_roots"
-    assert "linked rdkit_cli package" in str(resolution.warning or "")
+    assert "linked rdkit-agent package" in str(resolution.warning or "")
 
 
 def test_resolve_rdkit_cli_honors_explicit_override(monkeypatch):

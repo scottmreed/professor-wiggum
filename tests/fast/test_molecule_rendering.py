@@ -20,7 +20,6 @@ def _prepare_base(tmp_path: Path) -> Path:
     (tmp_path / "prompt_versions" / "calls" / "propose_mechanism_step").mkdir(parents=True)
     (tmp_path / "prompt_versions" / "calls" / "evaluate_run_judge").mkdir(parents=True)
     (tmp_path / "skills" / "demo").mkdir(parents=True)
-    (tmp_path / "memory_packs").mkdir(parents=True)
     (tmp_path / "mechanistic_agent" / "ui").mkdir(parents=True)
     (tmp_path / "data").mkdir(parents=True)
     (tmp_path / "training_data").mkdir(parents=True)
@@ -39,7 +38,6 @@ def _prepare_base(tmp_path: Path) -> Path:
         (call_dir / "base.md").write_text(f"{call_name} base", encoding="utf-8")
         (call_dir / "few_shot.jsonl").write_text("", encoding="utf-8")
     (tmp_path / "skills" / "demo" / "SKILL.md").write_text("# demo", encoding="utf-8")
-    (tmp_path / "memory_packs" / "pack.md").write_text("memory", encoding="utf-8")
     (tmp_path / "mechanistic_agent" / "ui" / "index.html").write_text("ok", encoding="utf-8")
     (tmp_path / "training_data" / "flower_mechanisms_100.json").write_text(
         '[{"id":"flower_000001","name":"FlowER Example 1","starting_materials":["C=O"],"products":["CO"],"n_mechanistic_steps":1}]',

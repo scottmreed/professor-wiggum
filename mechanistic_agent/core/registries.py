@@ -1,4 +1,4 @@
-"""Registries for prompts, skills, curated memory packs, and harness configs."""
+"""Registries for prompts, skills, and harness configs."""
 from __future__ import annotations
 
 import hashlib
@@ -203,44 +203,6 @@ class SkillRegistry:
         return _bundle_hash((record.path, record.sha256) for record in records)
 
 
-class MemoryPackRegistry:
-    """Loads curated memory packs from memory_packs/*.md|*.json."""
-
-    def __init__(self, memory_dir: Path) -> None:
-        self.memory_dir = memory_dir
-
-    def list(self) -> List[AssetRecord]:
-        records: List[AssetRecord] = []
-        if not self.memory_dir.exists():
-            return records
-        candidates = list(self.memory_dir.glob("*.md")) + list(self.memory_dir.glob("*.json"))
-        for path in sorted(candidates):
-            sha = _file_sha256(path)
-            metadata: Dict[str, Any] = {"name": path.stem, "suffix": path.suffix}
-            if path.suffix == ".json":
-                try:
-                    data = json.loads(path.read_text(encoding="utf-8"))
-                except json.JSONDecodeError:
-                    data = None
-                if isinstance(data, dict):
-                    metadata["keys"] = sorted(data.keys())
-                elif isinstance(data, list):
-                    metadata["entries"] = len(data)
-            records.append(
-                AssetRecord(
-                    asset_type="memory_pack",
-                    path=str(path),
-                    sha256=sha,
-                    metadata=metadata,
-                )
-            )
-        return records
-
-    def bundle_hash(self) -> str:
-        records = self.list()
-        return _bundle_hash((record.path, record.sha256) for record in records)
-
-
 class HarnessRegistry:
     """Loads and validates harness configuration files from harness_versions/<name>/."""
 
@@ -371,14 +333,12 @@ class RegistrySet:
         self.base_dir = base_dir
         self.prompts = PromptRegistry(mechanistic_skills_root(base_dir))
         self.skills = SkillRegistry(base_dir / "skills")
-        self.memory_packs = MemoryPackRegistry(base_dir / "memory_packs")
         self.harness = HarnessRegistry(base_dir / "harness_versions")
 
     def bundle_hashes(self, *, model_name: str | None = None) -> Dict[str, str]:
         hashes: Dict[str, str] = {
             "prompt_bundle_hash": self.prompts.bundle_hash(model_name=model_name),
             "skill_bundle_hash": self.skills.bundle_hash(),
-            "memory_bundle_hash": self.memory_packs.bundle_hash(),
         }
         try:
             harness = self.harness.load("default")
@@ -388,27 +348,7 @@ class RegistrySet:
         return hashes
 
     def all_assets(self, *, model_name: str | None = None) -> List[AssetRecord]:
-        return self.prompts.list(model_name=model_name) + self.skills.list() + self.memory_packs.list()
-
-    def curated_memory_items(self) -> List[Dict[str, Any]]:
-        items: List[Dict[str, Any]] = []
-        for record in self.memory_packs.list():
-            tags = ["curated", "memory_pack", record.metadata.get("name", "")]
-            items.append(
-                {
-                    "scope": "curated",
-                    "key": record.metadata.get("name") or Path(record.path).stem,
-                    "source": "curated",
-                    "confidence": 1.0,
-                    "tags": [tag for tag in tags if tag],
-                    "value": {
-                        "path": record.path,
-                        "sha256": record.sha256,
-                        "metadata": record.metadata,
-                    },
-                }
-            )
-        return items
+        return self.prompts.list(model_name=model_name) + self.skills.list()
 
     def harness_version(self) -> str:
         """Compute a single harness version string from all bundle hashes."""
@@ -416,7 +356,6 @@ class RegistrySet:
         combined = "|".join([
             hashes.get("prompt_bundle_hash", ""),
             hashes.get("skill_bundle_hash", ""),
-            hashes.get("memory_bundle_hash", ""),
             hashes.get("harness_bundle_hash", ""),
         ])
         return hashlib.sha256(combined.encode("utf-8")).hexdigest()

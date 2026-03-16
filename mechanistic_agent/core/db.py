@@ -511,6 +511,53 @@ class RunStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_curriculum_checkpoints_model_date
                     ON curriculum_checkpoints(model_name, release_date DESC);
+
+                CREATE TABLE IF NOT EXISTS archive_entries (
+                    id TEXT PRIMARY KEY,
+                    generation INTEGER NOT NULL,
+                    island_id TEXT NOT NULL,
+                    parent_id TEXT,
+                    archive_inspiration_ids_json TEXT NOT NULL DEFAULT '[]',
+                    harness_name TEXT NOT NULL,
+                    harness_config_json TEXT NOT NULL,
+                    prompt_bundle_hash TEXT NOT NULL,
+                    skill_bundle_hash TEXT NOT NULL,
+                    few_shot_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                    topology_profile_json TEXT NOT NULL DEFAULT '{}',
+                    mutation_type TEXT NOT NULL,
+                    mutation_summary TEXT NOT NULL DEFAULT '',
+                    mean_quality_score REAL NOT NULL DEFAULT 0.0,
+                    weighted_pass_rate REAL NOT NULL DEFAULT 0.0,
+                    per_subagent_scores_json TEXT NOT NULL DEFAULT '{}',
+                    total_cost REAL NOT NULL DEFAULT 0.0,
+                    eval_run_id TEXT,
+                    eval_tier TEXT NOT NULL DEFAULT 'mixed',
+                    case_count INTEGER NOT NULL DEFAULT 0,
+                    children_count INTEGER NOT NULL DEFAULT 0,
+                    score_delta REAL NOT NULL DEFAULT 0.0,
+                    migration_history_json TEXT NOT NULL DEFAULT '[]',
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(parent_id) REFERENCES archive_entries(id) ON DELETE SET NULL,
+                    FOREIGN KEY(eval_run_id) REFERENCES eval_runs(id) ON DELETE SET NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_archive_island_score
+                    ON archive_entries(island_id, mean_quality_score DESC);
+                CREATE INDEX IF NOT EXISTS idx_archive_generation
+                    ON archive_entries(generation DESC, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_archive_parent
+                    ON archive_entries(parent_id);
+
+                CREATE TABLE IF NOT EXISTS archive_migrations (
+                    id TEXT PRIMARY KEY,
+                    entry_id TEXT NOT NULL,
+                    from_island TEXT NOT NULL,
+                    to_island TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(entry_id) REFERENCES archive_entries(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_archive_migrations_entry
+                    ON archive_migrations(entry_id, created_at DESC);
                 """
             )
             self._ensure_column(conn, "step_outputs", "retry_index", "INTEGER NOT NULL DEFAULT 0")
@@ -592,7 +639,7 @@ class RunStore:
         config: Dict[str, Any],
         prompt_bundle_hash: str,
         skill_bundle_hash: str,
-        memory_bundle_hash: str,
+        memory_bundle_hash: str = "",
         harness_bundle_hash: str = "",
     ) -> str:
         run_id = uuid.uuid4().hex
@@ -1890,6 +1937,177 @@ class RunStore:
             item["keep"] = bool(item.get("keep"))
             output.append(item)
         return output
+
+    # ------------------------------------------------------------------
+    # Archive entries (island-based evolution)
+    # ------------------------------------------------------------------
+
+    def insert_archive_entry(
+        self,
+        *,
+        generation: int,
+        island_id: str,
+        parent_id: Optional[str],
+        archive_inspiration_ids: Optional[List[str]] = None,
+        harness_name: str,
+        harness_config_json: str,
+        prompt_bundle_hash: str,
+        skill_bundle_hash: str,
+        few_shot_snapshot_json: str = "{}",
+        topology_profile_json: str = "{}",
+        mutation_type: str,
+        mutation_summary: str = "",
+        mean_quality_score: float = 0.0,
+        weighted_pass_rate: float = 0.0,
+        per_subagent_scores_json: str = "{}",
+        total_cost: float = 0.0,
+        eval_run_id: Optional[str] = None,
+        eval_tier: str = "mixed",
+        case_count: int = 0,
+        children_count: int = 0,
+        score_delta: float = 0.0,
+        migration_history_json: str = "[]",
+    ) -> str:
+        row_id = uuid.uuid4().hex
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO archive_entries(
+                    id, generation, island_id, parent_id, archive_inspiration_ids_json,
+                    harness_name, harness_config_json, prompt_bundle_hash, skill_bundle_hash,
+                    few_shot_snapshot_json, topology_profile_json,
+                    mutation_type, mutation_summary,
+                    mean_quality_score, weighted_pass_rate, per_subagent_scores_json,
+                    total_cost, eval_run_id, eval_tier, case_count,
+                    children_count, score_delta, migration_history_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row_id,
+                    generation,
+                    island_id,
+                    parent_id,
+                    json.dumps(archive_inspiration_ids or []),
+                    harness_name,
+                    harness_config_json,
+                    prompt_bundle_hash,
+                    skill_bundle_hash,
+                    few_shot_snapshot_json,
+                    topology_profile_json,
+                    mutation_type,
+                    mutation_summary,
+                    float(mean_quality_score),
+                    float(weighted_pass_rate),
+                    per_subagent_scores_json,
+                    float(total_cost),
+                    eval_run_id,
+                    eval_tier,
+                    int(case_count),
+                    int(children_count),
+                    float(score_delta),
+                    migration_history_json,
+                    time.time(),
+                ),
+            )
+            conn.commit()
+        return row_id
+
+    def get_archive_entry(self, entry_id: str) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM archive_entries WHERE id = ?", (entry_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        for key in (
+            "archive_inspiration_ids_json", "per_subagent_scores_json",
+            "migration_history_json",
+        ):
+            raw = item.get(key)
+            if isinstance(raw, str):
+                item[key] = json.loads(raw)
+        return item
+
+    def list_archive_entries(
+        self,
+        island_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            if island_id:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM archive_entries
+                    WHERE island_id = ?
+                    ORDER BY mean_quality_score DESC
+                    LIMIT ?
+                    """,
+                    (island_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM archive_entries
+                    ORDER BY mean_quality_score DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def increment_archive_children(self, entry_id: str) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE archive_entries SET children_count = children_count + 1 WHERE id = ?",
+                (entry_id,),
+            )
+            conn.commit()
+
+    def island_best_score(self, island_id: str) -> float:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT MAX(mean_quality_score) FROM archive_entries WHERE island_id = ?",
+                (island_id,),
+            ).fetchone()
+        val = row[0] if row else None
+        return float(val) if val is not None else 0.0
+
+    def archive_generation_max(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT MAX(generation) FROM archive_entries"
+            ).fetchone()
+        val = row[0] if row else None
+        return int(val) if val is not None else -1
+
+    def insert_archive_migration(
+        self,
+        *,
+        entry_id: str,
+        from_island: str,
+        to_island: str,
+        generation: int,
+    ) -> str:
+        row_id = uuid.uuid4().hex
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO archive_migrations(id, entry_id, from_island, to_island, generation, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (row_id, entry_id, from_island, to_island, generation, time.time()),
+            )
+            conn.commit()
+        return row_id
+
+    def list_archive_migrations(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM archive_migrations ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def record_curation_export(
         self,

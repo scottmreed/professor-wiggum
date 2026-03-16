@@ -42,8 +42,6 @@ def _prepare_runtime_base(tmp_path: Path) -> Path:
         "",
         encoding="utf-8",
     )
-    (tmp_path / "memory_packs").mkdir()
-    (tmp_path / "memory_packs" / "pack.md").write_text("memory", encoding="utf-8")
     (tmp_path / "mechanistic_agent" / "ui").mkdir(parents=True)
     (tmp_path / "mechanistic_agent" / "ui" / "index.html").write_text("ok", encoding="utf-8")
     (tmp_path / "data").mkdir()
@@ -170,8 +168,6 @@ def test_setup_workspace_copies_runtime_assets_for_dry_run(tmp_path: Path) -> No
         "",
         encoding="utf-8",
     )
-    (tmp_path / "memory_packs").mkdir()
-    (tmp_path / "memory_packs" / "pack.md").write_text("memory", encoding="utf-8")
     (tmp_path / "harness_versions" / "default").mkdir(parents=True)
     (tmp_path / "harness_versions" / "default" / "harness.json").write_text("{}", encoding="utf-8")
     (tmp_path / "training_data").mkdir()
@@ -182,7 +178,6 @@ def test_setup_workspace_copies_runtime_assets_for_dry_run(tmp_path: Path) -> No
     workspace = evolve.setup_workspace(tmp_path, True)
 
     assert (workspace / "skills" / "mechanistic" / "propose_mechanism_step" / "SKILL.md").exists()
-    assert (workspace / "memory_packs" / "pack.md").exists()
     assert (workspace / "harness_versions" / "default" / "harness.json").exists()
     assert (workspace / "training_data" / "reaction_type_templates.json").exists()
     assert (workspace / "data" / "mechanistic.db").exists()
@@ -255,14 +250,10 @@ def test_mine_and_apply_examples_require_structured_outputs_and_keep_dry_run_una
     assert rows[0]["approved_bool"] is False
 
 
-def test_mine_few_shots_requires_score_at_least_current_best(tmp_path: Path) -> None:
+def test_mine_few_shots_mines_regardless_of_best_score(tmp_path: Path) -> None:
+    # Best-score filtering was removed; eligible steps are mined even when
+    # their quality_score is below the current best in best_scores_by_call.
     evolve = _load_evolve_module()
-    call_dir = tmp_path / "skills" / "mechanistic" / "predict_missing_reagents"
-    call_dir.mkdir(parents=True)
-    (call_dir / "few_shot.jsonl").write_text(
-        '{"input":"stored","output":"{\\"missing_reactants\\":[\\"O\\"],\\"missing_products\\":[]}","score":0.8}\n',
-        encoding="utf-8",
-    )
 
     config = evolve.EvolutionConfig(model_name="gpt-5.2", mining_score_threshold=0.5)
     mined = evolve.mine_few_shots(
@@ -291,10 +282,11 @@ def test_mine_few_shots_requires_score_at_least_current_best(tmp_path: Path) -> 
         ],
         config,
         {"predict_missing_reagents": set()},
-        {"predict_missing_reagents": 0.8},
+        {"predict_missing_reagents": 0.8},  # quality_score 0.7 < best 0.8, but still mined
     )
 
-    assert mined == {}
+    assert "predict_missing_reagents" in mined
+    assert len(mined["predict_missing_reagents"]) == 1
 
 
 def test_mine_few_shots_rejects_non_passing_results_even_with_high_score(tmp_path: Path) -> None:

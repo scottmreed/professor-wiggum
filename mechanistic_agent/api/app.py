@@ -3300,6 +3300,102 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             running = bool(job_id) and overnight_executor.is_running(job_id)
         return {"job_id": job_id or None, "running": running, "stop_requested": True}
 
+    # ---- Island archive evolution ----
+
+    @app.get("/api/archive/islands")
+    def archive_islands() -> Dict[str, Any]:
+        """Return island configs + current best scores + generation count."""
+        from mechanistic_agent.core.archive import DEFAULT_ISLANDS, EvolutionArchive
+
+        archive = EvolutionArchive(store=store)
+        islands_out = []
+        for isl in DEFAULT_ISLANDS:
+            best = archive.island_best_score(isl.id)
+            entries = archive.list_island(isl.id, limit=1000)
+            max_gen = max((e.generation for e in entries), default=-1)
+            islands_out.append({
+                "id": isl.id,
+                "label": isl.label,
+                "mutation_target": isl.mutation_target,
+                "allowed_lanes": isl.allowed_lanes,
+                "eval_tier_filter": isl.eval_tier_filter,
+                "population_cap": isl.population_cap,
+                "stagnation_threshold": isl.stagnation_threshold,
+                "description": isl.description,
+                "best_score": best,
+                "entry_count": len(entries),
+                "max_generation": max_gen,
+                "stagnating": archive.stagnation_check(isl.id),
+            })
+        return {
+            "islands": islands_out,
+            "global_generation": archive.max_generation(),
+        }
+
+    @app.get("/api/archive/islands/{island_id}/history")
+    def archive_island_history(island_id: str, limit: int = 200) -> Dict[str, Any]:
+        """Return time-series of scores per generation for an island."""
+        from mechanistic_agent.core.archive import EvolutionArchive
+
+        archive = EvolutionArchive(store=store)
+        entries = archive.list_island(island_id, limit=max(1, min(limit, 1000)))
+        history = []
+        for e in entries:
+            history.append({
+                "id": e.id,
+                "generation": e.generation,
+                "mean_quality_score": e.mean_quality_score,
+                "weighted_pass_rate": e.weighted_pass_rate,
+                "mutation_type": e.mutation_type,
+                "mutation_summary": e.mutation_summary,
+                "score_delta": e.score_delta,
+                "parent_id": e.parent_id,
+                "children_count": e.children_count,
+                "eval_tier": e.eval_tier,
+                "case_count": e.case_count,
+                "created_at": e.created_at,
+            })
+        # Sort by generation ascending for time-series
+        history.sort(key=lambda h: (h["generation"], h["created_at"]))
+        return {"island_id": island_id, "entries": history}
+
+    @app.get("/api/archive/migrations")
+    def archive_migrations(limit: int = 100) -> Dict[str, Any]:
+        """Return recent migration events."""
+        rows = store.list_archive_migrations(limit=max(1, min(limit, 500)))
+        return {"migrations": rows}
+
+    @app.get("/api/archive/entry/{entry_id}")
+    def archive_entry_detail(entry_id: str) -> Dict[str, Any]:
+        """Return full entry + parent chain for genealogy drill-down."""
+        from mechanistic_agent.core.archive import EvolutionArchive
+
+        archive = EvolutionArchive(store=store)
+        entry = archive.get(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"Archive entry {entry_id} not found")
+        # Build parent chain
+        chain = []
+        current = entry
+        seen = set()
+        while current and current.id not in seen:
+            seen.add(current.id)
+            chain.append({
+                "id": current.id,
+                "generation": current.generation,
+                "island_id": current.island_id,
+                "mean_quality_score": current.mean_quality_score,
+                "mutation_type": current.mutation_type,
+                "mutation_summary": current.mutation_summary,
+                "score_delta": current.score_delta,
+                "parent_id": current.parent_id,
+            })
+            if current.parent_id:
+                current = archive.get(current.parent_id)
+            else:
+                break
+        return {"entry": chain[0] if chain else None, "ancestry": chain}
+
     # ---- Baseline (harness-free) evaluation ----
 
     def _run_baseline_eval_set(payload: BaselineEvalRunSetRequest) -> Dict[str, Any]:
@@ -4232,14 +4328,11 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
     @app.get("/api/memory")
     def list_memory(scope: str | None = None) -> Dict[str, Any]:
         local_items = store.list_memory_items(scope=scope, active_only=True)
-        curated = registry.curated_memory_items()
-        if scope:
-            curated = [item for item in curated if item.get("scope") == scope]
-        return {"curated": curated, "local": local_items}
+        return {"curated": [], "local": local_items}
 
     @app.post("/api/memory/query")
     def query_memory(payload: MemoryQueryRequest) -> Dict[str, Any]:
-        curated = registry.curated_memory_items()
+        curated: list[Dict[str, Any]] = []
         local_items = store.list_memory_items(scope=payload.scope, active_only=True)
 
         def _passes(item: Dict[str, Any]) -> bool:

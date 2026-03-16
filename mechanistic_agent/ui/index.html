@@ -12,19 +12,16 @@
     <div class="modal-backdrop" id="leaderboardModalBackdrop"></div>
     <div class="modal-content modal-wide">
       <div class="modal-header">
-        <h3>Eval Leaderboard</h3>
-        <button id="closeLeaderboardModalBtn" type="button">Close</button>
-      </div>
-      <div class="grid two" style="margin-bottom:0.75rem;">
-        <label>
-          Eval set
-          <select id="modalEvalSetSelect"></select>
-        </label>
-        <div style="display:flex;align-items:flex-end;gap:0.5rem;">
+        <h3>Official Holdout Leaderboard</h3>
+        <div class="modal-header-actions">
           <button id="modalRefreshLeaderboardBtn" type="button">Refresh</button>
+          <button id="closeLeaderboardModalBtn" type="button">Close</button>
         </div>
       </div>
-      <div id="modalLeaderboardList" class="stack"></div>
+      <div id="leaderboardChartContainer" style="position:relative;min-height:320px;">
+        <canvas id="leaderboardChart"></canvas>
+      </div>
+      <div id="modalLeaderboardList" class="stack" style="margin-top:0.75rem;"></div>
     </div>
   </div>
 
@@ -62,7 +59,7 @@
           <h1>Mechanism Agent</h1>
           <div class="panel-toolbar-actions">
             <button id="apiKeysBtn" type="button" class="btn-icon" title="Configure API keys for this session">Keys</button>
-            <button id="openLeaderboardModalBtn" type="button" class="btn-icon" title="View eval leaderboard">Board</button>
+            <button id="openLeaderboardModalBtn" type="button" class="btn-icon" title="View leaderboard">Leaderboard</button>
           </div>
         </div>
         <div class="grid two">
@@ -282,6 +279,38 @@
           <div id="curriculumHistoryList" class="stack"></div>
         </section>
       </div>
+
+      <!-- Evolution Dashboard (island-based archive evolution) -->
+      <div id="evolutionPanel" class="panel" style="display:none;">
+        <div class="panel-toolbar">
+          <h2>Island Evolution</h2>
+          <div class="panel-toolbar-actions">
+            <button id="evolutionRefreshBtn" type="button" class="btn-icon" title="Refresh">Refresh</button>
+            <button id="hideEvolutionBtn" type="button" class="btn-icon" title="Hide">Hide</button>
+          </div>
+        </div>
+        <div id="evolutionSummary" class="curriculum-hero-grid">
+          <div class="curriculum-card">
+            <div class="muted">Generation</div>
+            <div id="evolutionGeneration" class="curriculum-metric">-</div>
+          </div>
+          <div class="curriculum-card">
+            <div class="muted">Active Islands</div>
+            <div id="evolutionIslandCount" class="curriculum-metric">-</div>
+          </div>
+          <div class="curriculum-card">
+            <div class="muted">Global Best</div>
+            <div id="evolutionGlobalBest" class="curriculum-metric">-</div>
+          </div>
+        </div>
+        <div id="evolutionIslandCards" class="stack" style="margin-top:1rem;"></div>
+        <h3 style="margin-top:1rem;">Score by Generation</h3>
+        <canvas id="evolutionChart" width="400" height="200"></canvas>
+        <h3 style="margin-top:1rem;">Recent Entries</h3>
+        <div id="evolutionRecentTable" style="overflow-x:auto;"></div>
+        <h3 style="margin-top:1rem;">Migrations</h3>
+        <div id="evolutionMigrations" class="stack"></div>
+      </div>
     </aside>
 
     <!-- ===== CENTER COLUMN: Mermaid Diagram (focal point) ===== -->
@@ -301,6 +330,7 @@
             </label>
             <button id="editPipelineBtn" type="button" class="btn-secondary btn-sm" title="Edit the harness pipeline modules">Edit Pipeline</button>
             <button id="toggleCurriculumBtn" type="button" class="btn-icon btn-sm" title="Show/hide the curriculum panel (RAlph orchestration)">Curriculum</button>
+            <button id="toggleEvolutionBtn" type="button" class="btn-icon btn-sm" title="Show/hide island evolution dashboard">Evolution</button>
           </div>
         </div>
         <div id="ralphBudgetBar" class="muted" style="display:none;"></div>
@@ -517,11 +547,12 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="/ui/config.js"></script>
   <script type="module">
     import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.3/dist/mermaid.esm.min.mjs";
     window.mermaid = mermaid;
   </script>
-  <script src="/ui/app.js?v=1772765290533" type="module"></script>
+  <script src="/ui/app.js?v=1773868800000" type="module"></script>
 </body>
 </html>

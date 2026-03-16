@@ -1,5 +1,6 @@
 """Core runtime modules for the local-first mechanistic architecture."""
 
+from .archive import DEFAULT_ISLANDS, EvolutionArchive
 from .arrow_push import predict_arrow_push_annotation
 from .coordinator import RunCoordinator, RunManager
 from .db import RunStore
@@ -7,6 +8,7 @@ from .external_validation import ExternalValidator, ExternalValidatorRegistry
 from .model_selection import ModelSelectionResult, ThinkingLevel, select_step_models
 from .registries import HarnessRegistry, RegistrySet
 from .types import (
+    ArchiveEntry,
     BabysitMode,
     FeedbackRecord,
     HarnessStrategy,
@@ -18,6 +20,8 @@ from .types import (
     RalphLane,
     RalphConfig,
     ExperimentRecord,
+    IslandConfig,
+    IslandEvolutionConfig,
     RalphAttemptState,
     RalphStopReason,
     RunConfig,
@@ -32,6 +36,11 @@ from .types import (
 )
 
 __all__ = [
+    "ArchiveEntry",
+    "DEFAULT_ISLANDS",
+    "EvolutionArchive",
+    "IslandConfig",
+    "IslandEvolutionConfig",
     "RunCoordinator",
     "RunManager",
     "RunStore",

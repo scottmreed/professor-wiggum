@@ -23,7 +23,6 @@ def _prepare_base(tmp_path: Path) -> Path:
     (tmp_path / "prompt_versions" / "calls" / "propose_mechanism_step").mkdir(parents=True)
     (tmp_path / "prompt_versions" / "calls" / "evaluate_run_judge").mkdir(parents=True)
     (tmp_path / "skills" / "demo").mkdir(parents=True)
-    (tmp_path / "memory_packs").mkdir(parents=True)
     (tmp_path / "mechanistic_agent" / "ui").mkdir(parents=True)
     (tmp_path / "data").mkdir(parents=True)
     (tmp_path / "training_data").mkdir(parents=True)
@@ -42,7 +41,6 @@ def _prepare_base(tmp_path: Path) -> Path:
         (call_dir / "base.md").write_text(f"{call_name} base", encoding="utf-8")
         (call_dir / "few_shot.jsonl").write_text("", encoding="utf-8")
     (tmp_path / "skills" / "demo" / "SKILL.md").write_text("# demo", encoding="utf-8")
-    (tmp_path / "memory_packs" / "pack.md").write_text("memory", encoding="utf-8")
     (tmp_path / "mechanistic_agent" / "ui" / "index.html").write_text("ok", encoding="utf-8")
     (tmp_path / "training_data" / "flower_mechanisms_100.json").write_text(
         '[{"id":"flower_000001","name":"FlowER Example 1","starting_materials":["C=O"],"products":["CO"],"n_mechanistic_steps":1,"source":"FlowER 100","verified_mechanism":{"version":"1.0.0","provisional":true,"source_refs":["https://github.com/schwallergroup/ChRIMP"],"steps":[{"step_index":1,"current_state":["C=O"],"resulting_state":["CO"],"predicted_intermediate":"CO","target_products":["CO"],"electron_pushes":[{"kind":"lone_pair","source_atom":"1","target_atom":"2","electrons":2,"notation":"lp:1>2"}],"reaction_smirks":"[O-:1].[H+:2]>>[O:1][H:2] |mech:v1;lp:1>2|","confidence":1.0,"note":"fixture"}]}}]',

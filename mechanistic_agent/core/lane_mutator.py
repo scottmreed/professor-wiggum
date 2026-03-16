@@ -38,7 +38,7 @@ class TopologyLaneMutator:
         profile = dict(profiles.get(profile_key) or {})
 
         field = self._NUMERIC_FIELDS[self._rng.randrange(0, len(self._NUMERIC_FIELDS))]
-        old_value = int(profile.get(field) or 1)
+        old_value = int(profile.get(field, 1))
         delta = -1 if self._rng.random() < 0.5 else 1
         lower_bound = 0 if field == "peer_rounds" else 1
         new_value = max(lower_bound, old_value + delta)
@@ -108,11 +108,12 @@ class HarnessLaneMutator:
 class PromptLaneMutator:
     """Creates a minimally-edited SKILL.md prompt variant for experiment tracking."""
 
-    def __init__(self, *, base_dir: Path) -> None:
+    def __init__(self, *, base_dir: Path, call_name: str = "propose_mechanism_step") -> None:
         self.base_dir = base_dir
+        self.call_name = call_name
 
     def propose(self, parent_asset_path: Path) -> MutatedAsset:
-        src = self.base_dir / "skills" / "mechanistic" / "propose_mechanism_step" / "SKILL.md"
+        src = self.base_dir / "skills" / "mechanistic" / self.call_name / "SKILL.md"
         if not src.exists():
             raise FileNotFoundError(f"Prompt source not found: {src}")
         text = src.read_text(encoding="utf-8")
@@ -128,19 +129,20 @@ class PromptLaneMutator:
         return MutatedAsset(
             lane="prompt",
             asset_path=out_path,
-            summary="appended one targeted instruction to propose_mechanism_step prompt",
-            metadata={"call_name": "propose_mechanism_step", "source": str(src)},
+            summary=f"appended one targeted instruction to {self.call_name} prompt",
+            metadata={"call_name": self.call_name, "source": str(src)},
         )
 
 
 class FewShotLaneMutator:
     """Creates a small few-shot variant by dropping one example from JSONL."""
 
-    def __init__(self, *, base_dir: Path) -> None:
+    def __init__(self, *, base_dir: Path, call_name: str = "propose_mechanism_step") -> None:
         self.base_dir = base_dir
+        self.call_name = call_name
 
     def propose(self, parent_asset_path: Path) -> MutatedAsset:
-        src = self.base_dir / "skills" / "mechanistic" / "propose_mechanism_step" / "few_shot.jsonl"
+        src = self.base_dir / "skills" / "mechanistic" / self.call_name / "few_shot.jsonl"
         if not src.exists():
             raise FileNotFoundError(f"Few-shot source not found: {src}")
         lines = [line for line in src.read_text(encoding="utf-8").splitlines() if line.strip()]

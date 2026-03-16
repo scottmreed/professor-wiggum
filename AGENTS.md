@@ -9,8 +9,7 @@ This repository now runs on a local-first architecture:
 - Curated assets:
   - `skills/mechanistic/` (LLM prompts, few-shot files, and deterministic validators — formerly `prompt_versions/`)
   - `skills/project/` (project-level skills used outside mechanism prediction)
-  - `memory_packs/`
-  - `traces/` (run traces + PR evidence traces)
+  - `traces/` (run traces + PR evidence traces, including per-run scratchpad files)
   - `harness_versions/` (per-harness subdirectories with `harness.json`)
 
 ## Verified vs Unverified
@@ -47,7 +46,7 @@ This repository now runs on a local-first architecture:
 ## Chemistry Backend Soft Passes
 
 - `eval-runset-official` now defaults to `--max-runtime 600` seconds per case.
-- When the `rdkit_cli` backend reports `rdkit_cli_error_code=atom_balance_invalid_species` but the Python atom-balance validator still passes, treat that condition as a **known soft pass**.
+- When the `rdkit-agent` backend reports `rdkit_cli_error_code=atom_balance_invalid_species` but the Python atom-balance validator still passes, treat that condition as a **known soft pass**.
 - Known soft passes must emit warning-level telemetry/events and may recommend a retry or re-proposal, but they must **not** fail the step by themselves.
 - The Python validator remains authoritative for atom-balance pass/fail; `rdkit_cli` invalid-species reports are advisory unless the Python validator also fails.
 
@@ -330,9 +329,6 @@ See `docs/cursor_remote_bootstrap.md` for the full checklist.
 │       │   ├── SKILL.md            # Algorithm description + standalone usage
 │       │   └── validator.py        # Ground truth implementation
 │       └── <other_validators>/     # Same structure per deterministic validator
-├── memory_packs/                   # Versioned memory artifacts (PR-editable)
-│   ├── default_memory.md           # Default memory context
-│   └── reagent_heuristics.json     # Reagent knowledge base
 ├── harness_versions/                # Pipeline config files (PR-editable)
 │   ├── default/
 │   │   ├── harness.json            # Schema v2: human-readable + machine-executable
@@ -458,6 +454,23 @@ Harnesses without a `topology_profiles` section (schema v2.0) automatically fall
 - **Performance Tracking**: Leaderboard comparing model+harness versions
 - **Preloaded Examples**: Dropdown examples serve as initial evaluation set with provisional verified steps
 
+### Island-Based Archive Evolution
+
+Inspired by [ShinkaEvolve](https://arxiv.org/abs/2509.19349) (arxiv:2509.19349), the `--island-mode` flag in `scripts/evolve_harness.py` enables archive-based parent selection with domain-specific islands:
+
+| Island | Mutation target | Eval filter |
+|--------|----------------|-------------|
+| `mapping` | atom_mapping + select_reaction_type prompts/few-shots | all tiers |
+| `reagent_conditions` | predict_missing_reagents + assess_initial_conditions | all tiers |
+| `topology` | topology profiles + module enabled flags | all tiers |
+| `hard_multistep` | all mutation types | hard tier only (9-19 steps) |
+
+**Parent selection** uses weighted sampling: `weight = sigmoid((score - median) / MAD) * (1 / (1 + children_count))`, combining exploitation (high score) with exploration (underexplored configurations).
+
+**Migration** between islands is gated on real eval improvement — an entry only migrates if it beats the target island's current best score.
+
+Key files: `mechanistic_agent/core/archive.py` (archive + parent selection), `mechanistic_agent/core/types.py` (ArchiveEntry, IslandConfig), `mechanistic_agent/core/db.py` (archive_entries table).
+
 ## Development Guidelines
 
 ### Running Commands
@@ -563,7 +576,7 @@ pip install rdkit-pypi
 ### Versioned Assets (Repository Root)
 - **`prompt_versions/`**: Versioned prompt assets editable via PRs
 - **`skills/`**: Versioned skill definitions for capabilities
-- **`memory_packs/`**: Versioned memory artifacts for context
+- **`traces/runs/<run_id>/scratchpad.md`**: Run-scoped scratchpad for mechanism history (ephemeral, created per run)
 - **`data/`**: Hybrid storage with SQLite + baseline evaluation artifacts
 
 ## Quick Start

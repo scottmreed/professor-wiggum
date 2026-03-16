@@ -1218,6 +1218,74 @@ def attempt_atom_mapping(starting_materials: List[str], products: List[str]) -> 
     return _serialise(payload)
 
 
+# ---------------------------------------------------------------------------
+# Deterministic atom-mapping validation via rdkit-agent atom-map check
+# ---------------------------------------------------------------------------
+
+def validate_atom_mapping_via_rdkit(
+    *,
+    starting_materials: List[str],
+    products: List[str],
+    mapped_atoms: Optional[List[Dict[str, Any]]],
+    backend_config: Any = None,
+) -> Optional["StepValidationResult"]:
+    """Validate LLM-produced atom mappings using ``rdkit-agent atom-map check``.
+
+    Returns a :class:`StepValidationResult` when validation was executed, or
+    ``None`` when rdkit-agent is unavailable (graceful skip).
+    """
+    from .core.types import StepValidationCheck, StepValidationResult
+
+    if not mapped_atoms:
+        return StepValidationResult(checks=[
+            StepValidationCheck(
+                name="atom_map_check",
+                passed=True,
+                details={"skipped": True, "reason": "no_mapped_atoms_provided"},
+            )
+        ])
+
+    trace = _run_rdkit_cli_command(
+        command="atom-map",
+        args={
+            "action": "check",
+            "reactants": list(starting_materials),
+            "products": list(products),
+            "atom_map": list(mapped_atoms),
+        },
+        backend_config=backend_config,
+    )
+
+    if trace.get("status") != "ok":
+        # rdkit-agent unavailable or errored — skip silently
+        return None
+
+    output = trace.get("output") or {}
+    valid = output.get("valid")
+    errors = output.get("errors") or []
+    warnings = output.get("warnings") or []
+
+    checks: List[StepValidationCheck] = []
+    if isinstance(valid, bool):
+        checks.append(StepValidationCheck(
+            name="atom_map_check",
+            passed=valid,
+            details={
+                "errors": errors[:10],
+                "warnings": warnings[:10],
+            },
+        ))
+    else:
+        # Unexpected response shape — treat as skip
+        checks.append(StepValidationCheck(
+            name="atom_map_check",
+            passed=True,
+            details={"skipped": True, "reason": "unexpected_response_shape"},
+        ))
+
+    return StepValidationResult(checks=checks)
+
+
 def _looks_like_smiles(s: str) -> bool:
     """Return True if *s* could plausibly be a SMILES string.
 
@@ -1367,7 +1435,7 @@ def _normalise_charged_brackets(smiles: str) -> Optional[str]:
 
 
 def _attempt_repair_smiles_via_rdkit_cli(smiles: str, *, backend_config: Any = None) -> Tuple[Optional[str], Dict[str, Any]]:
-    """Try `rdkit_cli repair-smiles` and return canonical output when available."""
+    """Try `rdkit-agent repair-smiles` and return canonical output when available."""
 
     metadata: Dict[str, Any] = {
         "requested": True,
@@ -1376,7 +1444,7 @@ def _attempt_repair_smiles_via_rdkit_cli(smiles: str, *, backend_config: Any = N
         "timeout_seconds": 5.0,
     }
 
-    command_value = "rdkit_cli"
+    command_value = "rdkit-agent"
     timeout_value = 5.0
     if isinstance(backend_config, dict):
         command_value = str(backend_config.get("rdkit_cli_command") or command_value)
@@ -1413,10 +1481,10 @@ def _attempt_repair_smiles_via_rdkit_cli(smiles: str, *, backend_config: Any = N
     if not command_parts:
         if resolution.rejected:
             metadata["error"] = str(
-                resolution.rejection_reason or "rdkit_cli command rejected by source policy"
+                resolution.rejection_reason or "rdkit-agent command rejected by source policy"
             )
         else:
-            metadata["error"] = "rdkit_cli command not found"
+            metadata["error"] = "rdkit-agent command not found"
         return None, metadata
 
     payload = {"input": str(smiles or "")}
@@ -2220,7 +2288,7 @@ def _run_rdkit_cli_command(
             "rdkit_cli_command": (
                 backend_config.get("rdkit_cli_command")
                 if isinstance(backend_config, dict)
-                else getattr(backend_config, "rdkit_cli_command", "rdkit_cli")
+                else getattr(backend_config, "rdkit_cli_command", "rdkit-agent")
             ),
             "rdkit_cli_timeout_seconds": (
                 backend_config.get("rdkit_cli_timeout_seconds")
@@ -5217,8 +5285,15 @@ def propose_intermediates(
     prompt_char_cap = int(os.getenv("MECHANISTIC_PROMPT_CHAR_CAP", "60000"))
     if is_openrouter_model(intermediate_model):
         prompt_char_cap = int(os.getenv("MECHANISTIC_OPENROUTER_PROMPT_CHAR_CAP", "42000"))
-    elif intermediate_model.lower().startswith("gpt-4o"):
-        prompt_char_cap = int(os.getenv("MECHANISTIC_GPT4O_PROMPT_CHAR_CAP", "30000"))
+    else:
+        model_lower = intermediate_model.lower()
+        if model_lower.startswith("gpt-5.4"):
+            # Large-context GPT-5.4 models get their own cap so we can
+            # safely approach the higher token window without affecting
+            # smaller OpenAI models.
+            prompt_char_cap = int(os.getenv("MECHANISTIC_GPT54_PROMPT_CHAR_CAP", "2400000"))
+        elif model_lower.startswith("gpt-4o"):
+            prompt_char_cap = int(os.getenv("MECHANISTIC_GPT4O_PROMPT_CHAR_CAP", "30000"))
 
     max_prev = max(2, int(os.getenv("MECHANISTIC_PREVIOUS_INTERMEDIATES_MAX", "12")))
     if len(previous_intermediates) > max_prev:
@@ -5410,6 +5485,13 @@ def propose_intermediates(
         )
 
     guidance_payload: Dict[str, Any] = dict(template_guidance or {})
+    # Pop scratchpad_summary before JSON-rendering so it gets its own section.
+    scratchpad_summary = str(guidance_payload.pop("scratchpad_summary", "") or "").strip()
+    if scratchpad_summary:
+        human_prompt += (
+            "Run history (avoid repeating failed approaches):\n"
+            f"{scratchpad_summary}\n\n"
+        )
     low_risk_mode = bool(guidance_payload.get("low_risk_mode"))
     retry_mode = bool(
         low_risk_mode

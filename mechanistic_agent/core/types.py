@@ -511,9 +511,9 @@ class RunConfig:
     step_mapping_enabled: bool = True
     arrow_push_annotation_enabled: bool = True
     dbe_policy: Literal["strict", "soft"] = "soft"
-    chemistry_backend: Literal["auto", "rdkit_cli", "python"] = "auto"
+    chemistry_backend: Literal["auto", "rdkit_cli", "rdkit_agent", "python"] = "auto"
     chemistry_backend_parity: bool = False
-    rdkit_cli_command: str = "rdkit_cli"
+    rdkit_cli_command: str = "rdkit-agent"
     rdkit_cli_timeout_seconds: float = 5.0
     reaction_template_policy: Literal["off", "auto"] = "auto"
     reaction_template_confidence_threshold: float = 0.65
@@ -612,6 +612,75 @@ class ExperimentRecord:
     revert_reason: Optional[str] = None
     timestamp: float = 0.0
     experiment_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Island-based archive evolution (inspired by ShinkaEvolve, arxiv:2509.19349)
+# ---------------------------------------------------------------------------
+
+IslandId = Literal["mapping", "reagent_conditions", "topology", "hard_multistep"]
+ArchiveMutationType = Literal[
+    "few_shot_mine", "topology_mutate", "harness_toggle",
+    "prompt_edit", "migration", "seed",
+]
+
+
+@dataclass(slots=True)
+class IslandConfig:
+    """Configuration for one evolution island."""
+
+    id: str
+    label: str
+    mutation_target: str
+    allowed_lanes: List[str]
+    eval_tier_filter: Optional[str]
+    population_cap: int
+    stagnation_threshold: int
+    description: str
+
+
+@dataclass(slots=True)
+class ArchiveEntry:
+    """One archived harness/prompt/few-shot configuration with eval scores."""
+
+    id: str
+    generation: int
+    island_id: str
+    parent_id: Optional[str]
+    archive_inspiration_ids: List[str]
+    harness_name: str
+    harness_config_json: str
+    prompt_bundle_hash: str
+    skill_bundle_hash: str
+    few_shot_snapshot_json: str
+    topology_profile_json: str
+    mutation_type: str
+    mutation_summary: str
+    mean_quality_score: float
+    weighted_pass_rate: float
+    per_subagent_scores_json: str
+    total_cost: float
+    eval_run_id: str
+    eval_tier: str
+    case_count: int
+    children_count: int
+    score_delta: float
+    migration_history_json: str
+    created_at: float
+
+
+@dataclass(slots=True)
+class IslandEvolutionConfig:
+    """Top-level configuration for island-based archive evolution."""
+
+    islands: List[str] = field(default_factory=lambda: [
+        "mapping", "reagent_conditions", "topology", "hard_multistep",
+    ])
+    archive_size_per_island: int = 50
+    migration_interval: int = 5
+    parent_perf_weight: float = 1.0
+    parent_novelty_weight: float = 1.0
+    seed: int = 42
 
 
 @dataclass(slots=True)

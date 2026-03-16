@@ -249,6 +249,8 @@ Checklist:
 
 Use this when you change module ordering, module enablement, validator patching, or topology profiles in [harness_versions](harness_versions).
 
+**Island-based evolution:** The `--island-mode` flag in `scripts/evolve_harness.py` enables archive-based parent selection inspired by [ShinkaEvolve](https://arxiv.org/abs/2509.19349). Islands partition the search space by mutation target (mapping, reagent/conditions, topology, hard multi-step) and migration between islands is gated on real eval improvement. See `mechanistic_agent/core/archive.py` for the archive and parent selection logic.
+
 This track also covers **coordination topology experiments** — comparing `sas`, `centralized_mas`, `independent_mas`, or `decentralized_mas` on the eval tiers. Topology is set at run time via `coordination_topology` in the request, so no harness file change is required for a basic experiment. However, if you want to tune per-harness `topology_profiles` defaults (e.g. agent count, peer rounds, consensus key), that change goes through Track 4 and requires a new harness subdirectory or a modified `harness.json`.
 
 Template:
@@ -316,3 +318,130 @@ Preferred fields:
 - whether you want to be contacted before attribution
 
 Providing contact info is optional, but if you want attribution later, include it now so it does not have to be reconstructed from commit history.
+
+---
+
+## Agent Quick-Start Prompts
+
+These are example prompts you can give to an AI coding agent (Cursor, Claude Code, etc.) that has cloned this repo. Each covers a common contribution scenario end-to-end. Copy, adapt, and run.
+
+### Benchmark a new model and submit a PR if it beats the leaderboard
+
+```
+I want to test a new model on this mechanistic reaction prediction system and open a PR if it beats the current leaderboard.
+
+Steps:
+1. Read CONTRIBUTING.md (Track 3 — New Models) and LEADERBOARD.md to understand the current easy-tier SOTA.
+2. Check mechanistic_agent/model_pricing.json to see if the model is already registered. If not, add it following the schema used for existing models.
+3. If the model needs a new LLM adapter, add it to mechanistic_agent/llm.py.
+4. Run the fast test suite to confirm nothing is broken: `source .venv/bin/activate && python -m pytest tests/fast/ -q`
+5. Run the easy-tier eval for the new model (Track 3 requires easy-tier improvement):
+   `python main.py eval --tier easy --model <new_model_id> --thinking-level <level>`
+6. Run the no-harness baseline for comparison:
+   `python main.py baseline --tier easy --model <new_model_id> --thinking-level <level>`
+7. Check the leaderboard: `python main.py leaderboard --eval-set-id <eval_set_id>`
+8. If the new model beats the current easy-tier SOTA for its cost class, regenerate LEADERBOARD.md:
+   `python main.py leaderboard --eval-set-id <eval_set_id> --limit 20 --markdown --output LEADERBOARD.md`
+9. Open a PR using the Track 3 template at templates/contributions/track3_model_pr.md. Include the before/after leaderboard delta.
+
+Model to test: <model_id, e.g. openai/gpt-5-mini or google/gemini-2.5-flash>
+```
+
+---
+
+### Push forward on an existing model family (try harder thinking level or more cases)
+
+```
+I want to improve the leaderboard score for an existing model family by testing a higher thinking level or running more cases.
+
+Steps:
+1. Check the current leaderboard status for the model:
+   `python main.py eval --tier easy --model <model_id> --thinking-level <current_level> --leaderboard-status-only`
+2. Check what runs have already been attempted:
+   `python main.py leaderboard --eval-set-id <eval_set_id>`
+3. Run the route planner for the next recommended step (it will auto-select unrun cases):
+   `python main.py eval --tier easy --model <model_id> --thinking-level high`
+4. If easy-tier looks good, extend to medium:
+   `python main.py eval --tier medium --model <model_id> --thinking-level high`
+5. If you see improvement, run the official holdout eval (20 cases):
+   `python main.py eval-runset-official --model <model_id> --thinking-level high`
+6. Refresh the leaderboard snapshot:
+   `python main.py update-leaderboard-artifacts`
+7. If the score improves over the previous SOTA for that model family, open a PR with the leaderboard delta.
+
+Model family: <e.g. anthropic/claude-opus-4.6 or openai/gpt-5.4>
+```
+
+---
+
+### Test a novel harness component (new module, topology, or validator patch)
+
+```
+I want to experiment with a harness change — either a new module order, a different coordination topology, or a relaxed validator — and see if it improves the medium-tier leaderboard score.
+
+Steps:
+1. Read docs/harness_cookbook.md and AGENTS.md (Harness Configuration section) to understand the harness schema.
+2. Check the existing harness configs: `ls harness_versions/`
+3. Create a new harness variant by copying the default:
+   `cp -r harness_versions/default harness_versions/<my_experiment_name>`
+   Then edit `harness_versions/<my_experiment_name>/harness.json` with your change.
+4. Run the fast harness tests: `python -m pytest tests/fast/test_harness_config.py -q`
+5. Run a dry-run single case to verify the harness loads:
+   `python main.py run --starting "<SMILES>" --products "<SMILES>" --harness <my_experiment_name>`
+6. Run medium-tier eval with the new harness (Track 4 requires medium-tier improvement):
+   `python main.py eval --tier medium --harness <my_experiment_name> --model anthropic/claude-opus-4.6 --thinking-level high`
+7. Compare with the default harness result using:
+   `python main.py leaderboard --eval-set-id <eval_set_id>`
+8. If it improves on medium, open a PR using templates/contributions/track4_harness_pr.md. Include the before/after delta and a description of which modules changed.
+
+My harness change: <describe the change — e.g. "add a reagent pre-check module before atom mapping" or "switch to decentralized_mas topology with 3 agents">
+```
+
+---
+
+### Add few-shot examples to improve a specific failure mode
+
+```
+I've noticed the agent struggles with a particular reaction type and I want to add few-shot examples to improve it.
+
+Steps:
+1. Identify which skill/subagent handles the step that's failing. Read AGENTS.md (Subagent Architecture) and check skills/mechanistic/ for the relevant call_name.
+2. Run a single failing case to capture a trace:
+   `python main.py run --starting "<SMILES>" --products "<SMILES>" --model anthropic/claude-opus-4.6`
+   Note the run ID from the output.
+3. Review the trace in the UI (http://127.0.0.1:8010 if server is running) or via:
+   `python main.py compare-eval-runs --run-a <id> --run-b <id>`
+4. Draft a new few-shot example following the format in skills/mechanistic/<call_name>/few_shot.jsonl.
+5. Validate the evidence: `PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py --call <call_name>`
+6. Run the medium-tier eval to confirm improvement (Track 1 requires medium-tier improvement):
+   `python main.py eval --tier medium --model anthropic/claude-opus-4.6 --thinking-level high`
+7. If it improves, regenerate LEADERBOARD.md and open a PR using templates/contributions/track1_few_shot_pr.md.
+
+Failing reaction type: <e.g. "ester hydrolysis under acidic conditions" or "Mitsunobu reaction">
+```
+
+---
+
+### Run a full Clawdiators-scale benchmark from scratch
+
+```
+I want to run a complete benchmark on this repo — no-harness baseline + full harness — at the 20-case official holdout scale, then view the leaderboard.
+
+Steps:
+1. Activate the venv: `source .venv/bin/activate`
+2. Make sure the holdout eval set is imported (one-time setup):
+   `python main.py import-holdout-eval-set`
+3. Run the no-harness single-shot baseline on the official holdout (20 cases):
+   `python main.py baseline-runset-official --model anthropic/claude-opus-4.6 --thinking-level high`
+4. Run the full harness on the official holdout (20 cases):
+   `python main.py eval-runset-official --model anthropic/claude-opus-4.6 --thinking-level high`
+5. View the official leaderboard:
+   `python main.py leaderboard-official`
+6. Refresh LEADERBOARD.md and curriculum artifacts:
+   `python main.py update-leaderboard-artifacts`
+7. Compare harness vs baseline:
+   `python local_contributions/compare_harness_vs_baseline_samples.py`
+
+Model to benchmark: <model_id>
+Thinking level: <high / low / none>
+```

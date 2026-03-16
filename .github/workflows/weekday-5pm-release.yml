@@ -1,0 +1,153 @@
+name: Weekday 5pm release
+
+on:
+  schedule:
+    # Run every hour on weekdays (UTC). The job itself checks America/Denver time.
+    - cron: "0 * * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekday-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check America/Denver time and determine release branch
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          denver_time="$(TZ=America/Denver date '+%Y-%m-%d %H:%M:%S %Z')"
+          denver_hour="$(TZ=America/Denver date '+%H')"
+          denver_weekday="$(TZ=America/Denver date '+%u')"   # 1-7, Mon-Sun
+          denver_date="$(TZ=America/Denver date '+%Y-%m-%d')"
+          release_branch="release/${denver_date}"
+          tag_name="release-${denver_date}-1700"
+
+          echo "Denver time: $denver_time"
+          echo "Release branch: $release_branch"
+
+          echo "denver_date=$denver_date" >> "$GITHUB_OUTPUT"
+          echo "release_branch=$release_branch" >> "$GITHUB_OUTPUT"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+
+          if [[ "$denver_weekday" -ge 1 && "$denver_weekday" -le 5 && "$denver_hour" == "17" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stop if not 5pm weekday in Denver
+        if: steps.vars.outputs.should_release != 'true'
+        run: |
+          echo "Not 5pm on a weekday in America/Denver. Exiting."
+          exit 0
+
+      - name: Checkout main
+        if: steps.vars.outputs.should_release == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git
+        if: steps.vars.outputs.should_release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch main and release branches
+        if: steps.vars.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git fetch origin "${{ steps.vars.outputs.release_branch }}" || true
+
+      - name: Check whether today's release branch exists
+        if: steps.vars.outputs.should_release == 'true'
+        id: branchexists
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git ls-remote --exit-code --heads origin "${{ steps.vars.outputs.release_branch }}" > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Found branch ${{ steps.vars.outputs.release_branch }}"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No branch named ${{ steps.vars.outputs.release_branch }} exists."
+          fi
+
+      - name: Stop if today's release branch does not exist
+        if: steps.branchexists.outputs.exists != 'true'
+        run: |
+          echo "Nothing queued for today. Exiting."
+          exit 0
+
+      - name: Check whether release branch is ahead of main
+        if: steps.branchexists.outputs.exists == 'true'
+        id: diffcheck
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ahead_count="$(git rev-list --count origin/main..origin/${{ steps.vars.outputs.release_branch }})"
+          echo "ahead_count=$ahead_count" >> "$GITHUB_OUTPUT"
+
+          if [[ "$ahead_count" -eq 0 ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "Release branch has no commits ahead of main."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Release branch is ahead of main by $ahead_count commit(s)."
+          fi
+
+      - name: Stop if today's release branch has nothing new
+        if: steps.diffcheck.outputs.has_changes != 'true'
+        run: |
+          echo "No new changes to merge. Exiting."
+          exit 0
+
+      - name: Merge today's release branch into main
+        if: steps.diffcheck.outputs.has_changes == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git checkout main
+          git reset --hard origin/main
+
+          # Try fast-forward first; otherwise create a merge commit.
+          if git merge --ff-only "origin/${{ steps.vars.outputs.release_branch }}"; then
+            echo "Fast-forward merge succeeded."
+          else
+            git merge --no-ff "origin/${{ steps.vars.outputs.release_branch }}" \
+              -m "Scheduled release from ${{ steps.vars.outputs.release_branch }}"
+          fi
+
+      - name: Tag release
+        if: steps.diffcheck.outputs.has_changes == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git rev-parse "${{ steps.vars.outputs.tag_name }}" >/dev/null 2>&1; then
+            echo "Tag already exists locally: ${{ steps.vars.outputs.tag_name }}"
+          else
+            git tag "${{ steps.vars.outputs.tag_name }}"
+            echo "Created tag: ${{ steps.vars.outputs.tag_name }}"
+          fi
+
+      - name: Push main and tags
+        if: steps.diffcheck.outputs.has_changes == 'true'
+        run: |
+          git push origin main
+          git push origin --tags

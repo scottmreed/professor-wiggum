@@ -1707,6 +1707,7 @@ function populateExampleOptions() {
       return Number(a) - Number(b);
     })
     .forEach(([stepKey, items]) => {
+    if (!items.length) return;
     const group = document.createElement("optgroup");
     const groupCount = Number(stepKey);
     group.label = Number.isFinite(groupCount) && groupCount > 0
@@ -2528,75 +2529,135 @@ function _formatTimestamp(ts) {
   }
 }
 
+// ---- Leaderboard chart instance (destroyed on re-render) ----
+let _leaderboardChartInstance = null;
+
+function _groupLeaderboardByModel(items) {
+  const byModel = {};
+  (Array.isArray(items) ? items : []).forEach((row) => {
+    const model = row.model_name || row.model || "unknown";
+    const thinking = row.thinking_level || "";
+    const key = thinking ? `${model} (${thinking})` : model;
+    if (!byModel[key]) byModel[key] = { harness: null, baseline: null };
+    if (row.is_baseline) {
+      if (!byModel[key].baseline || Number(row.mean_quality_score || 0) > Number(byModel[key].baseline.mean_quality_score || 0))
+        byModel[key].baseline = row;
+    } else {
+      if (!byModel[key].harness || Number(row.mean_quality_score || 0) > Number(byModel[key].harness.mean_quality_score || 0))
+        byModel[key].harness = row;
+    }
+  });
+  // Sort by best harness score descending
+  return Object.entries(byModel).sort((a, b) => {
+    const aScore = Number(a[1].harness?.mean_quality_score || a[1].baseline?.mean_quality_score || 0);
+    const bScore = Number(b[1].harness?.mean_quality_score || b[1].baseline?.mean_quality_score || 0);
+    return bScore - aScore;
+  });
+}
+
+function _renderLeaderboardChart(items) {
+  if (_leaderboardChartInstance) {
+    _leaderboardChartInstance.destroy();
+    _leaderboardChartInstance = null;
+  }
+  const canvas = document.getElementById("leaderboardChart");
+  if (!canvas) return;
+  const grouped = _groupLeaderboardByModel(items);
+  if (!grouped.length) return;
+
+  const labels = grouped.map(([label]) => label);
+  const harnessScores = grouped.map(([, v]) => v.harness ? Number(v.harness.mean_quality_score || 0) * 1000 : null);
+  const baselineScores = grouped.map(([, v]) => v.baseline ? Number(v.baseline.mean_quality_score || 0) * 1000 : null);
+
+  _leaderboardChartInstance = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Harness",
+          data: harnessScores,
+          backgroundColor: "rgba(39, 102, 33, 0.75)",
+          borderColor: "#276621",
+          borderWidth: 1,
+        },
+        {
+          label: "Baseline (no harness)",
+          data: baselineScores,
+          backgroundColor: "rgba(26, 111, 168, 0.65)",
+          borderColor: "#1a6fa8",
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "top" },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y != null ? ctx.parsed.y.toFixed(1) : "n/a"} pts`,
+          },
+        },
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 1000,
+          title: { display: true, text: "Clawdiators pts (quality \u00d7 1000)" },
+        },
+        x: {
+          ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } },
+        },
+      },
+    },
+  });
+}
+
 function _renderLeaderboardInto(container, items) {
   container.innerHTML = "";
-  const rows = Array.isArray(items) ? items : [];
-  if (!rows.length) {
+  const grouped = _groupLeaderboardByModel(items);
+  if (!grouped.length) {
     const empty = document.createElement("div");
     empty.className = "muted";
     empty.textContent = "No leaderboard rows yet.";
     container.appendChild(empty);
     return;
   }
-  rows.forEach((row) => {
+  grouped.forEach(([modelLabel, data]) => {
     const card = document.createElement("div");
-    const isBaseline = !!row.is_baseline;
-    const isSimulated = !!row.is_simulated;
-    card.className = "step-card" + (isBaseline ? " step-card-baseline" : "") + (isSimulated ? " step-card-simulated" : "");
-
-    const hashShort = row.harness_bundle_hash ? row.harness_bundle_hash.slice(0, 8) : "n/a";
-    const modelLabel = row.thinking_level
-      ? `${row.model_name || row.model || "unknown model"} (${row.thinking_level})`
-      : (row.model_name || row.model || "unknown model");
-
-    // Mode badge: harness vs baseline (vs simulated).
-    const modeBadge = isBaseline
-      ? `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;font-weight:600;background:#e8f4fd;color:#1a6fa8;margin-left:6px;">Baseline</span>`
-      : `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;font-weight:600;background:#edf7ed;color:#276621;margin-left:6px;">Harness</span>`;
-    const simulatedBadge = isSimulated
-      ? `<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.78em;font-weight:600;background:#fff3cd;color:#856404;margin-left:4px;">⚠ Simulated</span>`
-      : "";
-
-    // Build per-subagent table if data is available.
-    const perSubagent = row.per_subagent_scores || {};
-    const subagentIds = Object.keys(perSubagent);
-    let subagentHtml = "";
-    if (subagentIds.length) {
-      const rows_html = subagentIds
-        .map((id) => {
-          const entry = perSubagent[id];
-          const q = Number(entry.quality_score || 0).toFixed(3);
-          const p = Number(entry.pass_rate || 0).toFixed(3);
-          const n = entry.case_count || 0;
-          return `<tr><td style="padding:2px 8px 2px 0;">${id}</td><td style="padding:2px 8px;">${q}</td><td style="padding:2px 8px;">${p}</td><td style="padding:2px 0;">${n}</td></tr>`;
-        })
-        .join("");
-      const tableLabel = isBaseline ? "Single-shot breakdown" : "Per-subagent breakdown";
-      subagentHtml = `
-        <details style="margin-top:0.5rem;">
-          <summary class="muted" style="cursor:pointer;">${tableLabel}</summary>
-          <table style="font-size:0.85em;margin-top:0.4rem;border-collapse:collapse;">
-            <thead><tr>
-              <th style="text-align:left;padding:2px 8px 2px 0;">${isBaseline ? "Step" : "Subagent"}</th>
-              <th style="padding:2px 8px;">Quality</th>
-              <th style="padding:2px 8px;">Pass rate</th>
-              <th style="padding:2px 0;">Cases</th>
-            </tr></thead>
-            <tbody>${rows_html}</tbody>
-          </table>
-        </details>`;
-    }
-
+    card.className = "step-card";
+    const harnessScore = data.harness ? Number(data.harness.mean_quality_score || 0).toFixed(3) : "—";
+    const baselineScore = data.baseline ? Number(data.baseline.mean_quality_score || 0).toFixed(3) : "—";
+    const harnessPass = data.harness ? Number(data.harness.deterministic_pass_rate || 0).toFixed(3) : "—";
+    const baselinePass = data.baseline ? Number(data.baseline.deterministic_pass_rate || 0).toFixed(3) : "—";
+    const harnessCases = data.harness ? (data.harness.case_count || 0) : "—";
+    const baselineCases = data.baseline ? (data.baseline.case_count || 0) : "—";
     card.innerHTML = `
-      <div class="step-title">${modelLabel}${modeBadge}${simulatedBadge}</div>
-      <div class="step-meta">eval run: ${row.eval_run_id} &middot; ${_formatTimestamp(row.created_at)}</div>
-      <div class="grid three">
-        <div><strong>Quality</strong><div>${Number(row.mean_quality_score || 0).toFixed(3)}</div></div>
-        <div><strong>Pass rate</strong><div>${Number(row.deterministic_pass_rate || 0).toFixed(3)}</div></div>
-        <div><strong>Cases</strong><div>${row.case_count || 0}</div></div>
-      </div>
-      <div class="muted">group=${row.run_group_name || "n/a"} &middot; harness=${hashShort}</div>
-      ${subagentHtml}
+      <div class="step-title">${modelLabel}</div>
+      <table style="width:100%;font-size:0.82rem;border-collapse:collapse;margin-top:4px;">
+        <thead><tr style="text-align:left;">
+          <th style="padding:2px 6px;"></th>
+          <th style="padding:2px 6px;">Quality</th>
+          <th style="padding:2px 6px;">Pass rate</th>
+          <th style="padding:2px 6px;">Cases</th>
+        </tr></thead>
+        <tbody>
+          <tr style="background:#edf7ed;">
+            <td style="padding:2px 6px;font-weight:600;color:#276621;">Harness</td>
+            <td style="padding:2px 6px;">${harnessScore}</td>
+            <td style="padding:2px 6px;">${harnessPass}</td>
+            <td style="padding:2px 6px;">${harnessCases}</td>
+          </tr>
+          <tr style="background:#e8f4fd;">
+            <td style="padding:2px 6px;font-weight:600;color:#1a6fa8;">Baseline</td>
+            <td style="padding:2px 6px;">${baselineScore}</td>
+            <td style="padding:2px 6px;">${baselinePass}</td>
+            <td style="padding:2px 6px;">${baselineCases}</td>
+          </tr>
+        </tbody>
+      </table>
     `;
     container.appendChild(card);
   });
@@ -2604,25 +2665,9 @@ function _renderLeaderboardInto(container, items) {
 
 async function refreshLeaderboardModal() {
   if (!modalLeaderboardList) return;
-  const selectEl = document.getElementById("modalEvalSetSelect");
-
-  // Auto-select first available eval set if none is selected.
-  if (selectEl && (!selectEl.value || selectEl.value === "") && evalSets.length > 0) {
-    selectEl.value = evalSets[0].id;
-  }
-
-  const evalSetId = selectEl?.value || "";
-  if (!evalSetId) {
-    modalLeaderboardList.innerHTML = `
-      <div class="muted" style="padding:1rem 0;">
-        No eval sets found. Use <strong>Import HumanBenchmark Eval Set</strong> in the
-        Evaluation panel, then come back to refresh.
-      </div>`;
-    return;
-  }
 
   modalLeaderboardList.innerHTML = "<div class='muted'>Loading…</div>";
-  const response = await fetch(`/api/evals/leaderboard?eval_set_id=${encodeURIComponent(evalSetId)}&limit=20`);
+  const response = await fetch("/api/evals/leaderboard/official?limit=20");
   const data = await response.json();
   if (!response.ok) {
     modalLeaderboardList.innerHTML = `<div class='muted'>Error: ${data.detail || "failed"}</div>`;
@@ -2632,10 +2677,12 @@ async function refreshLeaderboardModal() {
   if (!items.length) {
     modalLeaderboardList.innerHTML = `
       <div class="muted" style="padding:1rem 0;">
-        No leaderboard results yet for this eval set. Run an eval set to populate the board.
+        No leaderboard results yet. Run <code>python main.py eval-runset-official</code> to populate.
       </div>`;
+    if (_leaderboardChartInstance) { _leaderboardChartInstance.destroy(); _leaderboardChartInstance = null; }
     return;
   }
+  _renderLeaderboardChart(items);
   _renderLeaderboardInto(modalLeaderboardList, items);
 }
 
@@ -2878,11 +2925,6 @@ async function bootstrap() {
       }
     };
   }
-  document.getElementById("modalEvalSetSelect")?.addEventListener("change", async () => {
-    try {
-      await refreshLeaderboardModal();
-    } catch (_) {}
-  });
 
   // API Keys modal
   const apiKeysBtn = document.getElementById("apiKeysBtn");
@@ -3216,6 +3258,178 @@ async function bootstrap() {
     }
   });
 
+  // ---- Evolution panel ----
+  document.getElementById("toggleEvolutionBtn")?.addEventListener("click", () => {
+    const panel = document.getElementById("evolutionPanel");
+    if (panel) {
+      const nextVisible = panel.style.display === "none";
+      panel.style.display = nextVisible ? "" : "none";
+      refreshEvolutionDashboard();
+    }
+  });
+  document.getElementById("hideEvolutionBtn")?.addEventListener("click", () => {
+    const panel = document.getElementById("evolutionPanel");
+    if (panel) panel.style.display = "none";
+  });
+  document.getElementById("evolutionRefreshBtn")?.addEventListener("click", () => {
+    refreshEvolutionDashboard();
+  });
+
+}
+
+// ---- Evolution Dashboard ----
+
+let _evolutionChart = null;
+
+const ISLAND_COLORS = {
+  mapping: "#4e79a7",
+  reagent_conditions: "#59a14f",
+  topology: "#f28e2b",
+  hard_multistep: "#e15759",
+};
+
+async function refreshEvolutionDashboard() {
+  try {
+    const resp = await fetchApi("/api/archive/islands");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const islands = data.islands || [];
+
+    // Summary cards
+    const genEl = document.getElementById("evolutionGeneration");
+    if (genEl) genEl.textContent = String(data.global_generation >= 0 ? data.global_generation : "-");
+    const countEl = document.getElementById("evolutionIslandCount");
+    if (countEl) countEl.textContent = String(islands.length);
+    const bestEl = document.getElementById("evolutionGlobalBest");
+    const globalBest = Math.max(...islands.map(i => i.best_score || 0), 0);
+    if (bestEl) bestEl.textContent = globalBest > 0 ? globalBest.toFixed(4) : "-";
+
+    // Island cards
+    const cardsEl = document.getElementById("evolutionIslandCards");
+    if (cardsEl) {
+      cardsEl.innerHTML = islands.map(isl => `
+        <div class="curriculum-card" style="border-left:3px solid ${ISLAND_COLORS[isl.id] || '#888'};">
+          <div class="muted">${isl.label}</div>
+          <div class="curriculum-metric">${(isl.best_score || 0).toFixed(4)}</div>
+          <div class="muted">${isl.entry_count} entries, gen ${isl.max_generation}${isl.stagnating ? ' <span style="color:#e15759;">STAGNATING</span>' : ''}</div>
+        </div>
+      `).join("");
+    }
+
+    // Fetch per-island history for chart
+    await refreshEvolutionChart(islands);
+    await refreshEvolutionRecentEntries(islands);
+    await refreshEvolutionMigrations();
+  } catch (err) {
+    console.error("Evolution dashboard error:", err);
+  }
+}
+
+async function refreshEvolutionChart(islands) {
+  const canvas = document.getElementById("evolutionChart");
+  if (!canvas || typeof Chart === "undefined") return;
+
+  const datasets = [];
+  for (const isl of islands) {
+    try {
+      const resp = await fetchApi(`/api/archive/islands/${isl.id}/history`);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      const entries = data.entries || [];
+      // Group by generation, take max score per gen
+      const genMap = {};
+      entries.forEach(e => {
+        const g = e.generation;
+        if (!genMap[g] || e.mean_quality_score > genMap[g]) genMap[g] = e.mean_quality_score;
+      });
+      const gens = Object.keys(genMap).map(Number).sort((a, b) => a - b);
+      datasets.push({
+        label: isl.label,
+        data: gens.map(g => ({ x: g, y: genMap[g] })),
+        borderColor: ISLAND_COLORS[isl.id] || "#888",
+        backgroundColor: "transparent",
+        tension: 0.3,
+        pointRadius: 2,
+      });
+    } catch (e) { /* skip */ }
+  }
+
+  if (_evolutionChart) _evolutionChart.destroy();
+  _evolutionChart = new Chart(canvas.getContext("2d"), {
+    type: "line",
+    data: { datasets },
+    options: {
+      responsive: true,
+      scales: {
+        x: { type: "linear", title: { display: true, text: "Generation" } },
+        y: { title: { display: true, text: "Mean Quality Score" }, min: 0, max: 1 },
+      },
+      plugins: { legend: { position: "bottom" } },
+    },
+  });
+}
+
+async function refreshEvolutionRecentEntries(islands) {
+  const el = document.getElementById("evolutionRecentTable");
+  if (!el) return;
+  // Collect recent entries from all islands
+  let allEntries = [];
+  for (const isl of islands) {
+    try {
+      const resp = await fetchApi(`/api/archive/islands/${isl.id}/history?limit=10`);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      allEntries = allEntries.concat(data.entries || []);
+    } catch (e) { /* skip */ }
+  }
+  allEntries.sort((a, b) => b.created_at - a.created_at);
+  const recent = allEntries.slice(0, 20);
+
+  if (!recent.length) {
+    el.innerHTML = '<div class="muted">No archive entries yet.</div>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;font-size:0.85em;border-collapse:collapse;">
+    <thead><tr>
+      <th style="text-align:left;">Island</th>
+      <th>Gen</th>
+      <th>Score</th>
+      <th>Delta</th>
+      <th>Mutation</th>
+      <th>Children</th>
+    </tr></thead>
+    <tbody>${recent.map(e => `<tr>
+      <td style="color:${ISLAND_COLORS[e.island_id] || '#888'}">${e.island_id || "-"}</td>
+      <td style="text-align:center;">${e.generation}</td>
+      <td style="text-align:center;">${(e.mean_quality_score || 0).toFixed(4)}</td>
+      <td style="text-align:center;color:${e.score_delta > 0 ? '#59a14f' : e.score_delta < 0 ? '#e15759' : '#888'}">${e.score_delta > 0 ? "+" : ""}${(e.score_delta || 0).toFixed(4)}</td>
+      <td style="font-size:0.9em;">${e.mutation_type || "-"}</td>
+      <td style="text-align:center;">${e.children_count || 0}</td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+async function refreshEvolutionMigrations() {
+  const el = document.getElementById("evolutionMigrations");
+  if (!el) return;
+  try {
+    const resp = await fetchApi("/api/archive/migrations?limit=20");
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const migrations = data.migrations || [];
+    if (!migrations.length) {
+      el.innerHTML = '<div class="muted">No migrations yet.</div>';
+      return;
+    }
+    el.innerHTML = migrations.map(m => `
+      <div class="muted" style="padding:0.25rem 0;border-bottom:1px solid var(--border-color,#333);">
+        <span style="color:${ISLAND_COLORS[m.from_island] || '#888'}">${m.from_island}</span>
+        &rarr;
+        <span style="color:${ISLAND_COLORS[m.to_island] || '#888'}">${m.to_island}</span>
+        (gen ${m.generation})
+      </div>
+    `).join("");
+  } catch (e) { /* skip */ }
 }
 
 // ---- Verification UI ----

@@ -1,4 +1,4 @@
-"""Chemistry backend adapter (rdkit_cli subprocess with Python fallback)."""
+"""Chemistry backend adapter (rdkit-agent subprocess with Python fallback)."""
 from __future__ import annotations
 
 import json
@@ -44,7 +44,7 @@ def _read_cfg(config: Any, key: str, default: Any) -> Any:
 class ChemistryBackendConfig:
     backend: str = "auto"
     parity_mode: bool = False
-    rdkit_cli_command: str = "rdkit_cli"
+    rdkit_cli_command: str = "rdkit-agent"
     rdkit_cli_command_custom: bool = False
     rdkit_cli_timeout_seconds: float = 5.0
 
@@ -58,8 +58,11 @@ class ChemistryBackendConfig:
             )
             or "auto"
         ).strip().lower()
-        if backend not in {"auto", "rdkit_cli", "python"}:
+        if backend not in {"auto", "rdkit_cli", "rdkit_agent", "python"}:
             backend = "auto"
+        # rdkit_agent is the canonical name; rdkit_cli is kept for backward compat
+        if backend == "rdkit_agent":
+            backend = "rdkit_cli"
 
         parity_mode = _truthy(
             _read_cfg(
@@ -72,9 +75,9 @@ class ChemistryBackendConfig:
 
         command_override = _read_cfg(config, "rdkit_cli_command", None)
         if command_override is None:
-            command_override = os.getenv("MECHANISTIC_RDKIT_CLI_COMMAND", "rdkit_cli")
-        rdkit_cli_command = str(command_override or "rdkit_cli").strip()
-        rdkit_cli_command_custom = rdkit_cli_command not in {"", "rdkit_cli"}
+            command_override = os.getenv("MECHANISTIC_RDKIT_CLI_COMMAND", "rdkit-agent")
+        rdkit_cli_command = str(command_override or "rdkit-agent").strip()
+        rdkit_cli_command_custom = rdkit_cli_command not in {"", "rdkit_cli", "rdkit-agent"}
 
         timeout_raw = _read_cfg(
             config,
@@ -129,11 +132,11 @@ def _is_within(path: str, root: str) -> bool:
 
 
 def _local_npm_bin() -> str:
-    return str((Path.cwd() / "node_modules" / ".bin" / "rdkit_cli").resolve())
+    return str((Path.cwd() / "node_modules" / ".bin" / "rdkit-agent").resolve())
 
 
 def _local_npm_package() -> str:
-    return str((Path.cwd() / "node_modules" / "rdkit_cli").resolve())
+    return str((Path.cwd() / "node_modules" / "rdkit-agent").resolve())
 
 
 @lru_cache(maxsize=1)
@@ -163,7 +166,7 @@ def _global_npm_package() -> Optional[str]:
     root = _global_npm_root()
     if not root:
         return None
-    return str((Path(root) / "rdkit_cli").resolve())
+    return str((Path(root) / "rdkit-agent").resolve())
 
 
 def _allowed_rdkit_cli_roots() -> Tuple[list[str], list[str]]:
@@ -193,12 +196,12 @@ def _allowed_rdkit_cli_roots() -> Tuple[list[str], list[str]]:
 
 
 def resolve_rdkit_cli_command(cfg: ChemistryBackendConfig) -> RdkitCliResolution:
-    """Resolve rdkit_cli command using npm-first policy.
+    """Resolve rdkit-agent command using npm-first policy.
 
     Resolution order for default command:
-      1) ./node_modules/.bin/rdkit_cli
-      2) npx --no-install rdkit_cli
-      3) PATH rdkit_cli
+      1) ./node_modules/.bin/rdkit-agent
+      2) npx --no-install rdkit-agent
+      3) PATH rdkit-agent
     """
     if cfg.rdkit_cli_command_custom:
         parts = _resolve_command(cfg.rdkit_cli_command)
@@ -223,7 +226,7 @@ def resolve_rdkit_cli_command(cfg: ChemistryBackendConfig) -> RdkitCliResolution
     warning = None
     if rejected_roots:
         warning = (
-            "linked rdkit_cli package(s) detected outside npm roots; "
+            "linked rdkit-agent package(s) detected outside npm roots; "
             f"ignored: {', '.join(rejected_roots[:2])}"
         )
 
@@ -252,21 +255,21 @@ def resolve_rdkit_cli_command(cfg: ChemistryBackendConfig) -> RdkitCliResolution
         global_pkg_real = os.path.realpath(global_pkg) if global_pkg else None
         if global_pkg and global_pkg_real and any(_is_within(global_pkg_real, root) for root in allowed_roots):
             return RdkitCliResolution(
-                command_parts=[npx, "--no-install", "rdkit_cli"],
+                command_parts=[npx, "--no-install", "rdkit-agent"],
                 source="npx_no_install",
                 executable_path=npx,
                 warning=warning,
             )
         # allow npx even without a known global package when local package exists.
-        if any("node_modules/rdkit_cli" in root for root in allowed_roots):
+        if any("node_modules/rdkit-agent" in root for root in allowed_roots):
             return RdkitCliResolution(
-                command_parts=[npx, "--no-install", "rdkit_cli"],
+                command_parts=[npx, "--no-install", "rdkit-agent"],
                 source="npx_no_install",
                 executable_path=npx,
                 warning=warning,
             )
 
-    path_binary = shutil.which("rdkit_cli")
+    path_binary = shutil.which("rdkit-agent")
     if path_binary:
         real_path_binary = os.path.realpath(path_binary)
         if any(_is_within(real_path_binary, root) for root in allowed_roots):
@@ -316,21 +319,21 @@ def _invoke_rdkit_cli(
             if isinstance(loaded, dict):
                 parsed = loaded
             else:
-                raise RuntimeError("rdkit_cli check output must be a JSON object")
+                raise RuntimeError("rdkit-agent check output must be a JSON object")
         except Exception as exc:
             if proc.returncode == 0:
-                raise RuntimeError(f"rdkit_cli returned invalid JSON: {exc}") from exc
+                raise RuntimeError(f"rdkit-agent returned invalid JSON: {exc}") from exc
 
-    # rdkit_cli uses exit code 1 for validation failure; when structured JSON is
+    # rdkit-agent uses exit code 1 for validation failure; when structured JSON is
     # present this is expected and should not trigger Python fallback.
     if proc.returncode in (0, 1):
         if parsed is not None:
             return parsed
         if proc.returncode == 0:
-            raise RuntimeError("rdkit_cli check returned empty stdout")
+            raise RuntimeError("rdkit-agent check returned empty stdout")
 
     err_text = (proc.stderr or proc.stdout or "").strip() or f"exit_code={proc.returncode}"
-    raise RuntimeError(f"rdkit_cli check failed: {err_text}")
+    raise RuntimeError(f"rdkit-agent check failed: {err_text}")
 
 
 def _first_cli_error_code(output: Dict[str, Any]) -> Optional[str]:
@@ -356,7 +359,7 @@ def execute_chemistry_check(
     python_signature: Optional[Callable[[T], Tuple[Any, ...]]] = None,
     cli_signature: Optional[Callable[[Dict[str, Any]], Tuple[Any, ...]]] = None,
 ) -> Tuple[T, Dict[str, Any]]:
-    """Execute a chemistry check via rdkit_cli when available, with Python fallback.
+    """Execute a chemistry check via rdkit-agent when available, with Python fallback.
 
     Returns:
       - result (authoritative output for caller)
@@ -384,10 +387,10 @@ def execute_chemistry_check(
         "parity_mode": bool(cfg.parity_mode),
     }
     if resolution.warning:
-        logger.warning("rdkit_cli resolution warning (%s): %s", mode, resolution.warning)
+        logger.warning("rdkit-agent resolution warning (%s): %s", mode, resolution.warning)
     if resolution.rejected:
         logger.warning(
-            "rdkit_cli resolution rejected (%s): source=%s reason=%s",
+            "rdkit-agent resolution rejected (%s): source=%s reason=%s",
             mode,
             resolution.source,
             resolution.rejection_reason,
@@ -400,16 +403,16 @@ def execute_chemistry_check(
             if resolution.rejected:
                 metadata["fallback_reason"] = "rdkit_cli_policy_rejected"
                 metadata["rdkit_cli_error"] = str(
-                    resolution.rejection_reason or "rdkit_cli command rejected by source policy"
+                    resolution.rejection_reason or "rdkit-agent command rejected by source policy"
                 )
             else:
                 metadata["fallback_reason"] = "rdkit_cli_unavailable"
-                metadata["rdkit_cli_error"] = "rdkit_cli command not found"
+                metadata["rdkit_cli_error"] = "rdkit-agent command not found"
         elif resolution.rejected:
             metadata["fallback_used"] = True
             metadata["fallback_reason"] = "rdkit_cli_policy_rejected"
             metadata["rdkit_cli_error"] = str(
-                resolution.rejection_reason or "rdkit_cli command rejected by source policy"
+                resolution.rejection_reason or "rdkit-agent command rejected by source policy"
             )
         result = python_callable()
         metadata["backend_used"] = "python"
