@@ -7,12 +7,13 @@ import contextlib
 import hashlib
 import json
 import os
+import random
 import shutil
 import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -29,6 +30,18 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from mechanistic_agent.core import RegistrySet, RunCoordinator, RunStore, select_step_models
+from mechanistic_agent.core.archive import (
+    DEFAULT_ISLANDS,
+    ISLAND_CALL_NAMES,
+    EvolutionArchive,
+)
+from mechanistic_agent.core.lane_mutator import (
+    FewShotLaneMutator,
+    HarnessLaneMutator,
+    PromptLaneMutator,
+    TopologyLaneMutator,
+)
+from mechanistic_agent.core.types import ArchiveEntry, IslandConfig, IslandEvolutionConfig
 from mechanistic_agent.flower_curriculum import (
     DEFAULT_FLOWER_INPUT,
     DEFAULT_INDEX_PATH,
@@ -103,10 +116,11 @@ class EvolutionConfig:
     repeat_failure_signature_limit: int = 2
     max_reproposals_per_step: int = 4
     seed: int = 42
-    step_pass_target: int = 50
+    step_pass_target: int = 20
     coordination_topology: str = "centralized_mas"
     thinking_level: Optional[str] = None
     step_count_filter: Optional[int] = None
+    step_count_filter_list: List[int] = field(default_factory=list)
     loop_when_done: bool = False
     train_input: Path = DEFAULT_FLOWER_INPUT
     curriculum_index_path: Path = DEFAULT_INDEX_PATH
@@ -231,7 +245,7 @@ def setup_workspace(base_dir: Path, dry_run: bool) -> Path:
     workspace.mkdir(parents=True, exist_ok=True)
 
     if dry_run:
-        for root_name in ["skills", "training_data", "memory_packs", "harness_versions"]:
+        for root_name in ["skills", "training_data", "harness_versions"]:
             source = base_dir / root_name
             if source.exists():
                 shutil.copytree(source, workspace / root_name, dirs_exist_ok=True)
@@ -314,35 +328,73 @@ def extract_validation_errors(step_outputs: List[Dict[str, Any]]) -> List[Dict[s
     return errors
 
 
-def save_error_diagnostics(
+def _diagnostic_step_output(
+    step_out: Dict[str, Any],
+    input_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build a sanitized step entry for run diagnostics (input summary, output, validation)."""
+    step_name = step_out.get("step_name", "")
+    output = step_out.get("output") or {}
+    if not isinstance(output, dict):
+        output = {}
+    input_text = _reconstruct_input_text(
+        step_name,
+        input_payload,
+        output,
+        step_out,
+    )
+    sanitized_output = dict(output)
+    for key in ("token_usage", "usage"):
+        if key in sanitized_output and isinstance(sanitized_output[key], dict):
+            sanitized_output[key] = {k: v for k, v in sanitized_output[key].items() if k in ("total_tokens", "prompt_tokens", "completion_tokens", "input_tokens", "output_tokens")}
+    return {
+        "step_name": step_name,
+        "input": input_text,
+        "output": sanitized_output,
+        "validation": step_out.get("validation"),
+        "accepted_bool": step_out.get("accepted_bool"),
+    }
+
+
+def save_run_diagnostics(
     workspace: Path,
     batch_name: str,
     case_results: List[Dict[str, Any]],
     dry_run: bool = True,
+    batch_start_rank: Optional[int] = None,
 ) -> Path:
     diagnostics: Dict[str, Any] = {
         "batch": batch_name,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "dry_run": dry_run,
-        "failed_cases": [],
+        "attempted": len(case_results),
+        "pass_count": sum(1 for r in case_results if r.get("passed")),
+        "cases": [],
     }
+    if batch_start_rank is not None:
+        diagnostics["batch_start_rank"] = batch_start_rank
 
+    input_payload_default: Dict[str, Any] = {}
     for result in case_results:
-        if result.get("passed"):
-            continue
-        diagnostics["failed_cases"].append(
-            {
-                "case_id": result.get("case_id"),
-                "score": result.get("score"),
-                "error": result.get("error"),
-                "run_status": result.get("run_status"),
-                "run_error": result.get("run_error"),
-                "validation_errors": extract_validation_errors(result.get("step_outputs", [])),
-                "current_state": result.get("current_state"),
-            }
-        )
+        input_payload = result.get("input_payload") or input_payload_default
+        step_outputs_raw = result.get("step_outputs", [])
+        step_outputs_diag = [
+            _diagnostic_step_output(step_out, input_payload)
+            for step_out in step_outputs_raw
+        ]
+        case_diag = {
+            "case_id": result.get("case_id"),
+            "passed": result.get("passed"),
+            "score": result.get("score"),
+            "run_status": result.get("run_status"),
+            "run_error": result.get("run_error"),
+            "validation_errors": extract_validation_errors(step_outputs_raw),
+            "current_state": result.get("current_state"),
+            "step_outputs": step_outputs_diag,
+        }
+        diagnostics["cases"].append(case_diag)
 
-    diag_path = workspace / f"error_diagnostics_{batch_name}_{time.strftime('%H%M%S')}.json"
+    diag_path = workspace / f"run_diagnostics_{batch_name}_{time.strftime('%H%M%S')}.json"
     diag_path.write_text(json.dumps(diagnostics, indent=2, default=str))
     return diag_path
 
@@ -452,13 +504,7 @@ def mine_few_shots(
             output_text = json.dumps(output, indent=2, sort_keys=True)
             example_score = score_few_shot_example(call_name, input_text=input_text, output_text=output_text)
             output_hash = hashlib.sha256(output_text.encode()).hexdigest()[:16]
-            if output_hash in existing_hashes.get(call_name, set()):
-                continue
-            if example_score < best_scores_by_call.get(call_name, 0.0):
-                continue
-            current = mined.get(call_name, [])
-            if len(current) >= config.max_few_shots_per_step:
-                continue
+            # No filter by duplicate hash, best score, or max_few_shots_per_step — mine all eligible steps
             mined.setdefault(call_name, []).append({
                 "input": input_text,
                 "output": output_text,
@@ -524,6 +570,7 @@ def _curriculum_summary(
         "curriculum_case_id": str(entry["case_id"]),
         "step_count": int(entry["step_count"]),
         "global_rank": int(entry["global_rank"]),
+        "row": int(entry["global_rank"]),
         "rank_within_step_count": int(entry["rank_within_step_count"]),
         "group_size": int(config.group_size),
         "step_pass_target": int(config.step_pass_target),
@@ -926,6 +973,11 @@ def evolve(config: EvolutionConfig) -> None:
     build_lookup_cache(input_path=config.train_input, cache_path=config.lookup_cache_path)
     index_entries = load_curriculum_index(config.curriculum_index_path)
 
+    _step_filter_list = list(config.step_count_filter_list)
+    _step_filter_idx = 0
+    _current_step_filter = config.step_count_filter
+    run_total_examples_mined: Dict[str, int] = {}
+
     while True:
         progress = curriculum_history(
             store,
@@ -938,7 +990,7 @@ def evolve(config: EvolutionConfig) -> None:
             attempted_case_ids=progress["attempted_case_ids"],
             pass_count_by_step=progress["pass_count_by_step"],
             required_passes_per_step=config.step_pass_target,
-            step_count_override=config.step_count_filter,
+            step_count_override=_current_step_filter,
             allow_repeats=False,
         )
         candidates = list(selection["candidates"])
@@ -948,12 +1000,21 @@ def evolve(config: EvolutionConfig) -> None:
                 attempted_case_ids=progress["attempted_case_ids"],
                 pass_count_by_step=progress["pass_count_by_step"],
                 required_passes_per_step=config.step_pass_target,
-                step_count_override=config.step_count_filter,
+                step_count_override=_current_step_filter,
                 allow_repeats=True,
             )
             candidates = list(selection["candidates"])
         if not candidates:
-            print("No new eligible curriculum groups remain for this model+harness+index scope.")
+            if _step_filter_list and _step_filter_idx < len(_step_filter_list) - 1:
+                exhausted_step = _step_filter_list[_step_filter_idx]
+                _step_filter_idx += 1
+                _current_step_filter = _step_filter_list[_step_filter_idx]
+                print(f"Step {exhausted_step} exhausted — advancing to step {_current_step_filter}")
+                continue
+            if run_total_examples_mined:
+                print(f"Curriculum exhausted. Total few-shots mined this run: {run_total_examples_mined}")
+            else:
+                print("No new eligible curriculum groups remain for this model+harness+index scope.")
             return
 
         print(
@@ -962,7 +1023,7 @@ def evolve(config: EvolutionConfig) -> None:
             f"({selection['current_step_pass_count']}/{selection['step_pass_target']} passed)"
         )
         print(f"Highest successful step count so far: {progress['highest_successful_step_count']}")
-        print(f"Next batch starts at global rank: {selection['batch_start_rank']}")
+        print(f"Next batch starts at row: {selection['batch_start_rank']}")
 
         prepared_batch = prepare_curriculum_batch(
             config=config,
@@ -1044,13 +1105,20 @@ def evolve(config: EvolutionConfig) -> None:
             f"{current_step_passes_after}/{config.step_pass_target} passes at step {current_step_before}; "
             f"advance_ready={step_advance_ready}"
         )
+        for _k, _v in accumulated_examples_mined.items():
+            run_total_examples_mined[_k] = run_total_examples_mined.get(_k, 0) + _v
         if accumulated_examples_mined:
             print(f"Mined few-shots (this batch): {accumulated_examples_mined}")
 
         stopped_early = mean_score < config.min_score_threshold
-        if any(not result.get("passed") for result in case_results):
-            diag_path = save_error_diagnostics(workspace, "curriculum", case_results, config.dry_run)
-            print(f"Error diagnostics saved to: {diag_path}")
+        diag_path = save_run_diagnostics(
+            workspace,
+            "curriculum",
+            case_results,
+            config.dry_run,
+            batch_start_rank=selection.get("batch_start_rank"),
+        )
+        print(f"Run diagnostics saved to: {diag_path}")
 
         log = {
             "config": {
@@ -1095,6 +1163,245 @@ def evolve(config: EvolutionConfig) -> None:
             print("Full run — few-shot files in skills/mechanistic/ have been updated.")
 
 
+# ---------------------------------------------------------------------------
+# Island-based archive evolution
+# ---------------------------------------------------------------------------
+
+
+def apply_island_mutation(
+    island: IslandConfig,
+    parent: ArchiveEntry,
+    base_dir: Path,
+    harness_path: Path,
+    rng: random.Random,
+) -> Tuple[str, str, Path]:
+    """Dispatch to the appropriate lane mutator for this island.
+
+    Returns (mutation_type, mutation_summary, mutated_asset_path).
+    """
+    lane = rng.choice(island.allowed_lanes)
+    call_names = ISLAND_CALL_NAMES.get(island.mutation_target, [])
+
+    if lane in ("prompt",) and call_names:
+        call_name = rng.choice(call_names)
+        mutator = PromptLaneMutator(base_dir=base_dir, call_name=call_name)
+        result = mutator.propose(harness_path)
+        return "prompt_edit", result.summary, result.asset_path
+
+    if lane in ("few_shot",) and call_names:
+        call_name = rng.choice(call_names)
+        mutator_fs = FewShotLaneMutator(base_dir=base_dir, call_name=call_name)
+        result = mutator_fs.propose(harness_path)
+        return "few_shot_mine", result.summary, result.asset_path
+
+    if lane == "topology":
+        mutator_topo = TopologyLaneMutator(rng=rng)
+        result = mutator_topo.propose(harness_path)
+        return "topology_mutate", result.summary, result.asset_path
+
+    if lane == "harness":
+        mutator_harness = HarnessLaneMutator()
+        result = mutator_harness.propose(harness_path)
+        return "harness_toggle", result.summary, result.asset_path
+
+    # Fallback: few-shot on default call_name
+    fallback_cn = call_names[0] if call_names else "propose_mechanism_step"
+    mutator_fb = FewShotLaneMutator(base_dir=base_dir, call_name=fallback_cn)
+    result = mutator_fb.propose(harness_path)
+    return "few_shot_mine", result.summary, result.asset_path
+
+
+def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig) -> None:
+    """Archive-based island evolution loop."""
+    base_dir = _PROJECT_ROOT
+    store = RunStore(base_dir / "data" / "mechanistic.db")
+
+    requested_eval_identifier = str(config.eval_set_id or "").strip().lower()
+    if requested_eval_identifier in {"eval_set", "default", "flower", "flower_100", "flower_100_default"}:
+        imported_id = ensure_default_flower_eval_set(store, base_dir=base_dir)
+        if imported_id:
+            config.eval_set_id = imported_id
+
+    try:
+        resolved_id = resolve_eval_set_id(store, config.eval_set_id)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
+    resolved_eval_set = store.get_eval_set(resolved_id)
+    if resolved_eval_set is None:
+        print(f"Error: resolved eval set not found: {resolved_id}")
+        sys.exit(1)
+    if str(resolved_eval_set.get("purpose") or "general") == "leaderboard_holdout":
+        print("Error: leaderboard_holdout eval sets cannot be used for evolution.")
+        sys.exit(1)
+    config.eval_set_id = resolved_id
+
+    workspace = setup_workspace(base_dir, config.dry_run)
+    runtime_base = workspace if config.dry_run else base_dir
+    runtime_store = RunStore(runtime_base / "data" / "mechanistic.db")
+
+    # Set up archive
+    active_islands = [isl for isl in DEFAULT_ISLANDS if isl.id in island_config.islands]
+    archive = EvolutionArchive(store=runtime_store, islands=active_islands)
+
+    # Seed from leaderboard if empty
+    if archive.is_empty():
+        lb_dir = base_dir / "curriculum" / "generated"
+        count = archive.seed_from_leaderboard(lb_dir)
+        print(f"Seeded archive with {count} entries from leaderboard")
+
+    config.thinking_level = _resolve_thinking_level(config.model_name, config.thinking_level)
+    ensure_index(
+        input_path=config.train_input,
+        index_path=config.curriculum_index_path,
+        report_path=config.curriculum_index_report_path,
+    )
+    build_lookup_cache(input_path=config.train_input, cache_path=config.lookup_cache_path)
+    index_entries = load_curriculum_index(config.curriculum_index_path)
+
+    rng = random.Random(island_config.seed)
+    generation = archive.max_generation() + 1
+    harness_path = base_dir / "harness_versions" / config.harness / "harness.json"
+
+    mode_label = "DRY RUN" if config.dry_run else "FULL RUN"
+    print(f"\nIsland Evolution {mode_label} — generation {generation}")
+    print(f"  Active islands: {[isl.id for isl in active_islands]}")
+    print(f"  Migration interval: {island_config.migration_interval}")
+    print()
+
+    while True:
+        for island in active_islands:
+            print(f"\n--- Generation {generation} | Island: {island.id} ({island.label}) ---")
+
+            # 1. Select parent
+            try:
+                parent = archive.select_parent(island.id, rng=rng)
+                archive.increment_children(parent.id)
+                print(f"  Parent: {parent.id[:8]}... (score={parent.mean_quality_score:.4f}, children={parent.children_count})")
+            except ValueError:
+                print(f"  No parents available on island {island.id}, skipping")
+                continue
+
+            # 2. Apply mutation
+            try:
+                mutation_type, mutation_summary, mutated_path = apply_island_mutation(
+                    island, parent, runtime_base, harness_path, rng,
+                )
+                print(f"  Mutation: {mutation_type} — {mutation_summary}")
+            except (FileNotFoundError, ValueError) as exc:
+                print(f"  Mutation failed: {exc}, skipping island")
+                continue
+
+            # 3. Run eval batch
+            progress = curriculum_history(
+                runtime_store,
+                model_name=config.model_name,
+                harness=config.harness,
+                curriculum_index_path=config.curriculum_index_path,
+            )
+
+            # Apply tier filter for hard_multistep island
+            step_override = config.step_count_filter
+            if island.eval_tier_filter == "hard":
+                step_override = 9  # 9+ step reactions
+
+            selection = next_curriculum_candidates(
+                index_entries,
+                attempted_case_ids=progress["attempted_case_ids"],
+                pass_count_by_step=progress["pass_count_by_step"],
+                required_passes_per_step=config.step_pass_target,
+                step_count_override=step_override,
+                allow_repeats=True,
+            )
+            candidates = list(selection["candidates"])
+            if not candidates:
+                print(f"  No curriculum candidates for island {island.id}")
+                continue
+
+            prepared_batch = prepare_curriculum_batch(
+                config=config,
+                candidate_entries=candidates,
+                current_step_count=int(selection["current_step_count"]),
+            )
+            if not prepared_batch["runnable_cases"]:
+                print(f"  No runnable cases for island {island.id}")
+                continue
+
+            registry = RegistrySet(runtime_base)
+            hashes = registry.bundle_hashes()
+
+            eval_run_id, case_results = run_curriculum_batch(
+                config,
+                prepared_batch=prepared_batch,
+                store=runtime_store,
+                base_dir=runtime_base,
+                workspace=workspace,
+            )
+
+            # 4. Score and create archive entry
+            scores = [r["score"] for r in case_results if "score" in r]
+            mean_score = sum(scores) / len(scores) if scores else 0.0
+            pass_count = sum(1 for r in case_results if r.get("passed"))
+            pass_rate = pass_count / len(case_results) if case_results else 0.0
+            sa_analysis = analyze_subagent_performance(case_results)
+
+            score_delta = mean_score - parent.mean_quality_score
+
+            entry = ArchiveEntry(
+                id=uuid.uuid4().hex,
+                generation=generation,
+                island_id=island.id,
+                parent_id=parent.id,
+                archive_inspiration_ids=[],
+                harness_name=config.harness,
+                harness_config_json=json.dumps(hashes),
+                prompt_bundle_hash=hashes.get("prompt_bundle_hash", ""),
+                skill_bundle_hash=hashes.get("skill_bundle_hash", ""),
+                few_shot_snapshot_json="{}",
+                topology_profile_json="{}",
+                mutation_type=mutation_type,
+                mutation_summary=mutation_summary,
+                mean_quality_score=mean_score,
+                weighted_pass_rate=pass_rate,
+                per_subagent_scores_json=json.dumps(sa_analysis.get("subagents", {})),
+                total_cost=sum(
+                    float((r.get("step_outputs") or {}).get("total_cost", 0))
+                    for r in case_results
+                    if isinstance(r.get("step_outputs"), dict)
+                ),
+                eval_run_id=eval_run_id or None,
+                eval_tier=island.eval_tier_filter or "mixed",
+                case_count=len(case_results),
+                children_count=0,
+                score_delta=score_delta,
+                migration_history_json="[]",
+                created_at=time.time(),
+            )
+            archive.insert(entry)
+
+            print(f"  Result: score={mean_score:.4f} (delta={score_delta:+.4f}), pass_rate={pass_rate:.1%}")
+
+            # 5. Stagnation check
+            if archive.stagnation_check(island.id, window=island.stagnation_threshold):
+                print(f"  WARNING: Island {island.id} stagnating ({island.stagnation_threshold} gens without improvement)")
+
+        # 6. Migration check
+        if generation % island_config.migration_interval == 0:
+            print(f"\n--- Migration check (generation {generation}) ---")
+            for source in active_islands:
+                source_best = archive.island_best(source.id)
+                if source_best is None:
+                    continue
+                for target in active_islands:
+                    if target.id == source.id:
+                        continue
+                    if archive.attempt_migration(source.id, target.id, source_best):
+                        print(f"  Migrated {source.id} -> {target.id} (score={source_best.mean_quality_score:.4f})")
+
+        generation += 1
+        print(f"\n=== Completed generation {generation - 1} ===\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evolve the harness against the ranked FlowER curriculum.")
     parser.add_argument("--model-name", required=True, help="Model identifier")
@@ -1102,7 +1409,7 @@ def main() -> None:
     parser.add_argument("--eval-set-id", default="eval_set", help="Eval set ID, name, or alias.")
     parser.add_argument("--group-size", type=int, default=4, help="Target number of runnable curriculum cases per invocation.")
     parser.add_argument("--cases-per-tier", type=int, default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--step-pass-target", type=int, default=50, help="Stay on the current step count until this many cases at that step have passed.")
+    parser.add_argument("--step-pass-target", type=int, default=20, help="Stay on the current step count until this many cases at that step have passed.")
     parser.add_argument("--min-score-threshold", type=float, default=0.2, help="Stop mining if the batch mean score drops below this.")
     parser.add_argument("--mining-score-threshold", type=float, default=0.5, help="Only mine few-shots from sufficiently strong batches.")
     parser.add_argument("--max-few-shots-per-step", type=int, default=3, help="Max new examples per subagent per batch.")
@@ -1114,9 +1421,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42, help="Reserved for deterministic future extensions.")
     parser.add_argument("--coordination-topology", default="centralized_mas", choices=["sas", "centralized_mas", "independent_mas", "decentralized_mas"], help="Coordination topology strategy (default: centralized_mas).")
     parser.add_argument("--thinking-level", default=None, help="Reasoning level: low, high, max, or auto (default: highest available for the model).")
-    parser.add_argument("--step-count", default="mixed", help="Step count filter: 1, 2, 3, ... 8, or mixed (default: curriculum-driven).")
+    parser.add_argument("--step-count", default="mixed", help="Step count filter: 1, 2, 3, ... 8, mixed (default: curriculum-driven), or a range like 2-3 to run step 2 then step 3.")
     parser.add_argument("--loop", action="store_true", help="When no candidates remain, allow repeats and continue until none.")
     parser.add_argument("--dry-run", action="store_true", help="Store updates in a shadow workspace.")
+    parser.add_argument("--island-mode", action="store_true", help="Enable island-based archive evolution (ShinkaEvolve-inspired).")
+    parser.add_argument("--islands", default=None, help="Comma-separated island IDs (default: mapping,reagent_conditions,topology,hard_multistep).")
+    parser.add_argument("--migration-interval", type=int, default=5, help="Generations between migration attempts (default: 5).")
     parser.add_argument("--train-input", default=str(DEFAULT_FLOWER_INPUT), help="Path to FlowER train.txt.")
     parser.add_argument("--curriculum-index-path", default=str(DEFAULT_INDEX_PATH), help="Curriculum index JSONL path.")
     parser.add_argument("--lookup-cache-path", default=str(DEFAULT_LOOKUP_CACHE), help="Lookup cache SQLite path.")
@@ -1131,13 +1441,25 @@ def main() -> None:
             group_size = int(args.cases_per_tier)
 
     step_count_filter: Optional[int] = None
-    if (args.step_count or "mixed").strip().lower() != "mixed":
-        try:
-            step_count_filter = int(args.step_count)
-            if step_count_filter < 1 or step_count_filter > 20:
+    step_count_filter_list: List[int] = []
+    raw_sc = (args.step_count or "mixed").strip().lower()
+    if raw_sc != "mixed":
+        if "-" in raw_sc:
+            parts = raw_sc.split("-", 1)
+            try:
+                lo, hi = int(parts[0]), int(parts[1])
+                step_count_filter_list = [s for s in range(lo, hi + 1) if 1 <= s <= 20]
+                if step_count_filter_list:
+                    step_count_filter = step_count_filter_list[0]
+            except (TypeError, ValueError):
+                pass
+        else:
+            try:
+                step_count_filter = int(raw_sc)
+                if step_count_filter < 1 or step_count_filter > 20:
+                    step_count_filter = None
+            except (TypeError, ValueError):
                 step_count_filter = None
-        except (TypeError, ValueError):
-            step_count_filter = None
 
     config = EvolutionConfig(
         model_name=args.model_name,
@@ -1158,6 +1480,7 @@ def main() -> None:
         coordination_topology=args.coordination_topology,
         thinking_level=args.thinking_level,
         step_count_filter=step_count_filter,
+        step_count_filter_list=step_count_filter_list,
         loop_when_done=args.loop,
         train_input=Path(args.train_input),
         curriculum_index_path=Path(args.curriculum_index_path),
@@ -1171,11 +1494,32 @@ def main() -> None:
     print(f"  Step pass target: {config.step_pass_target}")
     print(f"  Coordination topology: {config.coordination_topology}")
     print(f"  Thinking level: {config.thinking_level or 'auto'}")
-    print(f"  Step count filter: {config.step_count_filter or 'mixed'}")
+    if config.step_count_filter_list:
+        sc_display = "-".join(str(s) for s in config.step_count_filter_list)
+    else:
+        sc_display = str(config.step_count_filter) if config.step_count_filter else "mixed"
+    print(f"  Step count filter: {sc_display}")
     print(f"  Loop when done: {config.loop_when_done}")
+    print(f"  Island mode: {args.island_mode}")
     print(f"  Curriculum index: {config.curriculum_index_path}")
     print()
-    evolve(config)
+    try:
+        if args.island_mode:
+            island_ids = (
+                [s.strip() for s in args.islands.split(",") if s.strip()]
+                if args.islands
+                else ["mapping", "reagent_conditions", "topology", "hard_multistep"]
+            )
+            island_cfg = IslandEvolutionConfig(
+                islands=island_ids,
+                migration_interval=max(1, int(args.migration_interval)),
+                seed=config.seed,
+            )
+            evolve_islands(config, island_cfg)
+        else:
+            evolve(config)
+    except KeyboardInterrupt:
+        print("\nRun interrupted by user. Few-shot examples from completed cases have already been saved to skills/.")
 
 
 if __name__ == "__main__":

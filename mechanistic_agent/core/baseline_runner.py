@@ -24,7 +24,7 @@ from mechanistic_agent.llm import (
     is_gemini_model,
     is_openrouter_model,
 )
-from mechanistic_agent.smiles_utils import assess_target_product_state
+from mechanistic_agent.smiles_utils import assess_target_product_state, strip_atom_mapping_list
 from mechanistic_agent.tool_schemas import PREDICT_FULL_MECHANISM_TOOL, build_tool_choice
 
 # Sentinel group name for baseline runs – checked by leaderboard() to set is_baseline.
@@ -282,6 +282,12 @@ class BaselineRunner:
           - ``error``: error message string if the call failed, else None
         """
         start_ts = time.time()
+
+        # Strip atom-map numbers and canonicalize SMILES before LLM call (same as harness path).
+        starting_materials = strip_atom_mapping_list([str(s) for s in starting_materials])
+        products = strip_atom_mapping_list([str(p) for p in products])
+        if current_state is not None:
+            current_state = strip_atom_mapping_list([str(s) for s in current_state])
 
         model_kwargs: Dict[str, Any] = {}
         from mechanistic_agent.model_registry import (

@@ -2497,7 +2497,7 @@ def baseline_runset_official_cmd(
     ),
     temperature: float = typer.Option(25.0, "--temperature", help="Reaction temperature in Celsius"),
     ph: Optional[float] = typer.Option(None, "--ph", help="Observed reaction pH (optional)"),
-    max_cases: int = typer.Option(200, "--max-cases", help="Max cases when running an eval set"),
+    max_cases: int = typer.Option(20, "--max-cases", help="Max cases when running an eval set"),
     timeout: float = typer.Option(300.0, "--timeout", help="Per-case timeout in seconds"),
     llm_seed: int = typer.Option(42, "--llm-seed", help="Deterministic seed hint for providers that support it"),
     llm_temperature: float = typer.Option(0.0, "--llm-temperature", help="Sampling temperature when using fixed policy"),
@@ -2525,6 +2525,11 @@ def baseline_runset_official_cmd(
         starting=None,
         products=None,
         eval_set_id=str(resolved_eval_set.eval_set_id),
+        tier=None,
+        all_tiers=False,
+        tier_map_path=None,
+        tier_definitions_path=None,
+        run_group_prefix="harness_free_baseline",
         model_name=model_name,
         thinking_level=thinking_level,
         temperature=temperature,
@@ -2534,6 +2539,7 @@ def baseline_runset_official_cmd(
         llm_seed=llm_seed,
         llm_temperature=llm_temperature,
         sampling_policy=sampling_policy,
+        allow_repeats=False,
         json_output=json_output,
         allow_holdout=True,
     )
@@ -3444,7 +3450,7 @@ def _execute_harness_eval_run(
 
 @app.command(name="eval")
 def eval_cmd(
-    eval_set_id: str = typer.Option(..., "--eval-set-id", help="Eval set to run against (ignored if --tier/--all-tiers)"),
+    eval_set_id: Optional[str] = typer.Option(None, "--eval-set-id", help="Eval set to run against (ignored if --tier/--all-tiers)"),
     model_name: str = typer.Option(
         get_default_model(), "--model-name", "--model",
         help="Model identifier (e.g. gpt-5.4, claude-opus-4.6)",
@@ -3828,6 +3834,8 @@ def eval_cmd(
         raise typer.BadParameter("--leaderboard-route is only supported with --tier")
     if yes:
         raise typer.BadParameter("--yes is only supported with --tier")
+    if not eval_set_id:
+        raise typer.BadParameter("--eval-set-id is required unless using --tier or --all-tiers")
 
     try:
         resolved_eval_set = resolve_eval_set(
@@ -3982,7 +3990,13 @@ def eval_runset_official_cmd(
         help="Emit compact per-step runtime trace lines during official eval runs.",
     ),
 ) -> None:
-    """Run the official holdout-only leaderboard eval."""
+    """Run the official holdout-only leaderboard eval.
+
+    Defaults to 20 cases.
+    The holdout set is sourced from FlowER test.txt (separate from the Clawdiators
+    arena reactions, which come from training_data/eval_set.json) and is never used
+    for prompt tuning or harness development.
+    """
     base = Path.cwd()
     store = RunStore(base / "data" / "mechanistic.db")
     model_name = _canonicalize_model_name_or_raise(model_name)

@@ -114,14 +114,107 @@
     "calendar": "curriculum/generated/readme_context.json",
     "checkpoints": "curriculum/checkpoints/",
     "history": "docs/history_and_reproducibility.md",
-    "leaderboard": "curriculum/generated/leaderboard_gpt-5.4.json",
+    "leaderboard": "curriculum/generated/leaderboard_anthropic_claude-opus-4.6.json",
     "operations": "docs/curriculum_operations.md",
     "upcoming_reactions": "training_data/flower_curriculum_pngs/index.json"
   },
   "focus_label": "Trainee Curriculum",
-  "generated_at": "2026-03-15T05:09:24.952977-06:00",
-  "latest_leaderboard_row": null,
-  "model_name": "gpt-5.4",
+  "generated_at": "2026-03-16T16:57:46.191245-06:00",
+  "latest_leaderboard_row": {
+    "aggregate_gate_cases": null,
+    "aggregate_weighting": null,
+    "avg_latency_ms": 0.0,
+    "case_count": 4,
+    "created_at": 1773617575.4655218,
+    "deterministic_pass_rate": 1.0,
+    "eligible_bucket_count": 0,
+    "eligible_weight_sum": 0.0,
+    "eval_run_id": "66124bfc99df433593a152e1ddf4e344",
+    "eval_set_id": "b8855f9de2c741e6bf2d74117eeada70",
+    "harness_bundle_hash": "61a3a1edee30264021017550fda9c1bf5df94ea9d233e1fe016f7ba14d3e04cc",
+    "is_baseline": false,
+    "is_simulated": false,
+    "mean_quality_score": 0.99755,
+    "model": "anthropic/claude-opus-4.6",
+    "model_family": "claude",
+    "model_name": "anthropic/claude-opus-4.6",
+    "per_step_scores": {},
+    "per_subagent_scores": {
+      "atom_balance_validation": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "atom_mapping": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "balance_analysis": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "bond_electron_validation": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "functional_groups": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "initial_conditions": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "mechanism_step_proposal": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "missing_reagents": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "ph_recommendation": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "reaction_type_mapping": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "reflection": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "state_progress_validation": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "step_atom_mapping": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 0.965
+      }
+    },
+    "run_group_name": "curriculum_default_s1_r47_n4",
+    "status": "completed",
+    "thinking_level": "high",
+    "total_cost": 1.08125,
+    "total_weight_sum": 0.0,
+    "weighted_pass_rate": 1.0,
+    "weighted_quality_score": 0.99755
+  },
+  "model_name": "anthropic/claude-opus-4.6",
   "next_slot": {
     "label": "Monday lesson",
     "release_date": "2026-03-16",
@@ -129,8 +222,8 @@
     "scheduled_publish_at_iso": "2026-03-16T17:00:00-06:00"
   },
   "prompt_asset_links": {
-    "opus_base_override": "skills/mechanistic/base_system/models/gpt-5.4/SKILL.md",
-    "opus_few_shot_dir": "skills/mechanistic/propose_mechanism_step/models/gpt-5.4/",
+    "opus_base_override": "skills/mechanistic/base_system/models/anthropic__claude-opus-4.6/SKILL.md",
+    "opus_few_shot_dir": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/",
     "override_guide": "docs/model_asset_overrides.md",
     "shared_skills": "skills/mechanistic/"
   },
@@ -138,11 +231,20 @@
     {
       "path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/",
       "slug": "anthropic__claude-opus-4-5"
+    },
+    {
+      "path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/",
+      "slug": "anthropic__claude-opus-4.6"
     }
   ],
   "start_date": "2026-03-11",
   "student_label": "trainee",
   "timezone": "America/Denver",
-  "today_slot": null,
+  "today_slot": {
+    "label": "Monday lesson",
+    "release_date": "2026-03-16",
+    "release_kind": "lesson",
+    "scheduled_publish_at_iso": "2026-03-16T17:00:00-06:00"
+  },
   "trainee_name": "Claude Opus"
 }

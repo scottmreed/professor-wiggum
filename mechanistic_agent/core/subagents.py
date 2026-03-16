@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from .tool_executor import ToolExecutor
-from .types import RunState, StepResult
+from .types import RunState, StepResult, StepValidationResult
 
 
 def _extract_step_cost(
@@ -149,10 +149,50 @@ class MissingReagentsAgent:
 class MappingAgent:
     executor: ToolExecutor
 
+    @staticmethod
+    def _validate_mapping(
+        output: Dict[str, Any],
+        *,
+        starting_materials: List[str],
+        products: List[str],
+        backend_config: Any = None,
+    ) -> Optional[StepValidationResult]:
+        """Run deterministic atom-map validation via rdkit-agent."""
+        from mechanistic_agent.tools import validate_atom_mapping_via_rdkit
+
+        llm_response = output.get("llm_response")
+        if not isinstance(llm_response, dict):
+            return None
+        mapped_atoms = llm_response.get("mapped_atoms")
+        if not isinstance(mapped_atoms, list):
+            return None
+
+        validation = validate_atom_mapping_via_rdkit(
+            starting_materials=starting_materials,
+            products=products,
+            mapped_atoms=mapped_atoms,
+            backend_config=backend_config,
+        )
+        # When validation finds errors, clamp confidence so downstream
+        # consumers know the mapping is unreliable.
+        if validation is not None and not validation.passed:
+            if isinstance(llm_response.get("confidence"), (int, float)):
+                llm_response["confidence"] = min(float(llm_response["confidence"]), 0.3)
+            output["atom_map_validation"] = validation.as_dict()
+        elif validation is not None:
+            output["atom_map_validation"] = validation.as_dict()
+        return validation
+
     def run(self, state: RunState) -> StepResult:
         output = self.executor.run_mapping(state.run_input.starting_materials, state.run_input.products)
         model = state.run_config.step_models.get("atom_mapping", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)
+        validation = self._validate_mapping(
+            output,
+            starting_materials=state.run_input.starting_materials,
+            products=state.run_input.products,
+            backend_config=state.run_config,
+        )
         return StepResult(
             step_name="atom_mapping",
             tool_name="attempt_atom_mapping",
@@ -160,6 +200,7 @@ class MappingAgent:
             source="llm",
             token_usage=usage,
             cost=cost,
+            validation=validation,
         )
 
     def run_step_mapping(self, state: RunState, *, current_state: List[str], resulting_state: List[str]) -> StepResult:
@@ -169,6 +210,12 @@ class MappingAgent:
         )
         model = state.run_config.step_models.get("atom_mapping", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)
+        validation = self._validate_mapping(
+            output,
+            starting_materials=current_state,
+            products=resulting_state,
+            backend_config=state.run_config,
+        )
         return StepResult(
             step_name="step_atom_mapping",
             tool_name="attempt_atom_mapping_for_step",
@@ -176,6 +223,7 @@ class MappingAgent:
             source="llm",
             token_usage=usage,
             cost=cost,
+            validation=validation,
         )
 
 

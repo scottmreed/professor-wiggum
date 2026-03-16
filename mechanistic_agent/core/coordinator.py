@@ -14,6 +14,14 @@ from mechanistic_agent.smiles_utils import canonicalize_if_valid
 
 from . import model_context
 from .arrow_push import predict_arrow_push_annotation
+from .scratchpad import (
+    append_backtrack as _scratchpad_backtrack,
+    append_failed_path as _scratchpad_failed_path,
+    append_step_accepted as _scratchpad_step_accepted,
+    append_validation_retry as _scratchpad_validation_retry,
+    init_scratchpad as _scratchpad_init,
+    read_scratchpad_summary,
+)
 from .baseline_runner import BaselineRunner
 from .db import RunStore
 from .mechanism_moves import normalize_electron_pushes, repair_candidate_reaction_smirks
@@ -84,6 +92,19 @@ class RunCoordinator:
             "MechanismAgent": self.mechanism_agent,
             "ReflectionAgent": self.reflection_agent,
         }
+
+    @property
+    def _base_dir(self):
+        """Resolve project base directory from store DB path.
+
+        Returns ``None`` when the store is a test mock without ``db_path``.
+        """
+        db_path = getattr(self.store, "db_path", None)
+        if db_path is None:
+            return None
+        from pathlib import Path
+        p = Path(db_path).parent
+        return p.parent if p.name == "data" else p
 
     def _resolve_harness(self, state: RunState) -> HarnessConfig:
         """Resolve harness config from run config, falling back to default."""
@@ -3037,6 +3058,13 @@ class RunCoordinator:
                 attempt=state.step_index + 1,
                 retry_index=retry_index,
             )
+            _scratchpad_validation_retry(
+                self._base_dir,
+                state.run_id,
+                step_index=state.step_index + 1,
+                retry_index=retry_index,
+                failed_checks=last_failed_checks,
+            )
 
             repeat_failure_signature_limit = max(
                 2,
@@ -3173,6 +3201,14 @@ class RunCoordinator:
             attempt=state.step_index,
             retry_index=0,
         )
+        _scratchpad_step_accepted(
+            self._base_dir,
+            state.run_id,
+            step_index=state.step_index,
+            intermediate_smiles=candidate.intermediate_smiles,
+            resulting_state=list(state.current_state),
+            candidate_rank=candidate.rank,
+        )
 
     def _collect_failed_path_steps(self, state: RunState, from_step_index: int) -> List[Dict[str, Any]]:
         """Gather mechanism step outputs from the DB for steps after *from_step_index*."""
@@ -3224,6 +3260,14 @@ class RunCoordinator:
                     "steps_in_path": len(failed_steps),
                 },
             )
+            _scratchpad_failed_path(
+                self._base_dir,
+                state.run_id,
+                branch_step_index=bp.step_index,
+                candidate_rank=chosen_rank,
+                steps_taken=len(failed_steps),
+                reason="validation_retry_exhausted",
+            )
 
             # Pop the next alternative
             next_alt = bp.alternatives.pop(0)
@@ -3270,6 +3314,14 @@ class RunCoordinator:
                 step_name="mechanism_synthesis",
                 attempt=bp.step_index + 1,
                 retry_index=0,
+            )
+            _scratchpad_backtrack(
+                self._base_dir,
+                state.run_id,
+                reverted_to_step=bp.step_index,
+                alternative_rank=next_alt.rank,
+                failed_path_steps=len(failed_steps),
+                failure_reason="validation_retry_exhausted",
             )
             return True
 
@@ -3387,6 +3439,14 @@ class RunCoordinator:
         if proposal_hints and isinstance(proposal_hints, dict):
             merged = dict(template_guidance or {})
             merged.update(proposal_hints)
+            template_guidance = merged
+
+        # Inject condensed scratchpad summary so the LLM can avoid
+        # repeating failed approaches without seeing full branch/backtrack detail.
+        scratchpad_summary = read_scratchpad_summary(self._base_dir, state.run_id)
+        if scratchpad_summary:
+            merged = dict(template_guidance or {})
+            merged["scratchpad_summary"] = scratchpad_summary
             template_guidance = merged
 
         self.store.append_event(
@@ -5379,6 +5439,12 @@ class RunCoordinator:
                     "input": asdict(state.run_input),
                     "config": asdict(state.run_config),
                 },
+            )
+            _scratchpad_init(
+                self._base_dir,
+                run_id,
+                state.run_input.starting_materials,
+                state.run_input.products,
             )
 
         try:
