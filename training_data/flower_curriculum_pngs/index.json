@@ -4960,6 +4960,202 @@
       }
     },
     {
+      "case_id": "flower_213954",
+      "reaction_id": "flower_213954",
+      "name": "FlowER mechanism 213954",
+      "step_count": 4,
+      "png": "40051.png",
+      "global_rank": 111398,
+      "rank_within_step_count": 51,
+      "metadata": {
+        "case_id": "flower_213954",
+        "global_rank": 111398,
+        "max_reagent_heavy_atoms": 15,
+        "mechanism_id": 213954,
+        "rank_key": [
+          4,
+          2,
+          20,
+          15,
+          7,
+          213954
+        ],
+        "rank_within_step_count": 51,
+        "reagent_count": 2,
+        "step_count": 4,
+        "total_heavy_atoms": 20,
+        "total_hetero_atoms": 7
+      }
+    },
+    {
+      "case_id": "flower_240489",
+      "reaction_id": "flower_240489",
+      "name": "FlowER mechanism 240489",
+      "step_count": 4,
+      "png": "40052.png",
+      "global_rank": 111399,
+      "rank_within_step_count": 52,
+      "metadata": {
+        "case_id": "flower_240489",
+        "global_rank": 111399,
+        "max_reagent_heavy_atoms": 15,
+        "mechanism_id": 240489,
+        "rank_key": [
+          4,
+          2,
+          20,
+          15,
+          7,
+          240489
+        ],
+        "rank_within_step_count": 52,
+        "reagent_count": 2,
+        "step_count": 4,
+        "total_heavy_atoms": 20,
+        "total_hetero_atoms": 7
+      }
+    },
+    {
+      "case_id": "flower_262194",
+      "reaction_id": "flower_262194",
+      "name": "FlowER mechanism 262194",
+      "step_count": 4,
+      "png": "40057.png",
+      "global_rank": 111404,
+      "rank_within_step_count": 57,
+      "metadata": {
+        "case_id": "flower_262194",
+        "global_rank": 111404,
+        "max_reagent_heavy_atoms": 14,
+        "mechanism_id": 262194,
+        "rank_key": [
+          4,
+          2,
+          21,
+          14,
+          5,
+          262194
+        ],
+        "rank_within_step_count": 57,
+        "reagent_count": 2,
+        "step_count": 4,
+        "total_heavy_atoms": 21,
+        "total_hetero_atoms": 5
+      }
+    },
+    {
+      "case_id": "flower_098653",
+      "reaction_id": "flower_098653",
+      "name": "FlowER mechanism 98653",
+      "step_count": 4,
+      "png": "40058.png",
+      "global_rank": 111405,
+      "rank_within_step_count": 58,
+      "metadata": {
+        "case_id": "flower_098653",
+        "global_rank": 111405,
+        "max_reagent_heavy_atoms": 14,
+        "mechanism_id": 98653,
+        "rank_key": [
+          4,
+          2,
+          21,
+          14,
+          8,
+          98653
+        ],
+        "rank_within_step_count": 58,
+        "reagent_count": 2,
+        "step_count": 4,
+        "total_heavy_atoms": 21,
+        "total_hetero_atoms": 8
+      }
+    },
+    {
+      "case_id": "flower_137888",
+      "reaction_id": "flower_137888",
+      "name": "FlowER mechanism 137888",
+      "step_count": 4,
+      "png": "40060.png",
+      "global_rank": 111407,
+      "rank_within_step_count": 60,
+      "metadata": {
+        "case_id": "flower_137888",
+        "global_rank": 111407,
+        "max_reagent_heavy_atoms": 15,
+        "mechanism_id": 137888,
+        "rank_key": [
+          4,
+          2,
+          21,
+          15,
+          7,
+          137888
+        ],
+        "rank_within_step_count": 60,
+        "reagent_count": 2,
+        "step_count": 4,
+        "total_heavy_atoms": 21,
+        "total_hetero_atoms": 7
+      }
+    },
+    {
+      "case_id": "flower_162728",
+      "reaction_id": "flower_162728",
+      "name": "FlowER mechanism 162728",
+      "step_count": 4,
+      "png": "40061.png",
+      "global_rank": 111408,
+      "rank_within_step_count": 61,
+      "metadata": {
+        "case_id": "flower_162728",
+        "global_rank": 111408,
+        "max_reagent_heavy_atoms": 15,
+        "mechanism_id": 162728,
+        "rank_key": [
+          4,
+          2,
+          21,
+          15,
+          7,
+          162728
+        ],
+        "rank_within_step_count": 61,
+        "reagent_count": 2,
+        "step_count": 4,
+        "total_heavy_atoms": 21,
+        "total_hetero_atoms": 7
+      }
+    },
+    {
+      "case_id": "flower_050117",
+      "reaction_id": "flower_050117",
+      "name": "FlowER mechanism 50117",
+      "step_count": 4,
+      "png": "40062.png",
+      "global_rank": 111409,
+      "rank_within_step_count": 62,
+      "metadata": {
+        "case_id": "flower_050117",
+        "global_rank": 111409,
+        "max_reagent_heavy_atoms": 15,
+        "mechanism_id": 50117,
+        "rank_key": [
+          4,
+          2,
+          21,
+          15,
+          8,
+          50117
+        ],
+        "rank_within_step_count": 62,
+        "reagent_count": 2,
+        "step_count": 4,
+        "total_heavy_atoms": 21,
+        "total_hetero_atoms": 8
+      }
+    },
+    {
       "case_id": "flower_003183",
       "reaction_id": "flower_003183",
       "name": "FlowER mechanism 3183",
@@ -5084,13 +5280,6 @@
       "name": "FlowER mechanism 97349",
       "step_count": 6,
       "png": "flower_097349.png"
-    },
-    {
-      "case_id": "flower_098653",
-      "reaction_id": "flower_098653",
-      "name": "FlowER mechanism 98653",
-      "step_count": 4,
-      "png": "flower_098653.png"
     },
     {
       "case_id": "flower_099223",
@@ -5219,13 +5408,6 @@
       "png": "flower_207492.png"
     },
     {
-      "case_id": "flower_213954",
-      "reaction_id": "flower_213954",
-      "name": "FlowER mechanism 213954",
-      "step_count": 4,
-      "png": "flower_213954.png"
-    },
-    {
       "case_id": "flower_215728",
       "reaction_id": "flower_215728",
       "name": "FlowER mechanism 215728",
@@ -5275,25 +5457,11 @@
       "png": "flower_231625.png"
     },
     {
-      "case_id": "flower_240489",
-      "reaction_id": "flower_240489",
-      "name": "FlowER mechanism 240489",
-      "step_count": 4,
-      "png": "flower_240489.png"
-    },
-    {
       "case_id": "flower_257263",
       "reaction_id": "flower_257263",
       "name": "FlowER mechanism 257263",
       "step_count": 6,
       "png": "flower_257263.png"
-    },
-    {
-      "case_id": "flower_262194",
-      "reaction_id": "flower_262194",
-      "name": "FlowER mechanism 262194",
-      "step_count": 4,
-      "png": "flower_262194.png"
     }
   ]
 }
