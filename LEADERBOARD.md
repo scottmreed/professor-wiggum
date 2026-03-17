@@ -41,6 +41,7 @@ Score computed by `_graded_to_clawdiators_pts()` in `main.py` using the same rub
 
 | Date | Model | Score | Outcome | Pass Rate | Avg Latency | Run Group |
 |---|---|---|---|---|---|---|
+| 2026-03-16 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | 6.2s | `official_holdout_harness` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | — | `official_holdout_harness` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | 27.8s | `harness_free_baseline` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 367/1000 | LOSS | 10.0% | 119.3s | `official_holdout_harness` |
