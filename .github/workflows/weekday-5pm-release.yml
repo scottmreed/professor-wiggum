@@ -28,7 +28,8 @@ jobs:
           denver_hour="$(TZ=America/Denver date '+%H')"
           denver_weekday="$(TZ=America/Denver date '+%u')"   # 1-7, Mon-Sun
           denver_date="$(TZ=America/Denver date '+%Y-%m-%d')"
-          release_branch="release/${denver_date}"
+          denver_date_compact="$(TZ=America/Denver date '+%Y%m%d')"
+          release_branch="5pm-release-${denver_date_compact}"
           tag_name="release-${denver_date}-1700"
 
           echo "Denver time: $denver_time"

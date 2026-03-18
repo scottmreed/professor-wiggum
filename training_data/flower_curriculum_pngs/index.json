@@ -1,7 +1,7 @@
 {
   "source": "/Users/scottreed/PycharmProjects/professor-wiggum/training_data/flower_mechanism_index.jsonl",
   "output_dir": "/Users/scottreed/PycharmProjects/professor-wiggum/training_data/flower_curriculum_pngs",
-  "rendered_count": 2,
+  "rendered_count": 0,
   "items": [
     {
       "case_id": "flower_135501",
