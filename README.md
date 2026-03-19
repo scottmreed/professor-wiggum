@@ -18,8 +18,6 @@ Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/
 
 ## Current Two-Week Calendar
 
-- [ ] 2026-03-17 Tuesday: Tuesday lesson (lesson scheduled, release `2026-03-17T17:00:00-06:00`)
-- [ ] 2026-03-18 Wednesday: Wednesday lesson (lesson scheduled, release `2026-03-18T17:00:00-06:00`)
 - [ ] 2026-03-19 Thursday: Thursday lesson (lesson scheduled, release `2026-03-19T17:00:00-06:00`)
 - [ ] 2026-03-20 Friday: Friday quiz (quiz scheduled, release `2026-03-20T17:00:00-06:00`)
 - [ ] 2026-03-23 Monday: Monday lesson (lesson scheduled, release `2026-03-23T17:00:00-06:00`)
@@ -28,6 +26,8 @@ Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/
 - [ ] 2026-03-26 Thursday: Thursday lesson (lesson scheduled, release `2026-03-26T17:00:00-06:00`)
 - [ ] 2026-03-27 Friday: Friday quiz (quiz scheduled, release `2026-03-27T17:00:00-06:00`)
 - [ ] 2026-03-30 Monday: Monday lesson (lesson scheduled, release `2026-03-30T17:00:00-06:00`)
+- [ ] 2026-03-31 Tuesday: Tuesday lesson (lesson scheduled, release `2026-03-31T17:00:00-06:00`)
+- [ ] 2026-04-01 Wednesday: Wednesday lesson (lesson scheduled, release `2026-04-01T17:00:00-06:00`)
 
 ## Trainee Progress Snapshot
 

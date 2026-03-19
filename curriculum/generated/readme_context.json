@@ -2,26 +2,6 @@
   "calendar": [
     {
       "checkpoint_id": null,
-      "date": "2026-03-17",
-      "label": "Tuesday lesson",
-      "queue_id": null,
-      "release_kind": "lesson",
-      "scheduled_publish_at_iso": "2026-03-17T17:00:00-06:00",
-      "status": "scheduled",
-      "weekday": "Tuesday"
-    },
-    {
-      "checkpoint_id": null,
-      "date": "2026-03-18",
-      "label": "Wednesday lesson",
-      "queue_id": null,
-      "release_kind": "lesson",
-      "scheduled_publish_at_iso": "2026-03-18T17:00:00-06:00",
-      "status": "scheduled",
-      "weekday": "Wednesday"
-    },
-    {
-      "checkpoint_id": null,
       "date": "2026-03-19",
       "label": "Thursday lesson",
       "queue_id": null,
@@ -99,6 +79,26 @@
       "scheduled_publish_at_iso": "2026-03-30T17:00:00-06:00",
       "status": "scheduled",
       "weekday": "Monday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-03-31",
+      "label": "Tuesday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-03-31T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Tuesday"
+    },
+    {
+      "checkpoint_id": null,
+      "date": "2026-04-01",
+      "label": "Wednesday lesson",
+      "queue_id": null,
+      "release_kind": "lesson",
+      "scheduled_publish_at_iso": "2026-04-01T17:00:00-06:00",
+      "status": "scheduled",
+      "weekday": "Wednesday"
     }
   ],
   "checkpoints": [],
@@ -119,7 +119,7 @@
     "upcoming_reactions": "training_data/flower_curriculum_pngs/index.json"
   },
   "focus_label": "Trainee Curriculum",
-  "generated_at": "2026-03-17T16:39:06.364781-06:00",
+  "generated_at": "2026-03-19T16:56:14.795198-06:00",
   "latest_leaderboard_row": {
     "aggregate_gate_cases": null,
     "aggregate_weighting": null,
@@ -216,10 +216,10 @@
   },
   "model_name": "anthropic/claude-opus-4.6",
   "next_slot": {
-    "label": "Tuesday lesson",
-    "release_date": "2026-03-17",
+    "label": "Thursday lesson",
+    "release_date": "2026-03-19",
     "release_kind": "lesson",
-    "scheduled_publish_at_iso": "2026-03-17T17:00:00-06:00"
+    "scheduled_publish_at_iso": "2026-03-19T17:00:00-06:00"
   },
   "prompt_asset_links": {
     "opus_base_override": "skills/mechanistic/base_system/models/anthropic__claude-opus-4.6/SKILL.md",
@@ -241,10 +241,10 @@
   "student_label": "trainee",
   "timezone": "America/Denver",
   "today_slot": {
-    "label": "Tuesday lesson",
-    "release_date": "2026-03-17",
+    "label": "Thursday lesson",
+    "release_date": "2026-03-19",
     "release_kind": "lesson",
-    "scheduled_publish_at_iso": "2026-03-17T17:00:00-06:00"
+    "scheduled_publish_at_iso": "2026-03-19T17:00:00-06:00"
   },
   "trainee_name": "Claude Opus"
 }
