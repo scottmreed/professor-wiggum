@@ -2984,6 +2984,11 @@ def update_leaderboard_artifacts_cmd(
         "--refresh-curriculum/--no-refresh-curriculum",
         help="Also run curriculum render-readme to refresh curriculum/generated/leaderboard_*.json",
     ),
+    curriculum_model_name: str = typer.Option(
+        OPUS_MODEL,
+        "--curriculum-model-name",
+        help="Model passed to curriculum render-readme when --refresh-curriculum is enabled",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print changes without writing files"),
 ) -> None:
     """Regenerate LEADERBOARD.md Arena table and curriculum/generated/ from live leaderboard data.
@@ -3031,8 +3036,10 @@ def update_leaderboard_artifacts_cmd(
         raise typer.Exit(1)
 
     if refresh_curriculum and not dry_run:
-        typer.echo("Refreshing curriculum/generated/ (leaderboard_*.json, readme_context.json)...")
-        render_curriculum_readme(base, store)
+        typer.echo(
+            f"Refreshing curriculum/generated/ (leaderboard_*.json, readme_context.json) for {curriculum_model_name}..."
+        )
+        render_curriculum_readme(base, store, model_name=curriculum_model_name)
         gen_dir = base / "curriculum" / "generated"
         if gen_dir.is_dir():
             typer.echo(f"Updated {gen_dir}/")
@@ -3113,11 +3120,17 @@ def curriculum_publish_cmd(
 
 
 @curriculum_app.command("render-readme")
-def curriculum_render_readme_cmd() -> None:
+def curriculum_render_readme_cmd(
+    model_name: str = typer.Option(
+        OPUS_MODEL,
+        "--model-name",
+        help="Exact model id for leaderboard snapshot (as stored on leaderboard rows, e.g. gpt-5.5 or anthropic/claude-opus-4.6)",
+    ),
+) -> None:
     base = Path.cwd()
     store = RunStore(base / "data" / "mechanistic.db")
-    render_curriculum_readme(base, store)
-    typer.echo("Rendered curriculum README")
+    render_curriculum_readme(base, store, model_name=model_name)
+    typer.echo(f"Rendered curriculum README (model_name={model_name})")
 
 
 @curriculum_app.command("history")

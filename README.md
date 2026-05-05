@@ -18,14 +18,13 @@ Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/
 
 Curriculum checkpoints and trainee lanes advance **as time permits**. There is no public release clock; use the CLI below when you are ready to queue or publish work.
 
-
 ## Trainee Progress Snapshot
 
-- Trainee: `Claude Opus` — [leaderboard](curriculum/generated/leaderboard_anthropic_claude-opus-4.6.json)
-- Mean quality: `0.998`
+- Trainee: `GPT-5.5` — [leaderboard](curriculum/generated/leaderboard_gpt-5.5.json)
+- Mean quality: `0.971`
 - Pass rate: `100.0%`
-- Cases: `4`
-- Run group: `curriculum_default_s1_r47_n4`
+- Cases: `1`
+- Run group: `cli_eval_tier_easy`
 
 ## Checkpoints
 
@@ -56,10 +55,10 @@ Regenerate the diagram with `python scripts/capture_harness_mermaid.py` (writes 
 ### Quick Start
 
 - Start the app: `python main.py serve`
-- Queue a trainee curriculum batch when ready: `python main.py curriculum submit --model-name anthropic/claude-opus-4.6`
+- Queue a trainee curriculum batch when ready: `python main.py curriculum submit --model-name gpt-5.5`
 - Publish a queued batch when ready: `python main.py curriculum publish --checkpoint-id <queue-id>` (add `--force` to skip any stored publish timestamp)
 - Optionally publish every queued batch whose timestamp has passed: `python main.py curriculum publish-due`
-- Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme`
+- Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme --model-name gpt-5.5`
 - Optional: `python main.py curriculum install-launchd` writes a sample plist if you automate `publish-due` locally
 
 ### Contribution Methods

@@ -242,12 +242,43 @@ def _resolve_eval_set_id(store: RunStore, config: Dict[str, Any]) -> Optional[st
     return None
 
 
+def _leaderboard_row_model_keys(model_name: str) -> set[str]:
+    """Leaderboard rows may use short ids (e.g. gpt-5.5) or qualified names (openai/gpt-5.5)."""
+    raw = str(model_name or "").strip()
+    keys = {raw}
+    if "/" in raw:
+        keys.add(raw.split("/", 1)[1])
+    elif raw:
+        keys.add(f"openai/{raw}")
+        keys.add(f"anthropic/{raw}")
+    return keys
+
+
+def _trainee_display_name(model_name: str) -> str:
+    key = str(model_name or "").strip()
+    short = key.split("/")[-1] if "/" in key else key
+    lower = short.lower()
+    if "claude-opus" in lower:
+        return "Claude Opus"
+    if "claude-sonnet" in lower:
+        return "Claude Sonnet"
+    if "gemini" in lower:
+        return "Gemini"
+    if short.lower().startswith("gpt-"):
+        return "GPT-" + short[4:]
+    return short
+
+
 def _resolve_leaderboard_row(store: RunStore, config: Dict[str, Any], *, model_name: str) -> Optional[Dict[str, Any]]:
     eval_set_id = _resolve_eval_set_id(store, config)
     if not eval_set_id:
         return None
+    want = _leaderboard_row_model_keys(model_name)
     for row in store.leaderboard(eval_set_id, limit=50):
-        if str(row.get("model_name") or row.get("model") or "") == model_name and not row.get("is_baseline"):
+        if row.get("is_baseline"):
+            continue
+        m = str(row.get("model_name") or row.get("model") or "")
+        if m in want:
             return row
     return None
 
@@ -403,7 +434,14 @@ def build_readme_context(base_dir: Path, store: RunStore, *, model_name: str = O
     slot = current_release_slot(config, current)
     next_slot = _next_release_slot(config, current)
     model_slug = str(model_name or OPUS_MODEL).replace("/", "__")
-    leaderboard_filename = _leaderboard_filename_for_model(model_name or OPUS_MODEL)
+    resolved_lb_row = _resolve_leaderboard_row(store, config, model_name=model_name)
+    canonical_row_model = str(
+        (resolved_lb_row or {}).get("model_name")
+        or (resolved_lb_row or {}).get("model")
+        or model_name
+        or OPUS_MODEL
+    )
+    leaderboard_filename = _leaderboard_filename_for_model(canonical_row_model)
     models_dir = base_dir / "skills" / "mechanistic" / "propose_mechanism_step" / "models"
     registered_trainees = []
     if models_dir.is_dir():
@@ -432,7 +470,7 @@ def build_readme_context(base_dir: Path, store: RunStore, *, model_name: str = O
         "focus_label": config.get("focus_label") or "Trainee Curriculum",
         "timezone": config.get("timezone"),
         "model_name": model_name,
-        "trainee_name": "Claude Opus",
+        "trainee_name": _trainee_display_name(model_name),
         "student_label": "trainee",
         "start_date": str(config.get("start_date") or _course_start_date(config).isoformat()),
         "current_module": module,
@@ -448,7 +486,7 @@ def build_readme_context(base_dir: Path, store: RunStore, *, model_name: str = O
             "release_kind": next_slot.release_kind,
             "scheduled_publish_at_iso": next_slot.scheduled_publish_at_iso,
         },
-        "latest_leaderboard_row": _resolve_leaderboard_row(store, config, model_name=model_name),
+        "latest_leaderboard_row": resolved_lb_row,
         "calendar": [],
         "checkpoints": checkpoints,
         "registered_trainees": registered_trainees,
@@ -566,11 +604,11 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
             "### Quick Start",
             "",
             "- Start the app: `python main.py serve`",
-            f"- Queue a trainee curriculum batch when ready: `python main.py curriculum submit --model-name {OPUS_MODEL}`",
+            f"- Queue a trainee curriculum batch when ready: `python main.py curriculum submit --model-name {model_name}`",
             "- Publish a queued batch when ready: `python main.py curriculum publish --checkpoint-id <queue-id>` "
             "(add `--force` to skip any stored publish timestamp)",
             "- Optionally publish every queued batch whose timestamp has passed: `python main.py curriculum publish-due`",
-            "- Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme`",
+            f"- Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme --model-name {model_name}`",
             "- Optional: `python main.py curriculum install-launchd` writes a sample plist if you automate `publish-due` locally",
             "",
             "### Contribution Methods",
@@ -656,7 +694,7 @@ def build_curriculum_status(base_dir: Path, store: RunStore, *, model_name: str 
         "course": config,
         "timezone_now": current.isoformat(),
         "model_name": model_name,
-        "trainee_name": "Claude Opus",
+        "trainee_name": _trainee_display_name(model_name),
         "current_module": module,
         "today_slot": None if slot is None else {
             "release_date": slot.release_date,
