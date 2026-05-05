@@ -18,6 +18,7 @@ Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/
 
 Curriculum checkpoints and trainee lanes advance **as time permits**. There is no public release clock; use the CLI below when you are ready to queue or publish work.
 
+
 ## Trainee Progress Snapshot
 
 - Trainee: `Claude Opus` — [leaderboard](curriculum/generated/leaderboard_anthropic_claude-opus-4.6.json)
