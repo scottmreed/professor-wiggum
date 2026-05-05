@@ -502,7 +502,7 @@ class RunConfig:
     functional_groups_enabled: bool = True
     intermediate_prediction_enabled: bool = True
     max_steps: int = 10
-    max_runtime_seconds: float = 600.0
+    max_runtime_seconds: float = 1200.0
     api_keys: Dict[str, str] = field(default_factory=dict)
     retry_same_candidate_max: int = 1
     max_reproposals_per_step: int = 4

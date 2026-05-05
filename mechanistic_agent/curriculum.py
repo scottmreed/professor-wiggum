@@ -6,7 +6,6 @@ import hashlib
 import json
 import subprocess
 import sys
-import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -220,11 +219,6 @@ def _current_module(config: Dict[str, Any], store: RunStore, *, model_name: str)
     return dict(modules[module_index])
 
 
-def _calendar_dates(config: Dict[str, Any], current: datetime) -> List[date]:
-    start_day = max(current.date(), _course_start_date(config))
-    return _iter_release_days(config, start_day=start_day, count=10)
-
-
 def _format_countdown(target: datetime, current: datetime) -> Dict[str, Any]:
     total_seconds = max(0, int((target - current).total_seconds()))
     days = total_seconds // 86400
@@ -405,40 +399,9 @@ def build_readme_context(base_dir: Path, store: RunStore, *, model_name: str = O
     config = load_course_config(base_dir)
     current = _now_in_course_tz(config, now)
     module = _current_module(config, store, model_name=model_name)
-    queue_rows = store.list_curriculum_releases(model_name=model_name, limit=100)
     checkpoints = store.list_curriculum_checkpoints(model_name=model_name, limit=50)
     slot = current_release_slot(config, current)
     next_slot = _next_release_slot(config, current)
-    week_rows: List[Dict[str, Any]] = []
-    queued_by_date = {(str(row.get("release_date") or ""), str(row.get("release_kind") or "")): row for row in queue_rows}
-    checkpoint_by_date = {(str(row.get("release_date") or ""), str(row.get("release_kind") or "")): row for row in checkpoints}
-    for item_date in _calendar_dates(config, current):
-        weekday_key = str(item_date.weekday())
-        day_cfg = (config.get("weekdays") or {}).get(weekday_key)
-        if not isinstance(day_cfg, dict):
-            continue
-        kind = str(day_cfg.get("kind") or "lesson")
-        date_key = item_date.isoformat()
-        checkpoint = checkpoint_by_date.get((date_key, kind))
-        queued = queued_by_date.get((date_key, kind))
-        status = "scheduled"
-        if checkpoint:
-            status = "published"
-        elif queued:
-            status = str(queued.get("status") or "queued")
-        release_dt = _scheduled_release_datetime(config, item_date)
-        week_rows.append(
-            {
-                "date": date_key,
-                "weekday": item_date.strftime("%A"),
-                "label": str(day_cfg.get("label") or kind),
-                "release_kind": kind,
-                "status": status,
-                "checkpoint_id": checkpoint.get("id") if checkpoint else None,
-                "queue_id": queued.get("id") if queued else None,
-                "scheduled_publish_at_iso": release_dt.isoformat(),
-            }
-        )
     model_slug = str(model_name or OPUS_MODEL).replace("/", "__")
     leaderboard_filename = _leaderboard_filename_for_model(model_name or OPUS_MODEL)
     models_dir = base_dir / "skills" / "mechanistic" / "propose_mechanism_step" / "models"
@@ -457,11 +420,10 @@ def build_readme_context(base_dir: Path, store: RunStore, *, model_name: str = O
         "opus_few_shot_dir": f"skills/mechanistic/propose_mechanism_step/models/{model_slug}/",
     }
     curriculum_links = {
-        "calendar": "curriculum/generated/readme_context.json",
+        "readme_context": "curriculum/generated/readme_context.json",
         "leaderboard": f"curriculum/generated/{leaderboard_filename}",
         "checkpoints": "curriculum/checkpoints/",
         "upcoming_reactions": "training_data/flower_curriculum_pngs/index.json",
-        "operations": "docs/curriculum_operations.md",
         "history": "docs/history_and_reproducibility.md",
     }
     context = {
@@ -487,7 +449,7 @@ def build_readme_context(base_dir: Path, store: RunStore, *, model_name: str = O
             "scheduled_publish_at_iso": next_slot.scheduled_publish_at_iso,
         },
         "latest_leaderboard_row": _resolve_leaderboard_row(store, config, model_name=model_name),
-        "calendar": week_rows,
+        "calendar": [],
         "checkpoints": checkpoints,
         "registered_trainees": registered_trainees,
         "curriculum_links": curriculum_links,
@@ -502,14 +464,12 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
     context = build_readme_context(base_dir, store, model_name=model_name, now=now)
     current_module = context.get("current_module") or {}
     latest = context.get("latest_leaderboard_row") or {}
-    next_slot = context.get("next_slot") or {}
     links = context.get("curriculum_links") or {}
     prompt_links = context.get("prompt_asset_links") or {}
     registered_trainees = context.get("registered_trainees") or []
     trainee_links = " | ".join(
         f"[{t['slug']}]({t['path']})" for t in registered_trainees
     ) if registered_trainees else "_none registered yet_"
-    model_slug = str(model_name or OPUS_MODEL).replace("/", "__")
     lines = [
         "# Mechanistic Curriculum",
         "",
@@ -533,17 +493,12 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
         f"[Prompt guide]({prompt_links.get('override_guide')}) | "
         f"[History]({links.get('history')})",
         "",
-        "## Current Two-Week Calendar",
+        "Curriculum checkpoints and trainee lanes advance **as time permits**. There is no public release clock; "
+        "use the CLI below when you are ready to queue or publish work.",
+        "",
+        "## Trainee Progress Snapshot",
         "",
     ]
-    for item in context.get("calendar") or []:
-        marker = "x" if str(item.get("status") or "") == "published" else " "
-        status_text = f"{item.get('release_kind')} {item.get('status')}"
-        lines.append(
-            f"- [{marker}] {item.get('date')} {item.get('weekday')}: {item.get('label')} "
-            f"({status_text}, release `{item.get('scheduled_publish_at_iso')}`)"
-        )
-    lines.extend(["", "## Trainee Progress Snapshot", ""])
     if latest:
         lines.extend(
             [
@@ -611,9 +566,12 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
             "### Quick Start",
             "",
             "- Start the app: `python main.py serve`",
-            f"- Submit today’s trainee run: `python main.py curriculum submit --model-name {OPUS_MODEL}`",
-            "- Publish queued releases: `python main.py curriculum publish-due`",
-            "- Refresh the curriculum dashboard: `python main.py curriculum render-readme`",
+            f"- Queue a trainee curriculum batch when ready: `python main.py curriculum submit --model-name {OPUS_MODEL}`",
+            "- Publish a queued batch when ready: `python main.py curriculum publish --checkpoint-id <queue-id>` "
+            "(add `--force` to skip any stored publish timestamp)",
+            "- Optionally publish every queued batch whose timestamp has passed: `python main.py curriculum publish-due`",
+            "- Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme`",
+            "- Optional: `python main.py curriculum install-launchd` writes a sample plist if you automate `publish-due` locally",
             "",
             "### Contribution Methods",
             "",
@@ -625,7 +583,6 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
             "",
             "### Docs",
             "",
-            f"- Operations: [docs/curriculum_operations.md]({links.get('operations')})",
             f"- Prompt/few-shot overrides: [docs/model_asset_overrides.md]({prompt_links.get('override_guide')})",
             f"- History and reproducibility: [docs/history_and_reproducibility.md]({links.get('history')})",
             "",
@@ -642,8 +599,9 @@ def _git_run(base_dir: Path, args: List[str]) -> tuple[int, str, str]:
 
 
 def _git_metadata_for_release(base_dir: Path, *, release_date: str, release_kind: str, module_number: int) -> Dict[str, Any]:
-    branch = f"codex/curriculum/opus/{release_date}-{release_kind}-m{module_number:02d}"
-    tag = f"curriculum/opus/{release_date}-{release_kind}-m{module_number:02d}"
+    slug = hashlib.sha256(f"{release_date}:{release_kind}:m{module_number}".encode()).hexdigest()[:8]
+    branch = f"codex/curriculum/opus/{release_kind}-m{module_number:02d}-{slug}"
+    tag = f"curriculum/opus/{release_kind}-m{module_number:02d}-{slug}"
     commit_message = f"curriculum(opus): publish {release_date} {release_kind} module {module_number:02d}"
     metadata = {
         "branch": branch,
@@ -717,7 +675,7 @@ def build_curriculum_status(base_dir: Path, store: RunStore, *, model_name: str 
         },
         "queued_release": today_queue,
         "latest_leaderboard_row": _resolve_leaderboard_row(store, config, model_name=model_name),
-        "weekly_checklist": build_readme_context(base_dir, store, model_name=model_name, now=current).get("calendar") or [],
+        "weekly_checklist": [],
         "history": checkpoints,
     }
 
@@ -960,10 +918,8 @@ def render_launchd_plist(base_dir: Path) -> str:
   </array>
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Weekday</key>
-    <integer>1</integer>
     <key>Hour</key>
-    <integer>17</integer>
+    <integer>12</integer>
     <key>Minute</key>
     <integer>0</integer>
   </dict>

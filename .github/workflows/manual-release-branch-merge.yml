@@ -1,16 +1,16 @@
-name: Weekday 5pm release
+name: Manual release branch merge
+
+# Merges `release/<today's America/Denver date>` into `main` when you run this workflow.
+# There is no cron schedule; use workflow_dispatch when a release branch is ready.
 
 on:
-  schedule:
-    # Run every hour on weekdays (UTC). The job itself checks America/Denver time.
-    - cron: "0 * * * 1-5"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: weekday-release
+  group: manual-release-branch-merge
   cancel-in-progress: false
 
 jobs:
@@ -18,53 +18,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check America/Denver time and determine release branch
+      - name: Resolve today's release branch name (America/Denver)
         id: vars
         shell: bash
         run: |
           set -euo pipefail
 
           denver_time="$(TZ=America/Denver date '+%Y-%m-%d %H:%M:%S %Z')"
-          denver_hour="$(TZ=America/Denver date '+%H')"
-          denver_weekday="$(TZ=America/Denver date '+%u')"   # 1-7, Mon-Sun
           denver_date="$(TZ=America/Denver date '+%Y-%m-%d')"
           release_branch="release/${denver_date}"
-          tag_name="release-${denver_date}-1700"
+          tag_name="release-${denver_date}"
 
           echo "Denver time: $denver_time"
           echo "Release branch: $release_branch"
+          echo "Tag: $tag_name"
 
           echo "denver_date=$denver_date" >> "$GITHUB_OUTPUT"
           echo "release_branch=$release_branch" >> "$GITHUB_OUTPUT"
           echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
 
-          if [[ "$denver_weekday" -ge 1 && "$denver_weekday" -le 5 && "$denver_hour" == "17" ]]; then
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Stop if not 5pm weekday in Denver
-        if: steps.vars.outputs.should_release != 'true'
-        run: |
-          echo "Not 5pm on a weekday in America/Denver. Exiting."
-          exit 0
-
       - name: Checkout main
-        if: steps.vars.outputs.should_release == 'true'
         uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
 
       - name: Configure git
-        if: steps.vars.outputs.should_release == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch main and release branches
-        if: steps.vars.outputs.should_release == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -72,7 +56,6 @@ jobs:
           git fetch origin "${{ steps.vars.outputs.release_branch }}" || true
 
       - name: Check whether today's release branch exists
-        if: steps.vars.outputs.should_release == 'true'
         id: branchexists
         shell: bash
         run: |
@@ -89,7 +72,7 @@ jobs:
       - name: Stop if today's release branch does not exist
         if: steps.branchexists.outputs.exists != 'true'
         run: |
-          echo "Nothing queued for today. Exiting."
+          echo "Nothing to merge: ${{ steps.vars.outputs.release_branch }} does not exist on origin."
           exit 0
 
       - name: Check whether release branch is ahead of main
@@ -113,7 +96,7 @@ jobs:
       - name: Stop if today's release branch has nothing new
         if: steps.diffcheck.outputs.has_changes != 'true'
         run: |
-          echo "No new changes to merge. Exiting."
+          echo "No new changes to merge."
           exit 0
 
       - name: Merge today's release branch into main
@@ -130,7 +113,7 @@ jobs:
             echo "Fast-forward merge succeeded."
           else
             git merge --no-ff "origin/${{ steps.vars.outputs.release_branch }}" \
-              -m "Scheduled release from ${{ steps.vars.outputs.release_branch }}"
+              -m "Merge release branch ${{ steps.vars.outputs.release_branch }}"
           fi
 
       - name: Tag release

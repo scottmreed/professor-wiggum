@@ -15,10 +15,10 @@ Each checkpoint captures:
 - git branch, tag, and commit when available
 - manifest path suitable for direct linking from the README and history UI
 
-## Inspecting upcoming curriculum
+## Inspecting curriculum metadata
 
-- The next 2 weeks of scheduled releases are written to `curriculum/generated/readme_context.json`.
-- The public README links directly to the upcoming curriculum reactions index in `training_data/flower_curriculum_pngs/index.json`.
+- Runtime status JSON lives in `curriculum/generated/readme_context.json` (module, trainee lane, optional weekday queue hints).
+- The reactions menu for curriculum PNGs is `training_data/flower_curriculum_pngs/index.json`.
 - Prompt and few-shot override locations are documented in `docs/model_asset_overrides.md` so observers can compare how a trainee lane changed over time.
 
 ## Replaying a milestone

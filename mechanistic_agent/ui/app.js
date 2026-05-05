@@ -339,21 +339,21 @@ function renderCurriculumStatus() {
   const todayLabel = document.getElementById("curriculumTodayLabel");
   if (todayLabel) {
     if (nextSlot.label) {
-      todayLabel.textContent = `${nextSlot.label} on ${nextSlot.release_date}`;
+      todayLabel.textContent = `Next weekday queue hint: ${nextSlot.label} (${nextSlot.release_date})`;
     } else if (slot.label) {
-      todayLabel.textContent = `${slot.label} on ${slot.release_date}`;
+      todayLabel.textContent = `Today’s queue hint: ${slot.label} (${slot.release_date})`;
     } else {
-      todayLabel.textContent = "No scheduled release";
+      todayLabel.textContent = "Curriculum runs when you queue them (no fixed public clock)";
     }
   }
   const queuedStatus = document.getElementById("curriculumQueuedStatus");
   if (queuedStatus) {
     if (queued.id) {
-      queuedStatus.textContent = `Queued status: ${queued.status || "queued"}`;
+      queuedStatus.textContent = `Queued status: ${queued.status || "queued"} — publish with curriculum publish when ready`;
     } else if (nextSlot.scheduled_publish_at_iso) {
-      queuedStatus.textContent = `Countdown: ${nextCountdown.label || "0d 0h"} until ${nextSlot.scheduled_publish_at_iso}`;
+      queuedStatus.textContent = `Next queued timestamp (optional): ${nextSlot.scheduled_publish_at_iso} (${nextCountdown.label || "—"} away)`;
     } else {
-      queuedStatus.textContent = "No queued release for today";
+      queuedStatus.textContent = "Nothing queued for the current weekday hint";
     }
   }
   const leaderboardMetric = document.getElementById("curriculumLeaderboardMetric");
@@ -367,7 +367,7 @@ function renderCurriculumStatus() {
   if (weekChecklist) {
     weekChecklist.innerHTML = week.length
       ? week.map((item) => `<div class="curriculum-list-item"><strong>${escapeHtml(item.date || "")}</strong> &nbsp;${escapeHtml(item.label || "")} <span class="muted"> &mdash; ${escapeHtml(item.status || "scheduled")}</span></div>`).join("")
-      : "<div class='muted'>No weekly checklist available.</div>";
+      : "<div class='muted'>No rolling checklist (updates are ad hoc).</div>";
   }
 
   const checkpointLinks = document.getElementById("curriculumCheckpointLinks");
@@ -386,7 +386,7 @@ function renderCurriculumStatus() {
 
   if (curriculumStatusMessage) {
     curriculumStatusMessage.textContent = queued.id
-      ? `Queued release ${queued.id} is waiting for publish time.`
+      ? `Queued release ${queued.id} — run curriculum publish (use --force to skip timestamp gates).`
       : "Curriculum status loaded.";
   }
 }

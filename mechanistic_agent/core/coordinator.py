@@ -185,7 +185,7 @@ class RunCoordinator:
                 True,
             ),
             max_steps=self._coerce_int(config.get("max_steps", 10), 10),
-            max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", 600.0), 600.0),
+            max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", 1200.0), 1200.0),
             api_keys=dict(config.get("api_keys") or {}),
             retry_same_candidate_max=self._coerce_int(config.get("retry_same_candidate_max", 1), 1),
             max_reproposals_per_step=self._coerce_int(config.get("max_reproposals_per_step", 4), 4),

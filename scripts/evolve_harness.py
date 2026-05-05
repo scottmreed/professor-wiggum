@@ -111,7 +111,7 @@ class EvolutionConfig:
     max_few_shots_per_step: int = 3
     dry_run: bool = False
     max_steps: int = 10
-    max_runtime: float = 300.0
+    max_runtime: float = 600.0
     retry_same_candidate_max: int = 1
     repeat_failure_signature_limit: int = 2
     max_reproposals_per_step: int = 4
@@ -1414,7 +1414,7 @@ def main() -> None:
     parser.add_argument("--mining-score-threshold", type=float, default=0.5, help="Only mine few-shots from sufficiently strong batches.")
     parser.add_argument("--max-few-shots-per-step", type=int, default=3, help="Max new examples per subagent per batch.")
     parser.add_argument("--max-steps", type=int, default=10, help="Max mechanism steps per case.")
-    parser.add_argument("--max-runtime", type=float, default=300.0, help="Per-case timeout in seconds.")
+    parser.add_argument("--max-runtime", type=float, default=600.0, help="Per-case timeout in seconds.")
     parser.add_argument("--retry-same-candidate-max", type=int, default=1, help="Retries per candidate before moving on.")
     parser.add_argument("--repeat-failure-signature-limit", type=int, default=2, help="Repeat count of same validation signature before forced reproposal.")
     parser.add_argument("--max-reproposals-per-step", type=int, default=4, help="Maximum reproposals allowed per mechanism step.")

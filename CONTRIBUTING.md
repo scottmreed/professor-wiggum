@@ -119,10 +119,12 @@ Suggested layout:
 
 ```text
 local_contributions/
-  pr_drafts/<yyyy-mm-dd>-<slug>.md
-  single_reactions/<yyyy-mm-dd>-<slug>.md
-  leaderboard/<yyyy-mm-dd>-<slug>.md
+  pr_drafts/<slug>.md
+  single_reactions/<slug>.md
+  leaderboard/<slug>.md
 ```
+
+You may add an optional `YYYY-MM-DD-` (or similar) prefix to filenames for your own ordering; it is not required.
 
 Use this for:
 
