@@ -112,9 +112,29 @@ def test_sonnet_46_model_is_available():
     assert spec["id"] == "anthropic/claude-sonnet-4.6"
 
 
+def test_gpt_55_model_is_available_as_direct_openai_endpoint():
+    spec = get_model_spec("gpt-5.5")
+
+    assert spec["id"] == "gpt-5.5"
+    assert spec["provider"] == "openai"
+    assert spec["pricing_per_million"]["input"] == 5.0
+    assert spec["pricing_per_million"]["cached_input"] == 0.5
+    assert spec["pricing_per_million"]["output"] == 30.0
+
+
+def test_opus_47_model_is_available_as_direct_anthropic_endpoint():
+    spec = get_model_spec("claude-opus-4-7")
+
+    assert spec["id"] == "claude-opus-4-7"
+    assert spec["provider"] == "anthropic"
+    assert get_model_family("claude-opus-4.7") == "claude"
+    assert get_model_provider("claude-opus-4.7") == "anthropic"
+
+
 def test_bare_claude_aliases_resolve_to_canonical_catalog_ids():
     assert resolve_model_key("claude-opus-4-6") == "anthropic/claude-opus-4.6"
     assert resolve_model_key("claude-opus-4.6") == "anthropic/claude-opus-4.6"
+    assert resolve_model_key("claude-opus-4.7") == "claude-opus-4-7"
     assert resolve_model_key("claude-sonnet-4-6") == "anthropic/claude-sonnet-4.6"
     assert resolve_model_key("claude-sonnet-4.6") == "anthropic/claude-sonnet-4.6"
 

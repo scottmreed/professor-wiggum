@@ -9,6 +9,11 @@ try:  # pragma: no cover - optional import
 except ImportError:  # pragma: no cover - fallback handled at runtime
     OpenAI = None  # type: ignore[assignment]
 
+try:  # pragma: no cover - optional import
+    from anthropic import Anthropic
+except ImportError:  # pragma: no cover - fallback handled at runtime
+    Anthropic = None  # type: ignore[assignment]
+
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
@@ -26,13 +31,16 @@ def is_openrouter_model(model_name: Optional[str]) -> bool:
     """
     if not model_name:
         return False
-    if "/" in model_name:
-        return True
     try:
         from mechanistic_agent.model_registry import get_model_provider
-        return get_model_provider(model_name) == "openrouter"
+        provider = get_model_provider(model_name)
+        if provider:
+            return provider == "openrouter"
     except Exception:
-        return False
+        pass
+    if "/" in model_name:
+        return True
+    return False
 
 
 def is_anthropic_model(model_name: Optional[str]) -> bool:
@@ -227,6 +235,160 @@ class _OpenAIChatAdapter:
                 "prompt_cache_miss_tokens": getattr(u, "prompt_cache_miss_tokens", 0) or 0,
             }
         return _SimpleMessage(text, tool_calls=raw_tool_calls, usage=usage_data)
+
+
+def _openai_messages_to_anthropic(messages: Any) -> tuple[Optional[str], list[dict[str, Any]]]:
+    system_prompt: Optional[str] = None
+    converted: list[dict[str, Any]] = []
+
+    for message in messages or []:
+        role = "user"
+        content = getattr(message, "content", None)
+        if isinstance(message, dict):
+            content = message.get("content")
+            maybe_role = str(message.get("role") or "").strip().lower()
+            if maybe_role in {"system", "user", "assistant"}:
+                role = maybe_role
+        else:
+            name = message.__class__.__name__.lower()
+            if "system" in name:
+                role = "system"
+            elif "assistant" in name or "ai" in name:
+                role = "assistant"
+
+        text = str(content or "")
+        if role == "system":
+            if system_prompt is None:
+                system_prompt = text
+            else:
+                system_prompt = f"{system_prompt}\n\n{text}"
+            continue
+        converted.append({"role": role, "content": text})
+
+    return system_prompt, converted
+
+
+def _openai_tools_to_anthropic(tools: Any) -> Optional[list[dict[str, Any]]]:
+    converted: list[dict[str, Any]] = []
+    for tool in tools or []:
+        if not isinstance(tool, dict) or tool.get("type") != "function":
+            continue
+        fn = tool.get("function", {})
+        converted.append(
+            {
+                "name": str(fn.get("name") or ""),
+                "description": str(fn.get("description") or ""),
+                "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
+            }
+        )
+    return converted or None
+
+
+def _openai_tool_choice_to_anthropic(tool_choice: Any) -> Optional[dict[str, Any]]:
+    if tool_choice is None:
+        return {"type": "auto"}
+    if isinstance(tool_choice, str):
+        if tool_choice == "required":
+            return {"type": "any"}
+        if tool_choice == "auto":
+            return {"type": "auto"}
+        if tool_choice == "none":
+            return None
+    if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+        name = str(tool_choice.get("function", {}).get("name") or "")
+        if name:
+            return {"type": "tool", "name": name}
+    return {"type": "auto"}
+
+
+class _AnthropicChatAdapter:
+    def __init__(
+        self,
+        *,
+        model: str,
+        temperature: Optional[float],
+        timeout: Optional[float],  # noqa: ARG002
+        model_kwargs: Optional[Dict[str, Any]],
+        api_key: str,
+    ) -> None:
+        if Anthropic is None:
+            raise RuntimeError("Anthropic runtime unavailable. Install `anthropic`.")
+        self._model = model
+        self._temperature = temperature
+        self._model_kwargs = dict(model_kwargs or {})
+        self._client = Anthropic(api_key=api_key)
+
+    def invoke(
+        self,
+        messages: Any,
+        config: Any = None,  # noqa: ARG002
+        *,
+        tools: Any = None,
+        tool_choice: Any = None,
+    ) -> Any:
+        import json as _json
+
+        system_prompt, converted_messages = _openai_messages_to_anthropic(messages)
+        params: Dict[str, Any] = {
+            "model": self._model,
+            "messages": converted_messages,
+            "max_tokens": int(self._model_kwargs.pop("max_tokens", 4096)),
+        }
+        if self._temperature is not None:
+            params["temperature"] = self._temperature
+        params.update(self._model_kwargs)
+        if system_prompt:
+            params["system"] = system_prompt
+        anthropic_tools = _openai_tools_to_anthropic(tools)
+        if anthropic_tools:
+            params["tools"] = anthropic_tools
+            anthropic_tool_choice = _openai_tool_choice_to_anthropic(tool_choice)
+            if anthropic_tool_choice:
+                params["tool_choice"] = anthropic_tool_choice
+
+        response = self._client.messages.create(**params)
+        text_parts: list[str] = []
+        raw_tool_calls: list[dict[str, Any]] = []
+        for block in getattr(response, "content", []) or []:
+            block_type = getattr(block, "type", "")
+            if block_type == "text":
+                text_parts.append(str(getattr(block, "text", "") or ""))
+            elif block_type == "tool_use":
+                arguments = getattr(block, "input", {})
+                raw_tool_calls.append(
+                    {
+                        "id": getattr(block, "id", ""),
+                        "name": getattr(block, "name", ""),
+                        "arguments": (
+                            _json.dumps(arguments)
+                            if isinstance(arguments, (dict, list))
+                            else str(arguments or "")
+                        ),
+                    }
+                )
+
+        usage_data = None
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+            completion_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+            cache_hits = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
+            usage_data = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+                "prompt_cache_hit_tokens": cache_hits,
+                "prompt_cache_miss_tokens": 0,
+                "cache_creation_tokens": int(
+                    getattr(usage, "cache_creation_input_tokens", 0) or 0
+                ),
+            }
+
+        return _SimpleMessage(
+            "".join(text_parts),
+            tool_calls=raw_tool_calls,
+            usage=usage_data,
+        )
 
 
 def _openai_schema_to_gemini(oai_schema: Dict[str, Any]) -> Any:
@@ -454,6 +616,20 @@ def get_chat_model(
             model_kwargs=model_kwargs,
             api_key=api_key,
             base_url=_OPENROUTER_BASE_URL,
+        )
+
+    if is_anthropic_model(model_name):
+        api_key = _resolve_anthropic_api_key(user_api_key)
+        if not api_key:
+            raise RuntimeError(
+                "Anthropic API key not configured. Set ANTHROPIC_API_KEY."
+            )
+        return _AnthropicChatAdapter(
+            model=model_name,
+            temperature=temperature,
+            timeout=timeout,
+            model_kwargs=model_kwargs,
+            api_key=api_key,
         )
 
     api_key = _resolve_openai_api_key(user_api_key)

@@ -206,6 +206,24 @@ def _resolve_step_model(step_name: str, env_var: str) -> str:
     return resolved
 
 
+def _prompt_char_cap_for_model(model_name: str) -> int:
+    prompt_char_cap = int(os.getenv("MECHANISTIC_PROMPT_CHAR_CAP", "60000"))
+    if is_openrouter_model(model_name):
+        return int(os.getenv("MECHANISTIC_OPENROUTER_PROMPT_CHAR_CAP", "42000"))
+
+    model_lower = str(model_name or "").lower()
+    if model_lower.startswith(("gpt-5.4", "gpt-5.5")):
+        return int(
+            os.getenv(
+                "MECHANISTIC_GPT5_PROMPT_CHAR_CAP",
+                os.getenv("MECHANISTIC_GPT54_PROMPT_CHAR_CAP", "2400000"),
+            )
+        )
+    if model_lower.startswith("gpt-4o"):
+        return int(os.getenv("MECHANISTIC_GPT4O_PROMPT_CHAR_CAP", "30000"))
+    return prompt_char_cap
+
+
 def _get_user_api_key_for_model(model_name: str) -> Optional[str]:
     """Return user-provided API key for a model's provider from thread-local context."""
     try:
@@ -5282,18 +5300,7 @@ def propose_intermediates(
         mapped_current_state = []
 
     compaction_notes: List[str] = []
-    prompt_char_cap = int(os.getenv("MECHANISTIC_PROMPT_CHAR_CAP", "60000"))
-    if is_openrouter_model(intermediate_model):
-        prompt_char_cap = int(os.getenv("MECHANISTIC_OPENROUTER_PROMPT_CHAR_CAP", "42000"))
-    else:
-        model_lower = intermediate_model.lower()
-        if model_lower.startswith("gpt-5.4"):
-            # Large-context GPT-5.4 models get their own cap so we can
-            # safely approach the higher token window without affecting
-            # smaller OpenAI models.
-            prompt_char_cap = int(os.getenv("MECHANISTIC_GPT54_PROMPT_CHAR_CAP", "2400000"))
-        elif model_lower.startswith("gpt-4o"):
-            prompt_char_cap = int(os.getenv("MECHANISTIC_GPT4O_PROMPT_CHAR_CAP", "30000"))
+    prompt_char_cap = _prompt_char_cap_for_model(intermediate_model)
 
     max_prev = max(2, int(os.getenv("MECHANISTIC_PREVIOUS_INTERMEDIATES_MAX", "12")))
     if len(previous_intermediates) > max_prev:

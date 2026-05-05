@@ -109,6 +109,45 @@ def test_baseline_runner_uses_provider_specific_api_key(monkeypatch: pytest.Monk
     assert captured_user_keys == ["openrouter-key"]
 
 
+def test_baseline_runner_omits_temperature_for_gpt_55_default_only_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _StubResponse:
+        usage = None
+        content = ""
+        tool_calls = [
+            {
+                "name": "predict_full_mechanism",
+                "arguments": json.dumps({"mechanism_type": "sn2", "steps": []}),
+            }
+        ]
+
+    class _StubAdapter:
+        def invoke(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+            return _StubResponse()
+
+    captured_temperatures: list[float | None] = []
+
+    def _fake_get_chat_model(*_args, **kwargs):  # noqa: ANN002
+        captured_temperatures.append(kwargs.get("temperature"))
+        return _StubAdapter()
+
+    monkeypatch.setattr("mechanistic_agent.core.baseline_runner.get_chat_model", _fake_get_chat_model)
+    monkeypatch.setattr("mechanistic_agent.core.baseline_runner.adapter_supports_forced_tools", lambda _model: True)
+
+    runner = BaselineRunner()
+    result = runner.run_case(
+        starting_materials=["CCBr"],
+        products=["CCCl"],
+        model="gpt-5.5",
+        llm_temperature=0.0,
+        sampling_policy="fixed",
+    )
+
+    assert captured_temperatures == [None]
+    assert result["llm_temperature"] is None
+
+
 def test_baseline_runner_normalizes_openrouter_reasoning_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     class _StubResponse:
         usage = None
