@@ -16,18 +16,7 @@ RAlph mode provides iterative multi-attempt orchestration with budget controls f
 
 Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/flower_curriculum_pngs/index.json) | [Prompt guide](docs/model_asset_overrides.md) | [History](docs/history_and_reproducibility.md)
 
-## Current Two-Week Calendar
-
-- [ ] 2026-03-19 Thursday: Thursday lesson (lesson scheduled, release `2026-03-19T17:00:00-06:00`)
-- [ ] 2026-03-20 Friday: Friday quiz (quiz scheduled, release `2026-03-20T17:00:00-06:00`)
-- [ ] 2026-03-23 Monday: Monday lesson (lesson scheduled, release `2026-03-23T17:00:00-06:00`)
-- [ ] 2026-03-24 Tuesday: Tuesday lesson (lesson scheduled, release `2026-03-24T17:00:00-06:00`)
-- [ ] 2026-03-25 Wednesday: Wednesday lesson (lesson scheduled, release `2026-03-25T17:00:00-06:00`)
-- [ ] 2026-03-26 Thursday: Thursday lesson (lesson scheduled, release `2026-03-26T17:00:00-06:00`)
-- [ ] 2026-03-27 Friday: Friday quiz (quiz scheduled, release `2026-03-27T17:00:00-06:00`)
-- [ ] 2026-03-30 Monday: Monday lesson (lesson scheduled, release `2026-03-30T17:00:00-06:00`)
-- [ ] 2026-03-31 Tuesday: Tuesday lesson (lesson scheduled, release `2026-03-31T17:00:00-06:00`)
-- [ ] 2026-04-01 Wednesday: Wednesday lesson (lesson scheduled, release `2026-04-01T17:00:00-06:00`)
+Curriculum checkpoints and trainee lanes advance **as time permits**. There is no public release clock; use the CLI below when you are ready to queue or publish work.
 
 ## Trainee Progress Snapshot
 
@@ -66,9 +55,11 @@ Regenerate the diagram with `python scripts/capture_harness_mermaid.py` (writes 
 ### Quick Start
 
 - Start the app: `python main.py serve`
-- Submit today’s trainee run: `python main.py curriculum submit --model-name anthropic/claude-opus-4.6`
-- Publish queued releases: `python main.py curriculum publish-due`
-- Refresh the curriculum dashboard: `python main.py curriculum render-readme`
+- Queue a trainee curriculum batch when ready: `python main.py curriculum submit --model-name anthropic/claude-opus-4.6`
+- Publish a queued batch when ready: `python main.py curriculum publish --checkpoint-id <queue-id>` (add `--force` to skip any stored publish timestamp)
+- Optionally publish every queued batch whose timestamp has passed: `python main.py curriculum publish-due`
+- Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme`
+- Optional: `python main.py curriculum install-launchd` writes a sample plist if you automate `publish-due` locally
 
 ### Contribution Methods
 
@@ -80,6 +71,5 @@ Regenerate the diagram with `python scripts/capture_harness_mermaid.py` (writes 
 
 ### Docs
 
-- Operations: [docs/curriculum_operations.md](docs/curriculum_operations.md)
 - Prompt/few-shot overrides: [docs/model_asset_overrides.md](docs/model_asset_overrides.md)
 - History and reproducibility: [docs/history_and_reproducibility.md](docs/history_and_reproducibility.md)

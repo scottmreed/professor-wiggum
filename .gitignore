@@ -48,7 +48,13 @@ frontend/dist
 # IDEs and editors
 .idea/
 .vscode/
-.claude/
+# Claude Code — ignore local workspace except the tracked shared PR skill
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/pr-creation-helper/
+.claude/skills/pr-creation-helper/*
+!.claude/skills/pr-creation-helper/SKILL.md
 .cursorrules
 *.swp
 *.swo
@@ -175,6 +181,7 @@ evolution_workspace/
 
 # local_contributions — run outputs stay local, scripts are tracked
 local_contributions/runs/
+local_contributions/pr_drafts/
 
 # clawdiators-test — ground truth is local only (mirrors competition policy)
 clawdiators-test/easy/test_ground_truth.json

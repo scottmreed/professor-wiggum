@@ -1665,7 +1665,7 @@ def run(
         help="Exact model identifier used for all LLM-backed subagents",
     ),
     max_steps: int = typer.Option(10, "--max-steps", help="Maximum mechanism loop steps"),
-    max_runtime: float = typer.Option(600.0, "--max-runtime", help="Maximum runtime in seconds"),
+    max_runtime: float = typer.Option(1200.0, "--max-runtime", help="Maximum runtime in seconds"),
     orchestration_mode: str = typer.Option(
         "standard",
         "--orchestration-mode",
@@ -3054,10 +3054,14 @@ def curriculum_status_cmd(
     queued = payload.get("queued_release") or {}
     typer.echo(f"Model lane: {model_name}")
     typer.echo(f"Current module: Module {current_module.get('number', 1)} - {current_module.get('label', 'n/a')}")
+    typer.echo("(Weekday slot metadata is for queue hints only; publish whenever ready.)")
     if today_slot:
-        typer.echo(f"Today's slot: {today_slot.get('release_date')} {today_slot.get('label')} @ {today_slot.get('scheduled_publish_at_iso')}")
+        typer.echo(
+            f"Weekday slot: {today_slot.get('release_date')} {today_slot.get('label')} "
+            f"@ {today_slot.get('scheduled_publish_at_iso')}"
+        )
     else:
-        typer.echo("Today's slot: none")
+        typer.echo("Weekday slot: none (outside Mon–Fri curriculum window or before launch)")
     if queued:
         typer.echo(f"Queued release: {queued.get('id')} ({queued.get('status')})")
 
@@ -3147,6 +3151,7 @@ def curriculum_tag_history_cmd() -> None:
 def curriculum_install_launchd_cmd(
     output: Path = typer.Option(Path("/tmp/mechanistic_curriculum_publish.plist"), "--output", help="Where to write the plist example"),
 ) -> None:
+    """Write an optional launchd plist example for `curriculum publish-due` (edit the schedule before installing)."""
     base = Path.cwd()
     output.write_text(render_launchd_plist(base), encoding="utf-8")
     typer.echo(f"Wrote launchd plist example to {output}")
@@ -3494,7 +3499,7 @@ def eval_cmd(
         help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
     ),
     max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
-    max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
+    max_runtime: float = typer.Option(1200.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",
         "--chemistry-backend",
@@ -3571,7 +3576,7 @@ def eval_cmd(
     max_cases = int(_unwrap_option(max_cases, 25))
     max_per_tier = _unwrap_option(max_per_tier)
     max_steps = int(_unwrap_option(max_steps, 10))
-    max_runtime = float(_unwrap_option(max_runtime, 300.0))
+    max_runtime = float(_unwrap_option(max_runtime, 1200.0))
     chemistry_backend = str(_unwrap_option(chemistry_backend, "auto") or "auto").strip().lower()
     rdkit_cli_command = _unwrap_option(rdkit_cli_command)
     chemistry_backend_parity = bool(_unwrap_option(chemistry_backend_parity, False))
@@ -3967,7 +3972,7 @@ def eval_runset_official_cmd(
         help="Max cases/examples to run (default: 20).",
     ),
     max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
-    max_runtime: float = typer.Option(300.0, "--max-runtime", help="Per-case timeout in seconds"),
+    max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",
         "--chemistry-backend",

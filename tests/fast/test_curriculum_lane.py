@@ -93,9 +93,10 @@ def test_curriculum_status_and_readme_render_include_queued_release(tmp_path: Pa
     content = render_curriculum_readme(base, store, model_name="anthropic/claude-opus-4.6")
     assert "# Mechanistic Curriculum" in content
     assert "How to Inspect Any Past Milestone" in content
+    assert "Current Two-Week Calendar" not in content
 
 
-def test_curriculum_uses_march_11_launch_and_two_week_calendar(tmp_path: Path) -> None:
+def test_curriculum_before_launch_weekday_slots(tmp_path: Path) -> None:
     base = _seed_curriculum_base(tmp_path)
     store = RunStore(base / "data" / "mechanistic.db")
     before_launch = datetime(2026, 3, 4, 12, 0, tzinfo=ZoneInfo("America/Denver"))
