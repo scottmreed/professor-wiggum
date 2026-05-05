@@ -36,6 +36,12 @@ These PRs are mergeable without claiming a new leaderboard improvement if they:
 - include targeted fast tests for the new workflow behavior
 - keep the existing track gates intact for actual prompt, subagent, model, or harness changes
 
+## professor-wiggum (maintainer fork)
+
+This checkout may use **long-lived integration branches** (for example `curriculum-workflow`) in addition to `main`. **Pushing does not clear local edits:** `git status` can still list modified or untracked files until you commit, stash, or restore them—that is independent of merge **conflicts** (which only appear after a failed merge/rebase with conflict markers). When opening a PR, pick the **correct base branch** on GitHub and say which branch you integrated from.
+
+Agent-oriented PR workflow notes (branch hygiene, draft paths, optional release workflows) live in the tracked skill **[`.claude/skills/pr-creation-helper/SKILL.md`](.claude/skills/pr-creation-helper/SKILL.md)**.
+
 ## Clone Expectations
 
 - Track 5 usually does not require a git clone. You can submit a single reaction through the UI or API and provide traces or notes for review.

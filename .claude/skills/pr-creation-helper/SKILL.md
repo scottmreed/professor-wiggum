@@ -150,6 +150,15 @@ Before you present the draft PR description to the user, ensure:
 - Prefer **Conventional Commits** style when it helps reviewers (`feat:`, `fix:`, `docs:`, `infra:`, `chore:`, etc.). **Do not** require date-stamped commit subjects (no obligation to prefix commits or branches with calendar dates).
 - Branch names should be **descriptive** (e.g. `curriculum-workflow`, `fix-validator-soft-pass`). Avoid coupling branch names to a fixed release clock unless you deliberately choose that convention for a one-off merge workflow.
 
+## professor-wiggum: branches, working tree, and “conflicts”
+
+This repository (**professor-wiggum**) uses **long-lived integration branches** (for example `curriculum-workflow`) alongside **`main`**. Keep these distinctions clear when helping with PRs:
+
+- **A successful `git push` does not clear `git status`.** Pushing only updates the **remote** branch pointer. If you see `Changes not staged for commit` or `Untracked files` after a push, that is **uncommitted local work**—not a failed push and not a merge **conflict**.
+- **Merges and fast-forwards update commits, not your editor’s buffer.** After `git merge` / `git pull` / `git merge --ff-only`, any files you had already modified locally **stay modified** until you **commit**, **stash**, or **`git restore`**. That is expected; it is not Git “re-opened a conflict” unless you see conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`) or a merge state in `git status`.
+- **Choose the PR base branch explicitly** in the GitHub UI. If work lives on `curriculum-workflow` first, open the PR **into `main` or into `curriculum-workflow`** per team practice, and say so in the description so reviewers are not surprised.
+- **One change set can touch several tracks** (e.g. `mechanistic_agent/llm.py` + `api/schemas.py` + `model_pricing.json` might be **Track 3** with a small **API schema** footnote). Classify the **dominant** track, list secondary areas, and run the **union** of relevant **fast** tests. If the PR does **not** claim a new leaderboard SOTA, say that clearly; follow `CONTRIBUTING.md` for when **easy/medium** evals are still required.
+
 ## Optional manual release-branch merge (GitHub Actions)
 
 There is **no** cron-driven “5pm release” automation in this repo.

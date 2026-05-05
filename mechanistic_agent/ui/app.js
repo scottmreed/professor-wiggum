@@ -2312,7 +2312,7 @@ async function evaluateRun() {
   const response = await fetch(`/api/runs/${runId}/evaluate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ judge_model: "gpt-5.4" }),
+    body: JSON.stringify({ judge_model: "gpt-5.5" }),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.detail || "Failed to evaluate run");
@@ -2332,7 +2332,7 @@ async function saveEvaluation() {
   const response = await fetch(`/api/runs/${runId}/evaluation/save`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ evaluation: latestEvaluation, judge_model: "gpt-5.4" }),
+    body: JSON.stringify({ evaluation: latestEvaluation, judge_model: "gpt-5.5" }),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.detail || "Failed to save evaluation");

@@ -67,7 +67,7 @@ _PUBLIC_REASONING_LEVELS = {
 }
 _INTERNAL_REASONING_LEVELS = {value: key for key, value in _PUBLIC_REASONING_LEVELS.items()}
 _FAMILY_DEFAULT_PRIORITY: Dict[str, List[str]] = {
-    "openai": ["gpt-5.4", "gpt-5", "gpt-5.2", "gpt-5.1", "gpt-4o"],
+    "openai": ["gpt-5.5", "gpt-5.4", "gpt-5", "gpt-5.2", "gpt-5.1", "gpt-4o"],
 }
 
 
@@ -208,6 +208,9 @@ def _resolve_catalog_key(model_name: str) -> Optional[str]:
         "claude-opus-4-5": "anthropic/claude-opus-4.6",
         "claude-opus-4-6": "anthropic/claude-opus-4.6",
         "claude-opus-4.6": "anthropic/claude-opus-4.6",
+        "anthropic/claude-opus-4-7": "claude-opus-4-7",
+        "anthropic/claude-opus-4.7": "claude-opus-4-7",
+        "claude-opus-4.7": "claude-opus-4-7",
         "anthropic/claude-sonnet-4-5": "anthropic/claude-sonnet-4.5",
         "anthropic/claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
         "claude-sonnet-4-5": "anthropic/claude-sonnet-4.5",
@@ -331,6 +334,8 @@ def get_default_model(family: Optional[str] = None) -> str:
         if cheapest:
             return cheapest
 
+    if "gpt-5.5" in _MODEL_CATALOG:
+        return "gpt-5.5"
     if "gpt-5.4" in _MODEL_CATALOG:
         return "gpt-5.4"
     if "gpt-5" in _MODEL_CATALOG:

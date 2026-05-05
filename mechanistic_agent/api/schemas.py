@@ -107,12 +107,12 @@ class MemoryQueryRequest(BaseModel):
 
 
 class EvaluateRunRequest(BaseModel):
-    judge_model: str = "gpt-5.4"
+    judge_model: str = "gpt-5.5"
 
 
 class SaveEvaluationRequest(BaseModel):
     evaluation: Dict[str, Any] = Field(default_factory=dict)
-    judge_model: str = "gpt-5.4"
+    judge_model: str = "gpt-5.5"
 
 
 class HarnessApplyRequest(BaseModel):

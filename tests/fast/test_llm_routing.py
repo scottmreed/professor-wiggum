@@ -9,3 +9,8 @@ def test_bare_claude_alias_routes_through_openrouter():
 def test_bare_claude_dot_alias_routes_through_openrouter():
     assert is_openrouter_model("claude-sonnet-4.6") is True
     assert get_provider_label("claude-sonnet-4.6") == "OpenRouter"
+
+
+def test_direct_opus_47_alias_routes_through_anthropic():
+    assert is_openrouter_model("claude-opus-4-7") is False
+    assert get_provider_label("claude-opus-4-7") == "Anthropic"

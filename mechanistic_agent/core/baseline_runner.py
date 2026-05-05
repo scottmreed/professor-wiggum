@@ -245,6 +245,10 @@ def _normalise_baseline_reasoning_payload(model: str, payload: Dict[str, Any]) -
     return normalized
 
 
+def _model_requires_provider_default_temperature(model: str) -> bool:
+    return model.strip().lower().startswith("gpt-5.5")
+
+
 class BaselineRunner:
     """Single-shot harness-free mechanism evaluator.
 
@@ -311,6 +315,8 @@ class BaselineRunner:
         if requested_seed is not None:
             model_kwargs["seed"] = int(requested_seed)
         requested_temperature = float(llm_temperature) if (policy == "fixed" and llm_temperature is not None) else None
+        if requested_temperature is not None and _model_requires_provider_default_temperature(model):
+            requested_temperature = None
 
         user_key = _resolve_user_api_key_for_model(model, api_keys)
 
