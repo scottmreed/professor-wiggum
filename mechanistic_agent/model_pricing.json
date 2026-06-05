@@ -1,4 +1,17 @@
 {
+  "agent-bridge": {
+    "id": "agent-bridge",
+    "family": "agent",
+    "provider": "agent_bridge",
+    "supports_tools": true,
+    "label": "Agent Bridge (keyless)",
+    "description": "Keyless provider: an external agent/subagent answers each tool call via the MECHANISTIC_AGENT_BRIDGE_DIR exchange directory instead of a hosted API. The responder receives only the model-visible inputs (messages, tools, tool_choice). Pricing is zero because there is no API spend.",
+    "pricing_per_million": {
+      "input": 0.0,
+      "cached_input": 0.0,
+      "output": 0.0
+    }
+  },
   "gpt-5": {
     "id": "gpt-5",
     "family": "openai",
