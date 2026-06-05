@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+from _optional_assets import require_repo_asset
+
 try:  # pragma: no cover - optional dependency in test runtime
     from rdkit import Chem
 except Exception:  # pragma: no cover - defensive
@@ -159,6 +161,7 @@ def test_template_step_counts_cover_observed_eval_depth() -> None:
 
 
 def test_notebook_smoke_and_required_cells() -> None:
+    require_repo_asset("training_data/rxn_map_visualizer.ipynb")
     notebook = _load_json(RXN_NOTEBOOK)
     assert notebook.get("nbformat") == 4
     cells = notebook.get("cells", [])

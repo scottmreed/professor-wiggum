@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import sys
+
+from _optional_assets import require_repo_asset
 
 
 def _load_validator_module():
-    path = Path("training_data/validate_eval_examples.py")
+    path = require_repo_asset("training_data/validate_eval_examples.py")
     spec = importlib.util.spec_from_file_location("validate_eval_examples", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
