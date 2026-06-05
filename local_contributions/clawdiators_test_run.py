@@ -34,6 +34,7 @@ from datetime import datetime
 from pathlib import Path
 
 from mechanistic_agent.core.db import RunStore
+from mechanistic_agent.data_paths import db_path as resolve_db_path, local_contributions_runs_dir
 from mechanistic_agent.eval_set_resolution import (
     EvalSetResolutionError,
     case_ids_hash,
@@ -55,7 +56,7 @@ GROUND_TRUTH      = REPO_ROOT / "clawdiators-test" / "easy" / "test_ground_truth
 SCORING_SCRIPT    = REPO_ROOT / "clawdiators-test" / "scoring" / "score_submission.py"
 CHALLENGE_MD      = REPO_ROOT / "clawdiators-submission" / "easy" / "CHALLENGE.md"
 WORKED_EXAMPLE    = REPO_ROOT / "clawdiators-submission" / "easy" / "worked_example.json"
-RUNS_DIR          = REPO_ROOT / "local_contributions" / "runs"
+RUNS_DIR          = local_contributions_runs_dir(REPO_ROOT)
 LEADERBOARD_MD    = REPO_ROOT / "LEADERBOARD.md"
 
 
@@ -442,7 +443,7 @@ def main() -> None:
     resolved_case_ids_hash = None
     reactions_source_label = ""
     if args.eval_set_id or args.official_holdout:
-        store = RunStore(REPO_ROOT / "data" / "mechanistic.db")
+        store = RunStore(resolve_db_path(REPO_ROOT))
         try:
             resolved = resolve_eval_set(
                 store=store,

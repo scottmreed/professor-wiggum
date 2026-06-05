@@ -30,6 +30,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from mechanistic_agent.core import RegistrySet, RunCoordinator, RunStore, select_step_models
+from mechanistic_agent.data_paths import db_path as resolve_db_path, flower_curriculum_pngs_dir, flower_train_lookup_path
 from mechanistic_agent.core.archive import (
     DEFAULT_ISLANDS,
     ISLAND_CALL_NAMES,
@@ -249,12 +250,12 @@ def setup_workspace(base_dir: Path, dry_run: bool) -> Path:
             source = base_dir / root_name
             if source.exists():
                 shutil.copytree(source, workspace / root_name, dirs_exist_ok=True)
-        source_db = base_dir / "data" / "mechanistic.db"
+        source_db = resolve_db_path(base_dir)
         workspace_db = workspace / "data" / "mechanistic.db"
         workspace_db.parent.mkdir(parents=True, exist_ok=True)
         if source_db.exists():
             shutil.copy2(source_db, workspace_db)
-        source_lookup = base_dir / "data" / "flower_train_lookup.sqlite"
+        source_lookup = flower_train_lookup_path(base_dir)
         if source_lookup.exists():
             shutil.copy2(source_lookup, workspace / "data" / "flower_train_lookup.sqlite")
         (workspace / "traces" / "runs").mkdir(parents=True, exist_ok=True)
@@ -923,7 +924,7 @@ def run_curriculum_batch(
 
 def evolve(config: EvolutionConfig) -> None:
     base_dir = _PROJECT_ROOT
-    source_store = RunStore(base_dir / "data" / "mechanistic.db")
+    source_store = RunStore(resolve_db_path(base_dir))
 
     requested_eval_identifier = str(config.eval_set_id or "").strip().lower()
     if requested_eval_identifier in {"eval_set", "default", "flower", "flower_100", "flower_100_default"}:
@@ -1039,7 +1040,7 @@ def evolve(config: EvolutionConfig) -> None:
                 input_path=config.train_input,
                 index_path=config.curriculum_index_path,
                 cache_path=config.lookup_cache_path,
-                output_dir=runtime_base / "training_data" / "flower_curriculum_pngs",
+                output_dir=flower_curriculum_pngs_dir(runtime_base),
                 entries=[dict(item["entry"]) for item in prepared_batch["runnable_cases"]],
                 only_missing=True,
             )
@@ -1214,7 +1215,7 @@ def apply_island_mutation(
 def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig) -> None:
     """Archive-based island evolution loop."""
     base_dir = _PROJECT_ROOT
-    store = RunStore(base_dir / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base_dir))
 
     requested_eval_identifier = str(config.eval_set_id or "").strip().lower()
     if requested_eval_identifier in {"eval_set", "default", "flower", "flower_100", "flower_100_default"}:

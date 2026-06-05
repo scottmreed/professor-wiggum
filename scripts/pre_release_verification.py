@@ -20,8 +20,9 @@ REQUIRED_FAMILIES = ["openai", "claude", "gemini"]
 def main() -> int:
     from mechanistic_agent.core.registries import RegistrySet
     from mechanistic_agent.core.db import RunStore
+    from mechanistic_agent.data_paths import db_path as resolve_db_path
 
-    db_path = PROJECT_ROOT / "data" / "mechanistic.db"
+    db_path = resolve_db_path(PROJECT_ROOT)
     if not db_path.exists():
         print(f"FAIL: Database not found at {db_path}")
         return 1

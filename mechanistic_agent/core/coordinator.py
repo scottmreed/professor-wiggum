@@ -95,16 +95,29 @@ class RunCoordinator:
 
     @property
     def _base_dir(self):
-        """Resolve project base directory from store DB path.
+        """Resolve Mechanistic repo root (code + committed assets).
 
         Returns ``None`` when the store is a test mock without ``db_path``.
         """
         db_path = getattr(self.store, "db_path", None)
         if db_path is None:
             return None
+        from mechanistic_agent.data_paths import repo_root
+
+        return repo_root()
+
+    def _trace_data_root(self):
+        db_path = getattr(self.store, "db_path", None)
+        if db_path is None:
+            return None
         from pathlib import Path
-        p = Path(db_path).parent
-        return p.parent if p.name == "data" else p
+
+        from mechanistic_agent.data_paths import data_root_for_db
+
+        return data_root_for_db(Path(db_path))
+
+    def _scratchpad_root(self):
+        return self._trace_data_root() or self._base_dir
 
     def _resolve_harness(self, state: RunState) -> HarnessConfig:
         """Resolve harness config from run config, falling back to default."""
@@ -3058,8 +3071,9 @@ class RunCoordinator:
                 attempt=state.step_index + 1,
                 retry_index=retry_index,
             )
+            trace_root = self._scratchpad_root()
             _scratchpad_validation_retry(
-                self._base_dir,
+                trace_root,
                 state.run_id,
                 step_index=state.step_index + 1,
                 retry_index=retry_index,
@@ -3202,7 +3216,7 @@ class RunCoordinator:
             retry_index=0,
         )
         _scratchpad_step_accepted(
-            self._base_dir,
+            self._scratchpad_root(),
             state.run_id,
             step_index=state.step_index,
             intermediate_smiles=candidate.intermediate_smiles,
@@ -3261,7 +3275,7 @@ class RunCoordinator:
                 },
             )
             _scratchpad_failed_path(
-                self._base_dir,
+                self._scratchpad_root(),
                 state.run_id,
                 branch_step_index=bp.step_index,
                 candidate_rank=chosen_rank,
@@ -3316,7 +3330,7 @@ class RunCoordinator:
                 retry_index=0,
             )
             _scratchpad_backtrack(
-                self._base_dir,
+                self._scratchpad_root(),
                 state.run_id,
                 reverted_to_step=bp.step_index,
                 alternative_rank=next_alt.rank,
@@ -3443,7 +3457,7 @@ class RunCoordinator:
 
         # Inject condensed scratchpad summary so the LLM can avoid
         # repeating failed approaches without seeing full branch/backtrack detail.
-        scratchpad_summary = read_scratchpad_summary(self._base_dir, state.run_id)
+        scratchpad_summary = read_scratchpad_summary(self._scratchpad_root(), state.run_id)
         if scratchpad_summary:
             merged = dict(template_guidance or {})
             merged["scratchpad_summary"] = scratchpad_summary
@@ -5441,7 +5455,7 @@ class RunCoordinator:
                 },
             )
             _scratchpad_init(
-                self._base_dir,
+                self._scratchpad_root(),
                 run_id,
                 state.run_input.starting_materials,
                 state.run_input.products,

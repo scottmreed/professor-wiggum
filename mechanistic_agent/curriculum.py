@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from zoneinfo import ZoneInfo
 
 from mechanistic_agent.core import RegistrySet, RunStore
+from mechanistic_agent.data_paths import flower_curriculum_pngs_dir, repo_root, uses_external_data_root
 from mechanistic_agent.flower_curriculum import DEFAULT_INDEX_PATH, ensure_index, load_curriculum_index
 from mechanistic_agent.prompt_assets import load_call_few_shot_examples, score_few_shot_example
 
@@ -877,8 +878,12 @@ def publish_curriculum_release(
         "history_preview": context.get("checkpoints") or [],
         "changed_files": [],
         "curriculum_png_index": (
-            str((base_dir / "training_data" / "flower_curriculum_pngs" / "index.json").relative_to(base_dir))
-            if (base_dir / "training_data" / "flower_curriculum_pngs" / "index.json").exists()
+            str((flower_curriculum_pngs_dir(base_dir) / "index.json").resolve())
+            if uses_external_data_root(base_dir)
+            else str(
+                (flower_curriculum_pngs_dir(base_dir) / "index.json").relative_to(repo_root(base_dir))
+            )
+            if (flower_curriculum_pngs_dir(base_dir) / "index.json").exists()
             else None
         ),
         "git": {},

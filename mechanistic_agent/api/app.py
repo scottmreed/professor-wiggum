@@ -84,6 +84,7 @@ from mechanistic_agent.prompt_assets import (
     traces_root,
     unified_prompt_diff,
 )
+from mechanistic_agent.data_paths import db_path as resolve_db_path, evidence_root
 from mechanistic_agent.prompt_trace_validator import validate_evidence_for_calls
 from mechanistic_agent.smiles_utils import (
     normalize_species_for_matching,
@@ -1287,11 +1288,11 @@ def _prepare_example_record(item: Dict[str, Any], source_label: str) -> Optional
 def create_app(base_dir: Path | None = None) -> FastAPI:
     base = (base_dir or Path.cwd()).resolve()
     ui_dir = base / "mechanistic_agent" / "ui"
-    db_path = base / "data" / "mechanistic.db"
+    db_path = resolve_db_path(base)
 
     registry = RegistrySet(base)
     store: RunStateStore = SQLiteRunStore(db_path)
-    artifact_store = LocalArtifactStore(base)
+    artifact_store = LocalArtifactStore(base, db_path=db_path)
     store.record_assets(
         [
             {
@@ -2827,7 +2828,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         if not prompt_bundle_sha:
             raise HTTPException(status_code=400, detail=f"Trace {trace_id} prompt bundle hash missing")
 
-        evidence_dir = traces_root(base) / "evidence" / call_name / prompt_bundle_sha
+        evidence_dir = evidence_root(base) / call_name / prompt_bundle_sha
         evidence_dir.mkdir(parents=True, exist_ok=True)
         evidence_path = evidence_dir / f"{trace_id}.json"
         payload = {
@@ -4431,4 +4432,19 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+class _LazyASGI:
+    """Defer ``create_app()`` until the first HTTP request (avoids DB init on import)."""
+
+    def __init__(self) -> None:
+        self._app: FastAPI | None = None
+
+    def _get_app(self) -> FastAPI:
+        if self._app is None:
+            self._app = create_app()
+        return self._app
+
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        await self._get_app()(scope, receive, send)
+
+
+app = _LazyASGI()

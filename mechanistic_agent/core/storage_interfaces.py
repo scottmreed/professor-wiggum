@@ -175,9 +175,14 @@ from mechanistic_agent.core.db import RunStore as SQLiteRunStore  # noqa: E402
 class LocalArtifactStore:
     """Filesystem-backed ArtifactStore using the configured traces root."""
 
-    def __init__(self, base_dir: Path) -> None:
+    def __init__(self, base_dir: Path, *, db_path: Path | None = None) -> None:
+        from mechanistic_agent.data_paths import traces_root_for_db
         from mechanistic_agent.prompt_assets import traces_root
-        self._root: Path = traces_root(base_dir)
+
+        if db_path is not None:
+            self._root: Path = traces_root_for_db(db_path)
+        else:
+            self._root = traces_root(base_dir)
 
     def write_artifact(self, relative_path: str, content: bytes) -> Path:
         dest = self._root / relative_path

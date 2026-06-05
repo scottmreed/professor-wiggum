@@ -22,7 +22,7 @@ Frozen surfaces:
 - `mechanistic_agent/scoring.py`
 - `training_data/eval_set.json`
 - `training_data/eval_tiers.json`
-- `training_data/leaderboard_holdout/`
+- `training_data/leaderboard_holdout/` (in wiggum-data by default)
 - `model_pricing.json`
 
 ## Program File
@@ -48,7 +48,7 @@ Otherwise the mutation is discarded and logged.
 
 Rows are written to:
 - SQLite table: `ralph_experiments`
-- JSONL: `traces/overnight_ralph/YYYY-MM-DD_ledger.jsonl`
+- JSONL: `<wiggum-data>/traces/overnight_ralph/YYYY-MM-DD_ledger.jsonl` (or in-repo fallback)
 
 Fields:
 - `parent_checkpoint_sha`

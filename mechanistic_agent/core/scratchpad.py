@@ -18,16 +18,12 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from mechanistic_agent.prompt_assets import traces_root
-
-
-# ---------------------------------------------------------------------------
 # Path helpers
 # ---------------------------------------------------------------------------
 
-def scratchpad_path(base_dir: Path, run_id: str) -> Path:
+def scratchpad_path(trace_data_root: Path, run_id: str) -> Path:
     """Return the canonical scratchpad path for a run."""
-    return traces_root(base_dir) / "runs" / run_id / "scratchpad.md"
+    return trace_data_root / "traces" / "runs" / run_id / "scratchpad.md"
 
 
 def _ensure_parent(path: Path) -> None:

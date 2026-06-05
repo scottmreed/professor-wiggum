@@ -68,8 +68,9 @@ def prompt_versions_root(base_dir: Path | None = None) -> Path:
 
 
 def traces_root(base_dir: Path | None = None) -> Path:
-    base = (base_dir or Path.cwd()).resolve()
-    return base / "traces"
+    from mechanistic_agent.data_paths import traces_root as _traces_root
+
+    return _traces_root(base_dir)
 
 
 def model_asset_slug(model_name: str) -> str:

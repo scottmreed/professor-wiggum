@@ -61,10 +61,11 @@ frontend/dist
 *~
 .DS_Store
 
-# Database
+# Database and bulk data (live in wiggum-data sibling or local data/ for forkers)
 *.sqlite
 *.db
 *.db-journal
+data/flower_curriculum_index.jsonl
 
 # Project specific
 backend/app/static/*
@@ -145,20 +146,18 @@ training_data/*
 !training_data/rxn_map_expanded.json
 !training_data/eval_mechanism_map.json
 
-# Full index is 65MB — track sample + report only
+# Full index is 65MB — track sample only; index/report live in wiggum-data
 # Regenerate full index: see training_data/REGENERATE.md
 !training_data/flower_mechanism_index_sample.jsonl
-!training_data/flower_mechanism_index_report.json
 !training_data/REGENERATE.md
 
 # Reaction template PNGs (generated, local only — do not track)
 training_data/rxn_templates/
 training_data/rxn_template_examples/
 
-# Curriculum PNGs — track index only, not images
+# Curriculum PNGs — all live in wiggum-data (local or sibling checkout)
 !training_data/flower_curriculum_pngs/
 training_data/flower_curriculum_pngs/*.png
-!training_data/flower_curriculum_pngs/index.json
 
 # Practice eval set for contributors (NOT the leaderboard set)
 !training_data/practice_eval/

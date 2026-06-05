@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from mechanistic_agent.core.db import RunStore
+from mechanistic_agent.data_paths import evidence_root
 from mechanistic_agent.prompt_assets import resolve_call_name_from_step, traces_root
 
 
@@ -66,7 +67,7 @@ def main() -> int:
         bundle_sha = str(prompt_version.get("prompt_bundle_sha256") or prompt_version.get("sha256") or "")
         if not bundle_sha:
             continue
-        evidence_dir = traces_root(repo) / "evidence" / call_name / bundle_sha
+        evidence_dir = evidence_root(repo) / call_name / bundle_sha
         evidence_dir.mkdir(parents=True, exist_ok=True)
         evidence_path = evidence_dir / f"{trace_id}.json"
         evidence_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

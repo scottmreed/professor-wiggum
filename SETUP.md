@@ -64,7 +64,7 @@ Run the fast test suite (no API keys required):
 pytest tests/fast/ -q
 ```
 
-Expected: ~42/45 pass without RDKit, ~45/45 with RDKit installed.
+Expected: all pass. A handful of chemistry tests require RDKit (see above); without it, those tests are skipped or xfail.
 
 To run LLM tests (requires API keys):
 
@@ -74,21 +74,23 @@ pytest tests/llm/ -q
 
 ## Curriculum SQLite Lookups
 
-Curriculum operations (`python main.py curriculum submit`, etc.) require two SQLite index files that are not stored in git:
+Curriculum operations (`python main.py curriculum submit`, etc.) require two SQLite index files:
 
 - `data/flower_train_lookup.sqlite`
 - `data/flower_test_lookup.sqlite`
 
-Build the train lookup from the committed `.jsonl` index (takes several minutes):
+These are generated locally — they are not tracked in git. Build the train lookup from the full FlowER mechanism index (takes several minutes after downloading the index):
 
 ```bash
 python main.py curriculum build-lookup
 ```
 
+**Maintainers** keep bulk artifacts in a sibling `../wiggum-data` checkout (resolved automatically). **Forkers** generate everything locally; the app falls back to `data/` and `training_data/` inside this repo. See [docs/DATA_SETUP.md](docs/DATA_SETUP.md) for details and the `MECHANISTIC_DATA_DIR` override.
+
 ## Large Data Files
 
-The full FlowER mechanism index (`flower_mechanism_index.jsonl`, ~65 MB) is **not tracked in git** to keep the repo lightweight. A 1,000-line sample is committed at `training_data/flower_mechanism_index_sample.jsonl` for format reference.
+The full FlowER mechanism index (`flower_mechanism_index.jsonl`, ~65 MB) is not tracked in git. A 1,000-line sample is at `training_data/flower_mechanism_index_sample.jsonl` for format reference.
 
-You only need the full index for curriculum operations and evolve harness runs — not for running evals or tests. See [training_data/REGENERATE.md](training_data/REGENERATE.md) for rebuild instructions.
+You only need the full index for curriculum operations and evolve harness runs — not for running evals or tests. See [training_data/REGENERATE.md](training_data/REGENERATE.md) for rebuild instructions (requires the FlowER dataset from figshare).
 
 See [README.md](README.md) for the developer workflow and curriculum overview.

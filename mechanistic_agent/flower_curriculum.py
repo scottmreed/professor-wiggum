@@ -20,13 +20,21 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from mechanistic_agent.data_paths import (  # noqa: E402
+    flower_mechanism_index_path,
+    flower_mechanism_index_report_path,
+    flower_train_lookup_path,
+    repo_root,
+    repo_training_dir,
+)
+
+PROJECT_ROOT = repo_root()
 DEFAULT_FLOWER_INPUT = PROJECT_ROOT.parent / "FlowER" / "data" / "flower_new_dataset" / "train.txt"
-DEFAULT_LOOKUP_CACHE = PROJECT_ROOT / "data" / "flower_train_lookup.sqlite"
-DEFAULT_INDEX_PATH = PROJECT_ROOT / "training_data" / "flower_mechanism_index.jsonl"
-DEFAULT_INDEX_REPORT_PATH = PROJECT_ROOT / "training_data" / "flower_mechanism_index_report.json"
-DEFAULT_DATASET_PATH = PROJECT_ROOT / "training_data" / "flower_mechanisms_100.json"
-DEFAULT_DATASET_REPORT_PATH = PROJECT_ROOT / "training_data" / "flower_mechanisms_100_report.json"
+DEFAULT_LOOKUP_CACHE = flower_train_lookup_path()
+DEFAULT_INDEX_PATH = flower_mechanism_index_path()
+DEFAULT_INDEX_REPORT_PATH = flower_mechanism_index_report_path()
+DEFAULT_DATASET_PATH = repo_training_dir() / "flower_mechanisms_100.json"
+DEFAULT_DATASET_REPORT_PATH = repo_training_dir() / "flower_mechanisms_100_report.json"
 
 SOURCE_LABEL = "FlowER flower_new_dataset train.txt"
 SOURCE_REF = "https://github.com/schwallergroup/ChRIMP"

@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from mechanistic_agent.core.db import RunStore  # noqa: E402
+from mechanistic_agent.data_paths import db_path as resolve_db_path  # noqa: E402
 
 
 def main() -> None:
@@ -27,7 +28,7 @@ def main() -> None:
     import matplotlib.pyplot as plt
     import numpy as np
 
-    db_path = ROOT / "data" / "mechanistic.db"
+    db_path = resolve_db_path(ROOT)
     if not db_path.exists():
         sys.exit(f"Database not found at {db_path}")
 

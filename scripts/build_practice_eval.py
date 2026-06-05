@@ -34,10 +34,16 @@ from mechanistic_agent.flower_curriculum import (
     eval_case_from_case,
 )
 
-TRAINING_DIR = PROJECT_ROOT / "training_data"
-INDEX_PATH = TRAINING_DIR / "flower_mechanism_index.jsonl"
+from mechanistic_agent.data_paths import (
+    flower_mechanism_index_path,
+    holdout_eval_set_path,
+    repo_training_dir,
+)
+
+TRAINING_DIR = repo_training_dir(PROJECT_ROOT)
+INDEX_PATH = flower_mechanism_index_path(PROJECT_ROOT)
 EVAL_SET_PATH = TRAINING_DIR / "eval_set.json"
-HOLDOUT_PATH = TRAINING_DIR / "leaderboard_holdout" / "eval_set_holdout.json"
+HOLDOUT_PATH = holdout_eval_set_path(PROJECT_ROOT)
 
 PRACTICE_DIR = TRAINING_DIR / "practice_eval"
 PRACTICE_SET_PATH = PRACTICE_DIR / "practice_set.json"

@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
+from mechanistic_agent.data_paths import (
+    flower_test_lookup_path,
+    holdout_dir,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -25,8 +30,8 @@ from mechanistic_agent.flower_curriculum import (  # noqa: E402
 from mechanistic_agent.flower_rendering import render_cases  # noqa: E402
 
 DEFAULT_INPUT_PATH = PROJECT_ROOT.parent / "FlowER" / "data" / "flower_new_dataset" / "test.txt"
-DEFAULT_CACHE_PATH = PROJECT_ROOT / "data" / "flower_test_lookup.sqlite"
-HOLDOUT_DIR = PROJECT_ROOT / "training_data" / "leaderboard_holdout"
+DEFAULT_CACHE_PATH = flower_test_lookup_path(PROJECT_ROOT)
+HOLDOUT_DIR = holdout_dir(PROJECT_ROOT)
 DEFAULT_EVAL_SET_PATH = HOLDOUT_DIR / "eval_set_holdout.json"
 DEFAULT_BUCKET_PATH = HOLDOUT_DIR / "eval_step_buckets_holdout.json"
 DEFAULT_REPORT_PATH = HOLDOUT_DIR / "eval_quality_report_holdout.json"

@@ -113,7 +113,9 @@ def main() -> int:
         print("No trace files changed in this PR. Skipping validation.")
         return 0
 
-    db_path = PROJECT_ROOT / "data" / "mechanistic.db"
+    from mechanistic_agent.data_paths import db_path as resolve_db_path
+
+    db_path = resolve_db_path(PROJECT_ROOT)
     failures: list[str] = []
 
     for rel_path in trace_files:

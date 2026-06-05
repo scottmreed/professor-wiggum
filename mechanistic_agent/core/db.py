@@ -729,8 +729,9 @@ class RunStore:
             conn.commit()
 
         # Remove filesystem trace directory
-        base_root = self.db_path.parent.parent if self.db_path.parent.name == "data" else self.db_path.parent
-        run_dir = traces_root(base_root) / "runs" / run_id
+        from mechanistic_agent.data_paths import repo_root, traces_root_for_db
+
+        run_dir = traces_root_for_db(self.db_path) / "runs" / run_id
         if run_dir.exists():
             shutil.rmtree(run_dir, ignore_errors=True)
 
@@ -1494,9 +1495,10 @@ class RunStore:
         approved: bool,
         trace: Dict[str, Any],
     ) -> None:
-        base_root = self.db_path.parent.parent if self.db_path.parent.name == "data" else self.db_path.parent
+        from mechanistic_agent.data_paths import traces_root_for_db
+
         run_key = str(run_id or "unassigned")
-        run_dir = traces_root(base_root) / "runs" / run_key
+        run_dir = traces_root_for_db(self.db_path) / "runs" / run_key
         run_dir.mkdir(parents=True, exist_ok=True)
         stamp = int(time.time() * 1000)
         file_name = f"{stamp}_{step_name}_{trace_id}.json"

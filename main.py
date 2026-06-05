@@ -33,6 +33,7 @@ from mechanistic_agent.model_registry import (
     to_internal_reasoning_level,
 )
 from mechanistic_agent.llm import is_agent_bridge_model
+from mechanistic_agent.data_paths import db_path as resolve_db_path, holdout_eval_set_path
 from mechanistic_agent.eval_set_resolution import (
     EvalSetResolutionError,
     case_ids_hash,
@@ -1790,7 +1791,7 @@ def run(
 
     base = Path.cwd()
     registry = RegistrySet(base)
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     store.record_assets(
         [
             {
@@ -2024,7 +2025,7 @@ def vote(
         raise typer.BadParameter("Candidate payloads must be JSON objects")
 
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     row = store.get_run_row(run_id)
     if row is None:
         raise typer.BadParameter(f"Run not found: {run_id}")
@@ -2105,7 +2106,7 @@ def overnight_ralph(
     program_config.max_cost_usd = float(max_cost_usd)
     program_config.acceptance_threshold_pct = max(0.0, float(acceptance_threshold))
 
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     orchestrator = OvernightRalphOrchestrator(base_dir=base, store=store)
     plan = select_step_models(model_name=model_name)
     run_config = {
@@ -2416,7 +2417,7 @@ def baseline(
     if requested_tiers:
         # ---- Tier mode: run easy/medium/hard in sequence via local CLI ----
         base = Path.cwd()
-        store = RunStore(base / "data" / "mechanistic.db")
+        store = RunStore(resolve_db_path(base))
         registry = RegistrySet(base)
         model_family = get_model_family(model_name) or "unknown"
         harness_hash = registry.bundle_hashes(model_name=model_name).get("prompt_bundle_hash", "")
@@ -2526,7 +2527,7 @@ def baseline(
     if eval_set_id:
         # ---- Eval-set mode: run all cases and record to leaderboard ----
         base = Path.cwd()
-        store = RunStore(base / "data" / "mechanistic.db")
+        store = RunStore(resolve_db_path(base))
         registry = RegistrySet(base)
         model_family = get_model_family(model_name) or "unknown"
         harness_hash = registry.bundle_hashes(model_name=model_name).get("prompt_bundle_hash", "")
@@ -2687,7 +2688,7 @@ def baseline_runset_official_cmd(
 ) -> None:
     """Run the official holdout-only baseline eval (one-shot mode)."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     try:
         resolved_eval_set = resolve_eval_set(
             store=store,
@@ -2735,7 +2736,7 @@ def seed_simulated(
     is available.
     """
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
 
     if delete:
         result = store.delete_simulated_leaderboard_rows(eval_set_id=eval_set_id)
@@ -2757,7 +2758,7 @@ def compare_eval_runs(
 ) -> None:
     """Compare reproducibility metadata between two eval runs."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
 
     def _run_summary(eval_run_id: str) -> Dict[str, Any]:
         row = store.get_eval_run(eval_run_id)
@@ -2841,7 +2842,7 @@ def import_eval_set(
 ) -> None:
     """Import the default FlowER eval set into the local DB from training_data/eval_set.json."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     eval_path = Path(path) if path else base / "training_data" / "eval_set.json"
     if not eval_path.exists():
         raise typer.BadParameter(f"Eval set file not found: {eval_path}")
@@ -2931,8 +2932,8 @@ def import_holdout_eval_set(
 ) -> None:
     """Import the isolated leaderboard holdout eval set into the local DB."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
-    eval_path = Path(path) if path else base / "training_data" / "leaderboard_holdout" / "eval_set_holdout.json"
+    store = RunStore(resolve_db_path(base))
+    eval_path = Path(path) if path else holdout_eval_set_path(base)
     if not eval_path.exists():
         raise typer.BadParameter(f"Holdout eval set file not found: {eval_path}")
 
@@ -3030,7 +3031,7 @@ def leaderboard(
         raise typer.BadParameter("choose at most one of --json or --markdown")
 
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     items = store.leaderboard(eval_set_id=eval_set_id, limit=max(1, min(limit, 100)))
     items = _filter_leaderboard_rows(items, completed_only=completed_only)
 
@@ -3104,7 +3105,7 @@ def leaderboard_official(
 ) -> None:
     """Print leaderboard rows for the official holdout suite."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     try:
         resolved = resolve_eval_set(
             store=store,
@@ -3173,7 +3174,7 @@ def update_leaderboard_artifacts_cmd(
     Run after eval-runset-official to sync LEADERBOARD.md and curriculum artifacts.
     """
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     try:
         resolved = resolve_eval_set(
             store=store,
@@ -3228,7 +3229,7 @@ def curriculum_status_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit curriculum status as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = build_curriculum_status(base, store, model_name=model_name)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3256,7 +3257,7 @@ def curriculum_submit_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit queue payload as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = submit_curriculum_release(base, store, model_name=model_name)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3270,7 +3271,7 @@ def curriculum_publish_due_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit published checkpoints as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = publish_due_curriculum_releases(base, store)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3287,7 +3288,7 @@ def curriculum_publish_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit checkpoint as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = publish_curriculum_release(base, store, queue_id=checkpoint_id, force=force)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3305,7 +3306,7 @@ def curriculum_render_readme_cmd(
     ),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     render_curriculum_readme(base, store, model_name=model_name)
     typer.echo(f"Rendered curriculum README (model_name={model_name})")
 
@@ -3316,7 +3317,7 @@ def curriculum_history_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit checkpoint history as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = curriculum_history(store, model_name=model_name)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3331,7 +3332,7 @@ def curriculum_history_cmd(
 @curriculum_app.command("tag-history")
 def curriculum_tag_history_cmd() -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     checkpoints = curriculum_history(store, model_name=OPUS_MODEL)
     for item in checkpoints:
         typer.echo(f"{item.get('release_date')} {item.get('git_tag') or 'n/a'}")
@@ -3802,7 +3803,7 @@ def eval_cmd(
         raise typer.BadParameter("--max-per-tier must be at least 1 when set")
 
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     registry = RegistrySet(base)
     model_family = get_model_family(model_name) or "unknown"
     if requested_tiers:
@@ -4193,7 +4194,7 @@ def eval_runset_official_cmd(
     for prompt tuning or harness development.
     """
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     model_name = _canonicalize_model_name_or_raise(model_name)
     resolved_max_cases = int(max_cases) if max_cases is not None else 20
     if resolved_max_cases < 1:

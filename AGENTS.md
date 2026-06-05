@@ -5,12 +5,21 @@ This repository now runs on a local-first architecture:
 - Runtime orchestration: explicit coordinator/state machine in `mechanistic_agent/core/`
 - API service boundary: FastAPI app in `mechanistic_agent/api/`
 - UI: static HTML/JS/CSS in `mechanistic_agent/ui/`
-- Persistence: SQLite database at `data/mechanistic.db`
+- Persistence: SQLite database at `data/mechanistic.db` (default: sibling **wiggum-data** checkout — see [docs/DATA_SETUP.md](docs/DATA_SETUP.md))
 - Curated assets:
   - `skills/mechanistic/` (LLM prompts, few-shot files, and deterministic validators — formerly `prompt_versions/`)
   - `skills/project/` (project-level skills used outside mechanism prediction)
   - `traces/` (run traces + PR evidence traces, including per-run scratchpad files)
   - `harness_versions/` (per-harness subdirectories with `harness.json`)
+
+## Local data checkout (forkers)
+
+Bulk/runtime data defaults to sibling **`../wiggum-data`** when that directory exists.
+Forks and CI without a separate checkout keep the legacy in-repo layout (`data/`,
+`traces/runs/`, etc.) automatically.
+
+Set `MECHANISTIC_DATA_DIR` to point anywhere you prefer. Details:
+[docs/DATA_SETUP.md](docs/DATA_SETUP.md).
 
 ## Verified vs Unverified
 

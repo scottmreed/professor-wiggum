@@ -29,8 +29,10 @@ from mechanistic_agent.flower_curriculum import (
     _json_dump,
 )
 
-DEFAULT_MULTISTEP_DATASET_PATH = Path(__file__).resolve().parents[1] / "training_data" / "flower_mechanisms_multistep.json"
-DEFAULT_MULTISTEP_REPORT_PATH = Path(__file__).resolve().parents[1] / "training_data" / "flower_mechanisms_multistep_report.json"
+from mechanistic_agent.data_paths import bulk_training_dir
+
+DEFAULT_MULTISTEP_DATASET_PATH = bulk_training_dir(PROJECT_ROOT) / "flower_mechanisms_multistep.json"
+DEFAULT_MULTISTEP_REPORT_PATH = bulk_training_dir(PROJECT_ROOT) / "flower_mechanisms_multistep_report.json"
 
 
 def build_dataset(

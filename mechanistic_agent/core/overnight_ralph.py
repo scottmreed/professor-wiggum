@@ -110,7 +110,9 @@ class OvernightRalphOrchestrator:
             if not allowed_lanes:
                 allowed_lanes = ["topology"]
 
-            candidates_dir = self.base_dir / "traces" / "overnight_ralph" / "candidates"
+            from mechanistic_agent.prompt_assets import traces_root
+
+            candidates_dir = traces_root(self.base_dir) / "overnight_ralph" / "candidates"
             candidates_dir.mkdir(parents=True, exist_ok=True)
 
             for idx in range(1, int(config.max_experiments) + 1):

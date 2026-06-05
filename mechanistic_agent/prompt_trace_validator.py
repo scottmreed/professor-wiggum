@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Set
 
-from .prompt_assets import get_call_prompt_version, traces_root
+from mechanistic_agent.data_paths import evidence_root
+from mechanistic_agent.prompt_assets import get_call_prompt_version
 
 
 _PROMPT_CHANGE_RE = re.compile(r"^prompt_versions/calls/([^/]+)/(base\.md|few_shot\.jsonl)$")
@@ -48,7 +49,7 @@ def discover_changed_calls(*, base_ref: str, head_ref: str, cwd: Path | None = N
 
 
 def _evidence_files_for_call(call_name: str, *, base_dir: Path) -> List[Path]:
-    root = traces_root(base_dir) / "evidence" / call_name
+    root = evidence_root(base_dir) / call_name
     if not root.exists():
         return []
     return sorted(root.glob("*/*.json"))
