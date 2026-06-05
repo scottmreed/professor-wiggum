@@ -1,0 +1,24 @@
+# Core governance for the Mechanistic Agent.
+#
+# Changes to the deterministic arbiters and to the sources of "truth" (what
+# "better" means, holdout protection, model identity/cost) require human core
+# review — for EVERY contributor, human or agent. This is the cheap, standard
+# mechanism that keeps the SOUL.md autonomy path (Stage 3/4) safe: an automated
+# contributor cannot merge a change to the very checks that gate its own work.
+#
+# Enforcement note: for this to block merges, enable "Require review from Code
+# Owners" in the branch protection rules for the default branch.
+#
+# See CONTRIBUTING.md → "Keyless and agent-authored contributions".
+
+# Deterministic chemistry validators — the final arbiter (SOUL.md Guardrail 1)
+/mechanistic_agent/core/validators.py        @scottmreed
+/skills/mechanistic/*/validator.py           @scottmreed
+
+# Evidence gate, eval definition, and holdout isolation (what "better" means)
+/scripts/validate_prompt_trace_evidence.py   @scottmreed
+/training_data/eval_tiers.json               @scottmreed
+/training_data/leaderboard_holdout/          @scottmreed
+
+# Model catalog — the single source of model truth (SOUL.md Guardrail 3)
+/mechanistic_agent/model_pricing.json        @scottmreed

@@ -37,6 +37,13 @@ Save this file under `local_contributions/single_reactions/`. Do not commit it.
 - [ ] Consider as future harness change
 - [ ] Consider as future model comparison case
 
+### Execution origin
+- Execution channel: `direct_model` (hosted API key) or `agent-bridge` (keyless)
+- If `agent-bridge` — responder kind: `orchestrator_subagents` / `cli` / `script` / `replay`
+- Declared underlying model/agent:
+- Budget observability: `full` (hosted, real cost) or `opaque` (agent-bridge)
+- Official holdout exposed to the responder? `no`
+
 ### Contact info for possible manuscript attribution
 - Name:
 - Email:

@@ -24,6 +24,13 @@
 - Candidate leaderboard row:
 - Medium-tier improvement:
 
+### Execution origin
+- Execution channel: `direct_model` (hosted API key) or `agent-bridge` (keyless)
+- If `agent-bridge` — responder kind: `orchestrator_subagents` / `cli` / `script` / `replay`
+- Declared underlying model/agent:
+- Budget observability: `full` (hosted, real cost) or `opaque` (agent-bridge)
+- Official holdout exposed to the responder? `no`
+
 ### Checklist
 - [ ] Added serialized `input` and `output` strings only
 - [ ] Linked approved evidence

@@ -32,6 +32,7 @@ from mechanistic_agent.model_registry import (
     resolve_model_key,
     to_internal_reasoning_level,
 )
+from mechanistic_agent.llm import is_agent_bridge_model
 from mechanistic_agent.eval_set_resolution import (
     EvalSetResolutionError,
     case_ids_hash,
@@ -524,8 +525,13 @@ def _render_leaderboard_markdown(
             lines.append("| - | - | - | - | - | - | - | - | No completed rows |")
         return "\n".join(lines)
 
+    has_bridge_origin = False
     for index, row in enumerate(items, 1):
         model = str(row.get("model_name") or row.get("model") or "unknown")
+        is_bridge = is_agent_bridge_model(model)
+        if is_bridge:
+            has_bridge_origin = True
+        model_cell = f"`{model}`" + (" †" if is_bridge else "")
         thinking = str(row.get("thinking_level") or "none")
         run_type = "Baseline" if row.get("is_baseline") else "Harness"
         pts = _leaderboard_row_to_pts(row)
@@ -538,12 +544,26 @@ def _render_leaderboard_markdown(
             total_cost = float(row.get("total_cost") or 0.0)
             cost_display = f"${total_cost:.3f}"
             lines.append(
-                f"| {index} | `{model}` | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | {cost_display} | `{group}` |"
+                f"| {index} | {model_cell} | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | {cost_display} | `{group}` |"
             )
         else:
             lines.append(
-                f"| {index} | `{model}` | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | `{group}` |"
+                f"| {index} | {model_cell} | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | `{group}` |"
             )
+    if has_bridge_origin:
+        lines.extend(
+            [
+                "",
+                "> † **Agent-bridge origin.** Rows marked † were produced by the keyless "
+                "`agent-bridge` provider — a *delegated system* in which an external "
+                "agent/subagent answers each model call, not a hosted model. Deterministic "
+                "RDKit validation gates these runs exactly like any other, so the score is "
+                "directly comparable; but cost is `budget_observability: opaque` (no API "
+                "spend is recorded, and inner agent spend is not measured), so agent-bridge "
+                "rows are **not eligible for Track 3 cost-class SOTA claims**. The declared "
+                "origin is recorded in each run's `config.origin`.",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -2137,6 +2157,163 @@ def serve(
         port=port,
         reload=reload,
     )
+
+
+@app.command(name="bridge-serve")
+def bridge_serve(
+    bridge_dir: Optional[str] = typer.Option(
+        None,
+        "--bridge-dir",
+        help="Exchange directory (defaults to $MECHANISTIC_AGENT_BRIDGE_DIR).",
+    ),
+    command: Optional[str] = typer.Option(
+        None,
+        "--command",
+        "-c",
+        help=(
+            "Responder command. Receives each request JSON on stdin and must print "
+            'the response JSON {"tool_calls":[{"name":...,"arguments":{...}}]} on '
+            "stdout. A bare arguments object is also accepted and wrapped for the "
+            "forced tool."
+        ),
+    ),
+    replay: Optional[str] = typer.Option(
+        None,
+        "--replay",
+        help=(
+            "Directory of pre-seeded response files keyed by request basename. "
+            "No agent is invoked — deterministic, keyless CI replay."
+        ),
+    ),
+    poll_seconds: float = typer.Option(0.2, "--poll-seconds", help="Polling interval in seconds."),
+    idle_timeout: float = typer.Option(
+        0.0,
+        "--idle-timeout",
+        help="Exit after this many seconds with no pending requests (0 = run forever).",
+    ),
+    max_requests: int = typer.Option(
+        0, "--max-requests", help="Stop after answering N requests (0 = unlimited)."
+    ),
+    once: bool = typer.Option(
+        False, "--once", help="Answer at most one pending request, then exit."
+    ),
+) -> None:
+    """Answer agent-bridge model calls so the harness can run keyless.
+
+    Polls the bridge exchange directory and produces a structured tool-call
+    response for each pending request. Choose exactly one responder source:
+
+    \b
+      --command   hand each request to an external agent/CLI/script
+      --replay    serve pre-seeded responses (deterministic, no agent, no keys)
+
+    With neither, pending requests are listed and the loop waits — the pattern an
+    orchestrator uses when it answers the request files itself. The bridge fails
+    loud and never falls back to a hosted model.
+    """
+    import os
+    import subprocess
+
+    from mechanistic_agent.agent_bridge import (
+        pending_requests,
+        read_request,
+        write_response,
+    )
+
+    resolved_dir = bridge_dir or os.getenv("MECHANISTIC_AGENT_BRIDGE_DIR")
+    if not resolved_dir:
+        raise typer.BadParameter(
+            "Set --bridge-dir or the MECHANISTIC_AGENT_BRIDGE_DIR environment variable."
+        )
+    if command and replay:
+        raise typer.BadParameter("Use only one of --command or --replay, not both.")
+
+    def _forced_tool_name(model_input: Dict[str, Any]) -> str:
+        choice = model_input.get("tool_choice") or {}
+        if isinstance(choice, dict):
+            return str((choice.get("function") or {}).get("name") or "")
+        return ""
+
+    def _coerce_response(raw: Dict[str, Any], model_input: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalise a responder payload into write_response kwargs."""
+        if isinstance(raw, dict) and "tool_calls" in raw:
+            return {
+                "tool_calls": list(raw.get("tool_calls") or []),
+                "content": str(raw.get("content") or ""),
+                "usage": raw.get("usage") if isinstance(raw.get("usage"), dict) else None,
+            }
+        # Treat the whole object as the arguments for the forced tool.
+        return {
+            "tool_calls": [{"name": _forced_tool_name(model_input), "arguments": raw}],
+            "content": "",
+            "usage": None,
+        }
+
+    def _answer_via_command(request: Dict[str, Any], model_input: Dict[str, Any]) -> Dict[str, Any]:
+        proc = subprocess.run(
+            command,
+            shell=True,
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Responder command exited {proc.returncode}: {proc.stderr.strip()[:500]}"
+            )
+        out = proc.stdout.strip()
+        if out.startswith("```"):  # tolerate fenced output
+            out = out.strip("`")
+            out = out[out.find("{") : out.rfind("}") + 1]
+        try:
+            parsed = json.loads(out)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Responder command did not emit valid JSON: {exc}; got: {out[:300]!r}"
+            ) from exc
+        return _coerce_response(parsed, model_input)
+
+    def _answer_via_replay(req_name: str, model_input: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        seed = Path(replay).expanduser() / req_name
+        if not seed.exists():
+            return None
+        parsed = json.loads(seed.read_text(encoding="utf-8"))
+        return _coerce_response(parsed, model_input)
+
+    answered = 0
+    idle_since: Optional[float] = None
+    mode_label = "command" if command else ("replay" if replay else "observe")
+    typer.echo(f"bridge-serve: dir={resolved_dir} mode={mode_label}")
+    while True:
+        pending = pending_requests(resolved_dir)
+        if not pending:
+            if idle_timeout > 0:
+                idle_since = idle_since if idle_since is not None else time.monotonic()
+                if time.monotonic() - idle_since >= idle_timeout:
+                    typer.echo("bridge-serve: idle timeout reached; exiting.")
+                    return
+            time.sleep(poll_seconds)
+            continue
+        idle_since = None
+        for req_path in pending:
+            request = read_request(req_path)
+            model_input = request.get("model_input") or {}
+            if command:
+                kwargs = _answer_via_command(request, model_input)
+            elif replay:
+                kwargs = _answer_via_replay(req_path.name, model_input)
+                if kwargs is None:
+                    # No seed yet for this request; wait for it to appear.
+                    continue
+            else:
+                typer.echo(f"bridge-serve: pending {req_path.name} (no responder configured)")
+                time.sleep(poll_seconds)
+                continue
+            write_response(req_path, bridge_dir=resolved_dir, **kwargs)
+            answered += 1
+            typer.echo(f"bridge-serve: answered {req_path.name} ({answered} total)")
+            if once or (max_requests > 0 and answered >= max_requests):
+                return
 
 
 @app.command()

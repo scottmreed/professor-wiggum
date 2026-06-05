@@ -29,6 +29,13 @@ If you ran the eval set against your harness, include a before/after comparison:
 
 No minimum tier improvement is required for Track 4. A neutral or inconclusive result is a valid contribution if the harness design and rationale are clear.
 
+### Execution origin
+- Execution channel: `direct_model` (hosted API key) or `agent-bridge` (keyless)
+- If `agent-bridge` — responder kind: `orchestrator_subagents` / `cli` / `script` / `replay`
+- Declared underlying model/agent:
+- Budget observability: `full` (hosted, real cost) or `opaque` (agent-bridge)
+- Official holdout exposed to the responder? `no`
+
 ### Checklist
 - [ ] Harness saved as a named variant under `harness_versions/<name>/`
 - [ ] `metadata.changelog` updated in the harness JSON

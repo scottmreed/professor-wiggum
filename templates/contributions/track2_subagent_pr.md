@@ -27,6 +27,13 @@
 - Hard-tier delta, if run:
 - Per-subagent change summary:
 
+### Execution origin
+- Execution channel: `direct_model` (hosted API key) or `agent-bridge` (keyless)
+- If `agent-bridge` — responder kind: `orchestrator_subagents` / `cli` / `script` / `replay`
+- Declared underlying model/agent:
+- Budget observability: `full` (hosted, real cost) or `opaque` (agent-bridge)
+- Official holdout exposed to the responder? `no`
+
 ### Checklist
 - [ ] Fast tests added for success and failure paths
 - [ ] Tool fallback handled if LLM-backed
