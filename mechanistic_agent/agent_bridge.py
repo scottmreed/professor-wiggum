@@ -51,11 +51,18 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .llm import _SimpleMessage, serialise_chat_messages
+from .llm import _SimpleMessage, is_agent_bridge_model, serialise_chat_messages
 
 BRIDGE_DIR_ENV = "MECHANISTIC_AGENT_BRIDGE_DIR"
 BRIDGE_TIMEOUT_ENV = "MECHANISTIC_AGENT_BRIDGE_TIMEOUT"
 BRIDGE_POLL_ENV = "MECHANISTIC_AGENT_BRIDGE_POLL_SECONDS"
+
+# Origin-provenance env vars (PRD: "retain evidence of the origin of the data").
+# A responder may declare what actually produced the answers; everything is
+# *declared* (the bridge cannot verify it) and defaults to "undeclared".
+BRIDGE_DECLARED_MODEL_ENV = "MECHANISTIC_AGENT_BRIDGE_DECLARED_MODEL"
+BRIDGE_RESPONDER_KIND_ENV = "MECHANISTIC_AGENT_BRIDGE_RESPONDER_KIND"
+BRIDGE_NOTES_ENV = "MECHANISTIC_AGENT_BRIDGE_NOTES"
 
 DEFAULT_TIMEOUT_SECONDS = 1800.0
 DEFAULT_POLL_SECONDS = 0.2
@@ -238,14 +245,77 @@ def write_response(
     return response_path
 
 
+# ---------------------------------------------------------------------------
+# Origin provenance (PRD M3: "the one real addition")
+# ---------------------------------------------------------------------------
+# Recognised responder kinds. Free-form values are allowed, but documenting the
+# expected set keeps leaderboard/trace origin tags legible.
+RESPONDER_KINDS = ("orchestrator_subagents", "cli", "script", "replay", "undeclared")
+
+
+def build_origin_provenance(model: Optional[str] = None) -> Dict[str, Any]:
+    """Return the lightweight origin record for an agent-bridge run.
+
+    Honest, *declared* provenance recorded next to ``model = agent-bridge`` so a
+    delegated keyless run stays auditable and is never mistaken for a hosted-model
+    run. The bridge cannot verify what produced the answers, so unknown fields
+    default to ``"undeclared"`` and cost is explicitly ``"opaque"`` (inner agent
+    spend is not measured here). A responder stamps its identity via env vars — no
+    code change required.
+    """
+    declared = os.getenv(BRIDGE_DECLARED_MODEL_ENV, "").strip() or "undeclared"
+    kind = os.getenv(BRIDGE_RESPONDER_KIND_ENV, "").strip() or "undeclared"
+    notes = os.getenv(BRIDGE_NOTES_ENV, "").strip()
+    record: Dict[str, Any] = {
+        "responder": "agent-bridge",
+        "declared_underlying_model": declared,
+        "responder_kind": kind,
+        "budget_observability": "opaque",
+    }
+    if model:
+        record["bridge_model"] = str(model)
+    if notes:
+        record["notes"] = notes
+    return record
+
+
+def origin_for_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return an origin record iff ``config`` routes through the agent bridge.
+
+    Detection mirrors :func:`mechanistic_agent.llm.is_agent_bridge_model` (catalog
+    ``provider == "agent_bridge"``) and also honours ``MECHANISTIC_ACTIVE_MODEL``,
+    which forces every step through the bridge regardless of the per-run model.
+    Returns ``None`` for hosted-model runs so their stored config is untouched
+    (additive-only; zero blast radius for non-bridge runs).
+    """
+    candidates: List[Optional[str]] = [
+        config.get("model_name"),
+        config.get("model"),
+        os.getenv("MECHANISTIC_ACTIVE_MODEL"),
+    ]
+    step_models = config.get("step_models")
+    if isinstance(step_models, dict):
+        candidates.extend(str(value) for value in step_models.values())
+    for candidate in candidates:
+        if candidate and is_agent_bridge_model(candidate):
+            return build_origin_provenance(candidate)
+    return None
+
+
 __all__ = [
     "AgentBridgeAdapter",
     "build_model_input",
+    "build_origin_provenance",
+    "origin_for_config",
     "pending_requests",
     "read_request",
     "write_response",
     "BRIDGE_DIR_ENV",
     "BRIDGE_TIMEOUT_ENV",
+    "BRIDGE_DECLARED_MODEL_ENV",
+    "BRIDGE_RESPONDER_KIND_ENV",
+    "BRIDGE_NOTES_ENV",
     "MODEL_INPUT_KEYS",
     "REQUEST_SCHEMA",
+    "RESPONDER_KINDS",
 ]

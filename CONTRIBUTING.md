@@ -36,6 +36,39 @@ These PRs are mergeable without claiming a new leaderboard improvement if they:
 - include targeted fast tests for the new workflow behavior
 - keep the existing track gates intact for actual prompt, subagent, model, or harness changes
 
+## Keyless and agent-authored contributions
+
+You do not need a provider API key to contribute. The keyless **agent bridge**
+(`--model-name agent-bridge`) lets an external agent or subagent answer each model
+call, so an agent surface can drive real runs, produce traces and eval-tier
+evidence, and open PRs. See [docs/agent_bridge.md](docs/agent_bridge.md) and
+`python main.py bridge-serve --help`.
+
+Agent-authored work uses the **same tracks and the same gates as everyone else** —
+there is no separate "agent" lane and no separate leaderboard:
+
+- A keyless run that improves the required eval tier is a normal Track 1, 2, or 4 PR.
+- Single-reaction agent evidence goes through Track 5, exactly like a human's.
+- Correctness is decided by the deterministic RDKit validators regardless of who
+  produced the step, so no quarantine lane is needed (SOUL.md Guardrail 1).
+
+What differs is **origin labeling**, so the data's provenance stays auditable:
+
+- Bridge runs are stamped with a declared `config.origin` block (`responder`,
+  `declared_underlying_model`, `responder_kind`, `budget_observability`). Declare
+  yours with the `MECHANISTIC_AGENT_BRIDGE_DECLARED_MODEL` and
+  `MECHANISTIC_AGENT_BRIDGE_RESPONDER_KIND` env vars before running.
+- Fill the origin fields in the PR template (`responder`,
+  `declared_underlying_model`, `budget_observability`,
+  `official_holdout_exposed_to_agent`).
+- `agent-bridge` is a delegated *system*, not a raw model, and its cost is
+  `opaque`. It is therefore **not eligible for Track 3 cost-class SOTA claims**;
+  use Tracks 1/2/4 where the artifact is chemistry/structure, not a model-cost claim.
+
+Changes to the deterministic arbiters (validators, evidence gate, eval tiers,
+holdout sets, model catalog) require human core review via
+[`.github/CODEOWNERS`](.github/CODEOWNERS) — for every contributor, human or agent.
+
 ## professor-wiggum (maintainer fork)
 
 This checkout may use **long-lived integration branches** (for example `curriculum-workflow`) in addition to `main`. **Pushing does not clear local edits:** `git status` can still list modified or untracked files until you commit, stash, or restore them—that is independent of merge **conflicts** (which only appear after a failed merge/rebase with conflict markers). When opening a PR, pick the **correct base branch** on GitHub and say which branch you integrated from.
@@ -234,6 +267,10 @@ Checklist:
 ## Track 3: New Models
 
 Use this when you add a model catalog entry or a new provider adapter.
+
+> **Not for `agent-bridge`.** The keyless agent bridge is a delegated *system* with
+> `budget_observability: opaque`, not a raw model with a real cost. It cannot make a
+> Track 3 cost-class SOTA claim. Contribute agent-bridge results through Tracks 1/2/4.
 
 Template:
 [templates/contributions/track3_model_pr.md](templates/contributions/track3_model_pr.md)

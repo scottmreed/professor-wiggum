@@ -106,15 +106,70 @@ while True:
     time.sleep(0.2)
 ```
 
+## Driving runs with `bridge-serve`
+
+You do not have to hand-roll the polling loop. `main.py bridge-serve` runs it for
+you and writes a well-formed response per request. Pick one responder source:
+
+```bash
+export MECHANISTIC_AGENT_BRIDGE_DIR=.agent_bridge
+
+# (a) delegate each call to an external agent / CLI / script.
+#     The command receives the full request JSON on stdin and must print
+#     {"tool_calls":[{"name":<forced tool>,"arguments":{...}}]} on stdout.
+#     (A bare arguments object is also accepted and wrapped for the forced tool.)
+python main.py bridge-serve --command "my-agent --answer"
+
+# (b) replay pre-seeded responses (deterministic, keyless, no agent) for CI.
+python main.py bridge-serve --replay traces/bridge_replay/<run>
+
+# loop controls: --once, --max-requests N, --idle-timeout S, --poll-seconds S
+```
+
+With **neither** flag, `bridge-serve` just lists pending requests and waits — the
+pattern an orchestrator uses when it answers the request files itself. The bridge
+fails loud and never falls back to a hosted model.
+
 ## Reproducibility / CI replay
 
 Because requests and responses are plain files keyed by basename, you can
 **pre-seed** `responses/` to replay a run deterministically with no agent and no
-keys — useful for CI. If a response never arrives within the timeout the adapter
-raises (no silent degradation), consistent with SOUL.md Guardrail 5.
+keys — useful for CI (`bridge-serve --replay` does exactly this). If a response
+never arrives within the timeout the adapter raises (no silent degradation),
+consistent with SOUL.md Guardrail 5.
+
+## Origin provenance (evidence of where a run came from)
+
+Because the bridge is a *delegated system* rather than a hosted model, runs that
+use it are stamped with a small, **declared** origin record inside the run's
+stored `config.origin` — no separate leaderboard, no quarantine lane:
+
+```json
+{
+  "responder": "agent-bridge",
+  "declared_underlying_model": "opus-4.8 (Hyperagent orchestrator + subagents)",
+  "responder_kind": "orchestrator_subagents",
+  "budget_observability": "opaque",
+  "bridge_model": "agent-bridge"
+}
+```
+
+A responder declares its identity via environment variables (the bridge cannot
+verify it, so unset fields default to `"undeclared"`):
+
+```bash
+export MECHANISTIC_AGENT_BRIDGE_DECLARED_MODEL="opus-4.8 (Hyperagent orchestrator + subagents)"
+export MECHANISTIC_AGENT_BRIDGE_RESPONDER_KIND="orchestrator_subagents"   # or cli | script | replay
+export MECHANISTIC_AGENT_BRIDGE_NOTES="optional free text"
+```
 
 ## Attribution
 
 Runs made through the bridge are attributed to the `agent-bridge` model
 (`model_family: "agent"`, pricing 0) in traces and the leaderboard, so they are
-never misattributed to a hosted model.
+never misattributed to a hosted model. Cost is explicitly
+`budget_observability: opaque` (no API spend is recorded, and inner agent spend
+is not measured), so agent-bridge rows are **not eligible for Track 3 cost-class
+SOTA claims** — they contribute through Tracks 1/2/4, where the artifact is
+chemistry/structure, not a model-cost claim. The public leaderboard marks these
+rows with a `†` footnote.

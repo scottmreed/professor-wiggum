@@ -645,6 +645,19 @@ class RunStore:
         run_id = uuid.uuid4().hex
         now = time.time()
         normalized_payload = _normalize_run_input_payload(input_payload)
+        # Stamp keyless agent-bridge runs with origin provenance so the data's
+        # origin is auditable (PRD: keyless agent contributions). Additive and
+        # bridge-only: hosted-model runs are untouched, and provenance is
+        # best-effort metadata that must never block run creation.
+        try:
+            from ..agent_bridge import origin_for_config
+
+            if isinstance(config, dict) and "origin" not in config:
+                _origin = origin_for_config(config)
+                if _origin:
+                    config = {**config, "origin": _origin}
+        except Exception:  # pragma: no cover - provenance is non-critical
+            pass
         with self._lock, self._connect() as conn:
             conn.execute(
                 """
