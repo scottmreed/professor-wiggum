@@ -7,10 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
-- (None)
+- **Claude Opus 4.8 model catalog entry** (`anthropic/claude-opus-4.8`, OpenRouter, tool-calling + reasoning), mirroring the 4.6 entry. It is the current active trainee.
+- **First `attempt_atom_mapping` few-shot lane** for `anthropic/claude-opus-4.8` (`skills/mechanistic/attempt_atom_mapping/models/anthropic__claude-opus-4.8/few_shot.jsonl`), seeded from approved, RDKit-validated atom-mapping traces produced **keyless** through the agent bridge. Targets the universally weakest subagent (`step_atom_mapping`).
+- **Keyless Opus-4.8 evidence**: 4 completed FlowER easy-tier runs (SN2 / Menshutkin), mean quality 0.997, 100% deterministic pass, `step_atom_mapping` 0.96; recorded in `LEADERBOARD.md`, `curriculum/generated/leaderboard_agent-bridge.json`, and `local_contributions/opus48_agent_bridge_evidence.md`. Origin provenance declares Opus 4.8 (`budget_observability: opaque`; not Track 3 cost-class eligible).
+- **Test**: `tests/fast/test_opus48_atom_mapping_lane.py` covering the catalog entry and the new lane's schema validity.
 
 ### Changed
-- (None)
+- **README** updated from Opus 4.6 to **Opus 4.8** (active model, trainee link, progress snapshot).
 
 ### Fixed
 - (None)

@@ -41,10 +41,13 @@ Score computed by `_graded_to_clawdiators_pts()` in `main.py` using the same rub
 
 | Date | Model | Score | Outcome | Pass Rate | Avg Latency | Run Group |
 |---|---|---|---|---|---|---|
+| 2026-06-05 | `agent-bridge` † (Opus 4.8) | 996/1000 | **WIN** | 100.0% | 6.3s | `cli_eval_opus48_bridge` |
 | 2026-03-16 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | 6.2s | `official_holdout_harness` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | — | `official_holdout_harness` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | 27.8s | `harness_free_baseline` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 367/1000 | LOSS | 10.0% | 119.3s | `official_holdout_harness` |
+
+† **agent-bridge (keyless) provenance.** The 2026-06-05 row was produced **keyless** through the [agent bridge](docs/agent_bridge.md) with **Claude Opus 4.8** as the orchestrator + subagent responder (declared origin; `budget_observability: opaque`). It is a **development eval on the FlowER *easy* tier** (4 SN2 / Menshutkin quaternization cases: `flower_024300`, `flower_130926`, `flower_054599`, `flower_252433`), **not** the official medium/hard holdout — so it is not directly comparable to the Opus-4.6 `official_holdout_harness` rows above. Every mechanism step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress); `mean_quality = 0.997`, `step_atom_mapping` quality `0.96`. Per the bridge contract this row is **not** eligible for a Track 3 cost-class SOTA claim. See `curriculum/generated/leaderboard_agent-bridge.json`.
 
 ### Speed Calibration
 
@@ -142,7 +145,7 @@ Options: `--thinking-level` (low/high/max/auto; default: highest for model), `--
 
 ## Planned First Entry
 
-- Model: `anthropic/claude-opus-4-6`
+- Model: `anthropic/claude-opus-4.8` (current active model; keyless via agent bridge)
 - Thinking: none (zero-shot baseline)
 - Type: Zero-shot (`local_contributions/clawdiators_test_run.py`)
-- Group: `zero_shot_opus46_baseline`
+- Group: `zero_shot_opus48_baseline`

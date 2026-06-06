@@ -11,8 +11,9 @@ RAlph mode provides iterative multi-attempt orchestration with budget controls f
 - Course: `Mechanistic Curriculum`
 - Launch: `2026-03-11`
 - Module: `Module 1` — 1-step reactions
+- Active model: **Claude Opus 4.8** (catalog id `anthropic/claude-opus-4.8`), driven **keyless** through the [agent bridge](docs/agent_bridge.md). Runs are attributed to `agent-bridge` with declared origin `Claude Opus 4.8` per the bridge provenance contract.
 
-**Trainees:** [anthropic__claude-opus-4-5](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/) | [anthropic__claude-opus-4.6](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/)
+**Trainees:** [anthropic__claude-opus-4-5](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/) | [anthropic__claude-opus-4.6](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/) | [anthropic__claude-opus-4.8](skills/mechanistic/attempt_atom_mapping/models/anthropic__claude-opus-4.8/) ← current
 
 Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/flower_curriculum_pngs/index.json) | [Prompt guide](docs/model_asset_overrides.md) | [History](docs/history_and_reproducibility.md)
 
@@ -20,11 +21,14 @@ Curriculum checkpoints and trainee lanes advance **as time permits**. There is n
 
 ## Trainee Progress Snapshot
 
-- Trainee: `GPT-5.5` — [leaderboard](curriculum/generated/leaderboard_gpt-5.5.json)
-- Mean quality: `0.971`
+- Trainee: `agent-bridge` †  (declared model: **Claude Opus 4.8**, orchestrator + subagents) — [leaderboard](curriculum/generated/leaderboard_agent-bridge.json)
+- Mean quality: `0.997`
 - Pass rate: `100.0%`
-- Cases: `1`
-- Run group: `cli_eval_tier_easy`
+- Cases: `4`
+- Run group: `cli_eval_opus48_bridge`
+- Weak-subagent watch — `step_atom_mapping` quality: `0.96` (was the universal low point: GPT-5.5 `0.58`, Opus 4.6 `0.965`)
+
+† Produced **keyless** via the agent bridge (no provider API key); cost is `budget_observability: opaque`, so this row is **not** eligible for a Track 3 cost-class SOTA claim. Eval set: FlowER easy tier (SN2 / Menshutkin quaternizations); every step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress).
 
 ## Checkpoints
 
@@ -55,10 +59,10 @@ Regenerate the diagram with `python scripts/capture_harness_mermaid.py` (writes 
 ### Quick Start
 
 - Start the app: `python main.py serve`
-- Queue a trainee curriculum batch when ready: `python main.py curriculum submit --model-name gpt-5.5`
+- Queue a trainee curriculum batch when ready: `python main.py curriculum submit --model-name agent-bridge`
 - Publish a queued batch when ready: `python main.py curriculum publish --checkpoint-id <queue-id>` (add `--force` to skip any stored publish timestamp)
 - Optionally publish every queued batch whose timestamp has passed: `python main.py curriculum publish-due`
-- Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme --model-name gpt-5.5`
+- Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme --model-name agent-bridge`
 - Optional: `python main.py curriculum install-launchd` writes a sample plist if you automate `publish-due` locally
 
 ### Contribution Methods

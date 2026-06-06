@@ -1,24 +1,5 @@
 {
-  "calendar": [],
-  "checkpoints": [],
-  "course_name": "Mechanistic Curriculum",
-  "current_module": {
-    "id": "module_01",
-    "label": "1-step reactions",
-    "max_step_count": 1,
-    "min_step_count": 1,
-    "number": 1
-  },
-  "curriculum_links": {
-    "checkpoints": "curriculum/checkpoints/",
-    "history": "docs/history_and_reproducibility.md",
-    "leaderboard": "curriculum/generated/leaderboard_agent-bridge.json",
-    "readme_context": "curriculum/generated/readme_context.json",
-    "upcoming_reactions": "training_data/flower_curriculum_pngs/index.json"
-  },
-  "focus_label": "Trainee Curriculum",
-  "generated_at": "2026-06-05T18:32:16.791269-06:00",
-  "latest_leaderboard_row": {
+  "item": {
     "aggregate_gate_cases": null,
     "aggregate_weighting": null,
     "avg_latency_ms": 6318.3,
@@ -111,38 +92,5 @@
     "total_weight_sum": 0.0,
     "weighted_pass_rate": 1.0,
     "weighted_quality_score": 0.9972
-  },
-  "model_name": "agent-bridge",
-  "next_slot": {
-    "label": "Monday lesson",
-    "release_date": "2026-06-08",
-    "release_kind": "lesson",
-    "scheduled_publish_at_iso": "2026-06-08T17:00:00-06:00"
-  },
-  "prompt_asset_links": {
-    "opus_base_override": "skills/mechanistic/base_system/models/agent-bridge/SKILL.md",
-    "opus_few_shot_dir": "skills/mechanistic/propose_mechanism_step/models/agent-bridge/",
-    "override_guide": "docs/model_asset_overrides.md",
-    "shared_skills": "skills/mechanistic/"
-  },
-  "registered_trainees": [
-    {
-      "path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/",
-      "slug": "anthropic__claude-opus-4-5"
-    },
-    {
-      "path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/",
-      "slug": "anthropic__claude-opus-4.6"
-    }
-  ],
-  "start_date": "2026-03-11",
-  "student_label": "trainee",
-  "timezone": "America/Denver",
-  "today_slot": {
-    "label": "Friday quiz",
-    "release_date": "2026-06-05",
-    "release_kind": "quiz",
-    "scheduled_publish_at_iso": "2026-06-05T17:00:00-06:00"
-  },
-  "trainee_name": "agent-bridge"
+  }
 }
