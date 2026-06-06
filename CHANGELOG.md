@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **README** updated from Opus 4.6 to **Opus 4.8** (active model, trainee link, progress snapshot); progress snapshot now reflects the **medium** tier (3-step mechanisms).
 
 ### Fixed
-- (None)
+- **Keyless dispatch override** — `MECHANISTIC_ACTIVE_MODEL` is now a global force at the dispatch seam (`_resolve_step_model`) instead of a bottom-of-chain fallback. Previously the coordinator's thread-local run model shadowed it, so a hosted model id + `MECHANISTIC_ACTIVE_MODEL=agent-bridge` raised `<provider> API key not configured` at the proposal step instead of dispatching keyless. Dispatch now agrees with `origin_for_config` (which already treats the env var as authoritative): a run can be attributed to a hosted model id while being answered keyless via the bridge, with the bridge `config.origin` block always stamped. Adds `tests/fast/test_agent_bridge_contribution.py::test_active_model_env_forces_bridge_dispatch_over_run_model`. Docs: `docs/agent_bridge.md`.
 
 ---
 

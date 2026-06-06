@@ -154,3 +154,40 @@ def test_bridge_serve_replay_writes_response(tmp_path) -> None:
     call = payload["tool_calls"][0]
     assert call["name"] == "reaction_type_selection_result"
     assert call["arguments"]["selected_label_exact"] == "Finkelstein halide exchange"
+
+
+def test_active_model_env_forces_bridge_dispatch_over_run_model(monkeypatch) -> None:
+    """MECHANISTIC_ACTIVE_MODEL must force step dispatch through the bridge even when
+    the per-run (thread-local) model is a hosted id.
+
+    Regression guard: before this fix the coordinator's thread-local active model
+    shadowed MECHANISTIC_ACTIVE_MODEL, so a hosted model id + the bridge override
+    raised "<provider> API key not configured" at the proposal step instead of
+    dispatching keyless. Dispatch must agree with origin_for_config, which already
+    treats the env var as authoritative.
+    """
+    from mechanistic_agent.tools import _resolve_step_model
+    from mechanistic_agent.core.model_context import set_run_context, clear_run_context
+
+    # Simulate a run attributed to a hosted model (what the coordinator sets).
+    set_run_context(
+        step_models={},
+        step_reasoning={},
+        active_model="anthropic/claude-opus-4.8",
+        model_family="claude",
+    )
+    try:
+        # Without the override, the run model is used.
+        monkeypatch.delenv("MECHANISTIC_ACTIVE_MODEL", raising=False)
+        assert _resolve_step_model("intermediates", "MECHANISTIC_INTERMEDIATE_MODEL") == "anthropic/claude-opus-4.8"
+
+        # With the override set, every step is forced through the bridge.
+        monkeypatch.setenv("MECHANISTIC_ACTIVE_MODEL", "agent-bridge")
+        for step, env in [
+            ("intermediates", "MECHANISTIC_INTERMEDIATE_MODEL"),
+            ("atom_mapping", "MECHANISTIC_ATOM_MAPPING_MODEL"),
+            ("reaction_type", "MECHANISTIC_REACTION_TYPE_MODEL"),
+        ]:
+            assert _resolve_step_model(step, env) == "agent-bridge"
+    finally:
+        clear_run_context()
