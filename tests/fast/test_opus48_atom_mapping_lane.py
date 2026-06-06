@@ -53,3 +53,31 @@ def test_base_atom_mapping_lane_untouched() -> None:
     """The model-agnostic base lane stays empty; this change is opus-4.8 scoped."""
     base_examples = load_call_few_shot_examples(CALL, REPO)
     assert base_examples == [], "base attempt_atom_mapping lane should remain empty"
+
+
+def test_opus_4_8_propose_mechanism_step_lane_valid() -> None:
+    """Medium-tier seed: the new multi-step proposal lane loads schema-valid examples."""
+    lane = REPO / "skills" / "mechanistic" / "propose_mechanism_step" / "models" / "anthropic__claude-opus-4.8" / "few_shot.jsonl"
+    assert lane.exists(), "opus-4.8 propose_mechanism_step lane file must exist"
+
+    examples = load_call_few_shot_examples("propose_mechanism_step", REPO, model_name=MODEL)
+    # at least the seeded model-lane examples (plus any base example)
+    assert len(examples) >= 4, "propose lane should hold the seeded multi-step examples"
+
+    saw_candidates = False
+    for ex in examples:
+        payload = json.loads(ex["output"])
+        assert isinstance(payload, dict)
+        assert payload.get("classification") in {"intermediate_step", "final_step"}
+        cands = payload.get("candidates")
+        if isinstance(cands, list) and cands:
+            saw_candidates = True
+            cand = cands[0]
+            # each candidate carries an intermediate SMILES + arrow-pushing electron moves
+            assert cand.get("intermediate_smiles")
+            assert isinstance(cand.get("electron_pushes"), list) and cand["electron_pushes"]
+        score = score_few_shot_example(
+            "propose_mechanism_step", input_text=ex["input"], output_text=ex["output"]
+        )
+        assert score >= 0.5, f"seeded propose example scored too low: {score}"
+    assert saw_candidates, "expected at least one example with a candidate block"

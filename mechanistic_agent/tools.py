@@ -186,14 +186,27 @@ def _apply_smiles_correction(smiles: str) -> Tuple[str, bool]:
 def _resolve_step_model(step_name: str, env_var: str) -> str:
     """Resolve the model to use for a step.
 
-    Priority: thread-local step model → thread-local active model → env var → default.
+    Priority: ``MECHANISTIC_ACTIVE_MODEL`` (global force override) → thread-local step
+    model → thread-local active model → per-step env var → default.
+
+    ``MECHANISTIC_ACTIVE_MODEL`` is a *force* knob: when set it routes every LLM-backed
+    step through that model (e.g. the keyless ``agent-bridge``), regardless of the
+    per-run model. Previously it sat at the bottom of the chain, so a per-run model
+    (set as the thread-local active model by the coordinator) shadowed it — a hosted
+    model id plus ``MECHANISTIC_ACTIVE_MODEL=agent-bridge`` then raised
+    ``<provider> API key not configured`` at the proposal step instead of dispatching
+    keyless. Forcing it to the front aligns dispatch with origin provenance
+    (``agent_bridge.origin_for_config`` already treats the same env var as
+    authoritative), so a run can be *attributed* to a hosted model id while being
+    *answered* keyless through the bridge.
     """
+    forced = os.getenv("MECHANISTIC_ACTIVE_MODEL")
     try:
         from mechanistic_agent.core.model_context import get_active_model, get_step_model
         model = get_step_model(step_name) or get_active_model()
     except Exception:
         model = None
-    resolved = model or os.getenv(env_var) or os.getenv("MECHANISTIC_ACTIVE_MODEL") or get_default_model()
+    resolved = forced or model or os.getenv(env_var) or get_default_model()
     replacement = _DEPRECATED_MODEL_ALIASES.get(str(resolved))
     if replacement and replacement in get_model_catalog():
         logger.warning(

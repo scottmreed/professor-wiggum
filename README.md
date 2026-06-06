@@ -10,10 +10,10 @@ RAlph mode provides iterative multi-attempt orchestration with budget controls f
 
 - Course: `Mechanistic Curriculum`
 - Launch: `2026-03-11`
-- Module: `Module 1` — 1-step reactions
+- Module: `Module 1` — climbing the difficulty chain (easy 1–2 step ✓ → **medium 3-step ✓** → hard 4+ step)
 - Active model: **Claude Opus 4.8** (catalog id `anthropic/claude-opus-4.8`), driven **keyless** through the [agent bridge](docs/agent_bridge.md). Runs are attributed to `agent-bridge` with declared origin `Claude Opus 4.8` per the bridge provenance contract.
 
-**Trainees:** [anthropic__claude-opus-4-5](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/) | [anthropic__claude-opus-4.6](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/) | [anthropic__claude-opus-4.8](skills/mechanistic/attempt_atom_mapping/models/anthropic__claude-opus-4.8/) ← current
+**Trainees:** [anthropic__claude-opus-4-5](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/) | [anthropic__claude-opus-4.6](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/) | [anthropic__claude-opus-4.8](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.8/) ← current (easy + medium)
 
 Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/flower_curriculum_pngs/index.json) | [Prompt guide](docs/model_asset_overrides.md) | [History](docs/history_and_reproducibility.md)
 
@@ -25,10 +25,10 @@ Curriculum checkpoints and trainee lanes advance **as time permits**. There is n
 - Mean quality: `0.997`
 - Pass rate: `100.0%`
 - Cases: `4`
-- Run group: `cli_eval_opus48_bridge`
-- Weak-subagent watch — `step_atom_mapping` quality: `0.96` (was the universal low point: GPT-5.5 `0.58`, Opus 4.6 `0.965`)
+- Run group: `cli_eval_opus48_medium`  (FlowER **medium** tier, 3-step mechanisms)
+- Subagent quality this tier: `mechanism_step_proposal` `1.00`, `step_atom_mapping` `0.95` (the historical weak point: GPT-5.5 `0.58`, Opus 4.6 `0.965`)
 
-† Produced **keyless** via the agent bridge (no provider API key); cost is `budget_observability: opaque`, so this row is **not** eligible for a Track 3 cost-class SOTA claim. Eval set: FlowER easy tier (SN2 / Menshutkin quaternizations); every step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress).
+† Produced **keyless** via the agent bridge (no provider API key); cost is `budget_observability: opaque`, so this row is **not** eligible for a Track 3 cost-class SOTA claim. Medium tier = 3-step FlowER mechanisms (carbonate formation, carbamate aminolysis, sulfonylation); every elementary step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress). Easy-tier (1-step SN2/Menshutkin) WINs remain in the history.
 
 ## Checkpoints
 

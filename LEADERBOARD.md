@@ -41,13 +41,17 @@ Score computed by `_graded_to_clawdiators_pts()` in `main.py` using the same rub
 
 | Date | Model | Score | Outcome | Pass Rate | Avg Latency | Run Group |
 |---|---|---|---|---|---|---|
+| 2026-06-06 | `agent-bridge` † (Opus 4.8) | 995/1000 | **WIN** | 100.0% | 10.4s | `cli_eval_opus48_medium` |
 | 2026-06-05 | `agent-bridge` † (Opus 4.8) | 996/1000 | **WIN** | 100.0% | 6.3s | `cli_eval_opus48_bridge` |
 | 2026-03-16 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | 6.2s | `official_holdout_harness` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | — | `official_holdout_harness` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 100/1000 | LOSS | 0.0% | 27.8s | `harness_free_baseline` |
 | 2026-03-15 | `anthropic/claude-opus-4.6` | 367/1000 | LOSS | 10.0% | 119.3s | `official_holdout_harness` |
 
-† **agent-bridge (keyless) provenance.** The 2026-06-05 row was produced **keyless** through the [agent bridge](docs/agent_bridge.md) with **Claude Opus 4.8** as the orchestrator + subagent responder (declared origin; `budget_observability: opaque`). It is a **development eval on the FlowER *easy* tier** (4 SN2 / Menshutkin quaternization cases: `flower_024300`, `flower_130926`, `flower_054599`, `flower_252433`), **not** the official medium/hard holdout — so it is not directly comparable to the Opus-4.6 `official_holdout_harness` rows above. Every mechanism step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress); `mean_quality = 0.997`, `step_atom_mapping` quality `0.96`. Per the bridge contract this row is **not** eligible for a Track 3 cost-class SOTA claim. See `curriculum/generated/leaderboard_agent-bridge.json`.
+† **agent-bridge (keyless) provenance.** Both 2026-06 rows were produced **keyless** through the [agent bridge](docs/agent_bridge.md) with **Claude Opus 4.8** as the orchestrator + subagent responder (declared origin; `budget_observability: opaque`). They are **development evals on FlowER step-band tiers**, **not** the official medium/hard holdout, so they are not directly comparable to the Opus-4.6 `official_holdout_harness` rows above. Every elementary step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress). Per the bridge contract these rows are **not** eligible for a Track 3 cost-class SOTA claim. See `curriculum/generated/leaderboard_agent-bridge.json`.
+
+- `cli_eval_opus48_medium` (2026-06-06) — FlowER **medium** tier, 4 cases, 3-step mechanisms: `flower_254799` (fluoroformate/carbonate formation), `flower_114737` (carbamate aminolysis → urea), `flower_161092` (sulfonamide formation), `flower_158364` (chloroformate → carbonate). `mean_quality = 0.997`; `mechanism_step_proposal` `1.00`, `step_atom_mapping` `0.95`.
+- `cli_eval_opus48_bridge` (2026-06-05) — FlowER **easy** tier, 4 SN2 / Menshutkin quaternizations: `flower_024300`, `flower_130926`, `flower_054599`, `flower_252433`. `mean_quality = 0.997`; `step_atom_mapping` `0.96`.
 
 ### Speed Calibration
 

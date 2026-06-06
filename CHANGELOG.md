@@ -11,12 +11,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **First `attempt_atom_mapping` few-shot lane** for `anthropic/claude-opus-4.8` (`skills/mechanistic/attempt_atom_mapping/models/anthropic__claude-opus-4.8/few_shot.jsonl`), seeded from approved, RDKit-validated atom-mapping traces produced **keyless** through the agent bridge. Targets the universally weakest subagent (`step_atom_mapping`).
 - **Keyless Opus-4.8 evidence**: 4 completed FlowER easy-tier runs (SN2 / Menshutkin), mean quality 0.997, 100% deterministic pass, `step_atom_mapping` 0.96; recorded in `LEADERBOARD.md`, `curriculum/generated/leaderboard_agent-bridge.json`, and `local_contributions/opus48_agent_bridge_evidence.md`. Origin provenance declares Opus 4.8 (`budget_observability: opaque`; not Track 3 cost-class eligible).
 - **Test**: `tests/fast/test_opus48_atom_mapping_lane.py` covering the catalog entry and the new lane's schema validity.
+- **Medium tier (3-step) for Opus 4.8** — first `propose_mechanism_step` lane for `anthropic/claude-opus-4.8` (`skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.8/few_shot.jsonl`, 12 multi-step exemplars) plus additional `attempt_atom_mapping` exemplars, seeded from 4 completed keyless medium-tier runs (carbonate formation, carbamate aminolysis, sulfonylation): mean quality 0.997, 100% deterministic pass, `mechanism_step_proposal` 1.00 / `step_atom_mapping` 0.95. Evidence in `local_contributions/opus48_medium_evidence.md`; medium row added to `LEADERBOARD.md`.
+- **Test**: `tests/fast/test_opus48_atom_mapping_lane.py` extended to cover the new `propose_mechanism_step` lane.
 
 ### Changed
-- **README** updated from Opus 4.6 to **Opus 4.8** (active model, trainee link, progress snapshot).
+- **README** updated from Opus 4.6 to **Opus 4.8** (active model, trainee link, progress snapshot); progress snapshot now reflects the **medium** tier (3-step mechanisms).
 
 ### Fixed
-- (None)
+- **Keyless dispatch override** — `MECHANISTIC_ACTIVE_MODEL` is now a global force at the dispatch seam (`_resolve_step_model`) instead of a bottom-of-chain fallback. Previously the coordinator's thread-local run model shadowed it, so a hosted model id + `MECHANISTIC_ACTIVE_MODEL=agent-bridge` raised `<provider> API key not configured` at the proposal step instead of dispatching keyless. Dispatch now agrees with `origin_for_config` (which already treats the env var as authoritative): a run can be attributed to a hosted model id while being answered keyless via the bridge, with the bridge `config.origin` block always stamped. Adds `tests/fast/test_agent_bridge_contribution.py::test_active_model_env_forces_bridge_dispatch_over_run_model`. Docs: `docs/agent_bridge.md`.
 
 ---
 
