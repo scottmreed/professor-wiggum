@@ -260,22 +260,32 @@
       "default": "high",
       "levels": {
         "lowest": {
-          "thinking": { "type": "disabled" }
+          "thinking": {
+            "type": "disabled"
+          }
         },
         "low": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "low"
         },
         "high": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "high"
         },
         "highest": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "high"
         },
         "max": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "max"
         }
       }
@@ -294,6 +304,56 @@
     "best_in_class": true,
     "label": "Claude Opus 4.7",
     "description": "Anthropic Claude Opus 4.7 via the direct Anthropic Messages API",
+    "pricing_per_million": {
+      "input": 5.0,
+      "cached_input": 0.5,
+      "output": 25.0
+    }
+  },
+  "anthropic/claude-opus-4.8": {
+    "id": "anthropic/claude-opus-4.8",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "best_in_class": true,
+    "label": "Claude Opus 4.8",
+    "description": "Anthropic's strongest Claude model (Opus 4.8) for long-running professional and scientific reasoning tasks.",
+    "reasoning": {
+      "parameter": "thinking",
+      "merge_levels": true,
+      "default": "high",
+      "levels": {
+        "lowest": {
+          "thinking": {
+            "type": "disabled"
+          }
+        },
+        "low": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "low"
+        },
+        "high": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "high"
+        },
+        "highest": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "high"
+        },
+        "max": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "max"
+        }
+      }
+    },
     "pricing_per_million": {
       "input": 5.0,
       "cached_input": 0.5,
@@ -478,26 +538,38 @@
       "default": "high",
       "levels": {
         "lowest": {
-          "thinking": { "type": "disabled" }
+          "thinking": {
+            "type": "disabled"
+          }
         },
         "low": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "low"
         },
         "medium": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "medium"
         },
         "high": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "high"
         },
         "highest": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "high"
         },
         "max": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "max"
         }
       }
