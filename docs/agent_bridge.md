@@ -57,6 +57,30 @@ No API key is required. `get_model_api_key("agent-bridge")` returns a non-empty
 sentinel so the tools that gate on "is a key configured?" treat the bridge as
 available; the value is never used as a credential.
 
+### `MECHANISTIC_ACTIVE_MODEL` is a global force override
+
+`MECHANISTIC_ACTIVE_MODEL` routes **every** LLM-backed step through the named model,
+ahead of the per-run model. This is a hard override at the dispatch seam
+(`_resolve_step_model`), so it works even when a run is **attributed to a hosted model
+id** for leaderboard/lane purposes:
+
+```bash
+# answered keyless via the bridge, but attributed to (and using the few-shot lane of)
+# anthropic/claude-opus-4.8:
+MECHANISTIC_ACTIVE_MODEL=agent-bridge \
+  python main.py eval --eval-set-id <id> --case-id <id> --model-name anthropic/claude-opus-4.8
+```
+
+Without the override at the front of the precedence chain, a hosted model id would
+shadow it and the proposal step would raise `<provider> API key not configured`
+instead of dispatching keyless. Dispatch now agrees with `origin_for_config`, which
+already treats the same env var as authoritative — so such a run is still stamped with
+the bridge `config.origin` block (`responder: agent-bridge`,
+`budget_observability: opaque`) and is **never silently misattributed**: the leaderboard
+row carries the model id you chose, and the origin block records that the bridge
+answered it. For a row whose model column itself reads `agent-bridge`, run with
+`--model-name agent-bridge` as usual.
+
 ## Protocol
 
 Exchange directory layout:
