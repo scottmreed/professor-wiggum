@@ -1668,6 +1668,28 @@ def _run_baseline_eval_set(
         "prompt_hashes": sorted(set(prompt_hashes))[:20],
         "run_group_name": run_group_name,
     }
+
+
+def _summary_total_cost(cost_summary: Optional[dict]) -> float:
+    """Extract the run's total USD cost from a snapshot ``cost_summary`` block.
+
+    Keyless / opaque-cost runs (e.g. the agent-bridge provider, which records no
+    API spend) store ``total_cost: None``. A naive ``cost_summary.get("total_cost",
+    {}).get(...)`` then calls ``.get`` on ``None`` and tracebacks at the end of an
+    otherwise-completed run. Guard every level so the summary is always numeric.
+    """
+    if not isinstance(cost_summary, dict):
+        return 0.0
+    total_cost_block = cost_summary.get("total_cost") or {}
+    if not isinstance(total_cost_block, dict):
+        return 0.0
+    value = total_cost_block.get("total_cost", 0.0)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @app.command()
 def run(
     starting: Optional[str] = typer.Option(
@@ -1946,7 +1968,10 @@ def run(
         if isinstance(row.get("validation"), dict) and row["validation"].get("passed") is False
     ]
     cost_summary = snapshot.get("cost_summary") or {}
-    total_cost = cost_summary.get("total_cost", {}).get("total_cost", 0.0)
+    # ``total_cost`` is ``None`` for keyless / opaque-cost runs (e.g. the
+    # agent-bridge provider records no API spend); _summary_total_cost guards
+    # every level so a completed bridge run never tracebacks while summarising.
+    total_cost = _summary_total_cost(cost_summary)
     ralph_attempts = list(snapshot.get("ralph_attempts") or [])
     ralph_total_cost = sum(float(item.get("cost_usd") or 0.0) for item in ralph_attempts)
     latest_child_status = snapshot.get("ralph_latest_child_status")

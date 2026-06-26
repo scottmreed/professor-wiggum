@@ -154,3 +154,25 @@ def test_bridge_serve_replay_writes_response(tmp_path) -> None:
     call = payload["tool_calls"][0]
     assert call["name"] == "reaction_type_selection_result"
     assert call["arguments"]["selected_label_exact"] == "Finkelstein halide exchange"
+
+
+# --- Keyless run summary never tracebacks on opaque cost ---------------------
+# A completed agent-bridge run stores ``cost_summary['total_cost'] = None``
+# (cost is opaque; no API spend recorded). The CLI run summary must coerce that
+# to a numeric total instead of calling ``.get`` on ``None`` — otherwise every
+# keyless run tracebacks *after* completing, breaking the contribution entry point.
+import main as main_cli  # noqa: E402
+
+
+def test_summary_total_cost_handles_opaque_bridge_cost():
+    # Shape stored by an agent-bridge run: present key, ``None`` value.
+    assert main_cli._summary_total_cost({"total_cost": None, "step_costs": []}) == 0.0
+
+
+def test_summary_total_cost_reads_hosted_cost_and_tolerates_junk():
+    assert main_cli._summary_total_cost({"total_cost": {"total_cost": 0.0123}}) == 0.0123
+    # Defensive: missing block, non-dict block, and non-numeric value all → 0.0.
+    assert main_cli._summary_total_cost({}) == 0.0
+    assert main_cli._summary_total_cost(None) == 0.0
+    assert main_cli._summary_total_cost({"total_cost": "n/a"}) == 0.0
+    assert main_cli._summary_total_cost({"total_cost": {"total_cost": "x"}}) == 0.0
