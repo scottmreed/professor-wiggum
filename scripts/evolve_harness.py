@@ -505,7 +505,10 @@ def mine_few_shots(
             output_text = json.dumps(output, indent=2, sort_keys=True)
             example_score = score_few_shot_example(call_name, input_text=input_text, output_text=output_text)
             output_hash = hashlib.sha256(output_text.encode()).hexdigest()[:16]
-            # No filter by duplicate hash, best score, or max_few_shots_per_step — mine all eligible steps
+            # Dedupe: skip outputs already present in the lane (or mined earlier
+            # in this batch) so few-shot files do not fill with near-identical rows.
+            if output_hash in existing_hashes.get(call_name, set()):
+                continue
             mined.setdefault(call_name, []).append({
                 "input": input_text,
                 "output": output_text,
@@ -514,6 +517,17 @@ def mine_few_shots(
             })
             existing_hashes.setdefault(call_name, set()).add(output_hash)
             best_scores_by_call[call_name] = max(best_scores_by_call.get(call_name, 0.0), example_score)
+
+    # Per-lane cap: keep only the highest-scoring examples per call per batch.
+    cap = max(0, int(getattr(config, "max_few_shots_per_step", 0) or 0))
+    if cap:
+        for call_name, examples in list(mined.items()):
+            if len(examples) > cap:
+                examples.sort(key=lambda ex: float(ex.get("score") or 0.0), reverse=True)
+                dropped = examples[cap:]
+                mined[call_name] = examples[:cap]
+                for ex in dropped:
+                    existing_hashes.get(call_name, set()).discard(str(ex.get("example_key")))
     return mined
 
 
