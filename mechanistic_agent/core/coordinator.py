@@ -1315,6 +1315,57 @@ class RunCoordinator:
             "example_id": example_id,
         }
 
+    # RunConfig keys a harness may default via ``run_config_defaults``.
+    _HARNESS_RUN_CONFIG_DEFAULT_KEYS: frozenset = frozenset(
+        {
+            "proceed_on_validation_failure",
+            "proceed_only_on_arrow_push_failure",
+            "candidate_rescue_enabled",
+            "retry_same_candidate_max",
+            "max_reproposals_per_step",
+            "repeat_failure_signature_limit",
+        }
+    )
+
+    def _apply_harness_run_config_defaults(
+        self,
+        state: RunState,
+        harness: Optional[HarnessConfig],
+        *,
+        raw_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Apply ``harness.run_config_defaults`` for keys the run left unset.
+
+        Explicit per-run values (present in the stored run config) always win;
+        the harness only fills gaps. Returns the applied overrides so callers
+        and tests can inspect them.
+        """
+        if harness is None or not getattr(harness, "run_config_defaults", None):
+            return {}
+        explicit = raw_config if isinstance(raw_config, dict) else {}
+        applied: Dict[str, Any] = {}
+        for key, value in dict(harness.run_config_defaults).items():
+            if key not in self._HARNESS_RUN_CONFIG_DEFAULT_KEYS:
+                continue
+            if key in explicit and explicit.get(key) is not None:
+                continue
+            current = getattr(state.run_config, key, None)
+            if isinstance(current, bool):
+                coerced: Any = self._coerce_bool(value, current)
+            elif isinstance(current, int):
+                coerced = self._coerce_int(value, current)
+            else:
+                coerced = value
+            setattr(state.run_config, key, coerced)
+            applied[key] = coerced
+        if applied:
+            self.store.append_event(
+                state.run_id,
+                "harness_run_config_defaults_applied",
+                {"harness": getattr(harness, "name", None), "applied": applied},
+            )
+        return applied
+
     def _run_initial_phase(self, state: RunState, harness: Optional[HarnessConfig] = None) -> None:
         """Run pre-loop analysis modules. Driven by harness config when provided."""
         existing = self._existing_steps(state.run_id)
@@ -4665,7 +4716,10 @@ class RunCoordinator:
                             return
                         continue
                     # ── Deferred atom-balance soft-advance (unverified only) ─────
-                    if state.mode == "unverified":
+                    # Gated on proceed_on_validation_failure: with the flag off
+                    # (default harness), a candidate that fails atom balance is
+                    # never accepted, so deterministic validation stays the arbiter.
+                    if state.mode == "unverified" and state.run_config.proceed_on_validation_failure:
                         balance_pending_candidate = self._best_balance_pending_candidate(
                             candidate_attempts=candidate_attempts,
                         )
@@ -5381,6 +5435,11 @@ class RunCoordinator:
                 return
 
         harness = self._resolve_harness(state)
+        self._apply_harness_run_config_defaults(
+            state,
+            harness,
+            raw_config=run_row.get("config") if isinstance(run_row.get("config"), dict) else {},
+        )
 
         # Set thread-local model context so tool functions can read model config.
         model_context.set_run_context(

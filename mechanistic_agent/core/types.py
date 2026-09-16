@@ -381,6 +381,9 @@ class HarnessConfig:
     post_loop_modules: List[ModuleSpec] = field(default_factory=list)
     few_shot_defaults: FewShotSelectionConfig = field(default_factory=FewShotSelectionConfig)
     topology_profiles: Dict[str, TopologyProfile] = field(default_factory=dict)
+    # Harness-level RunConfig defaults (e.g. proceed_on_validation_failure).
+    # Applied by the coordinator only for keys the run's own config leaves unset.
+    run_config_defaults: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> Dict[str, Any]:
@@ -400,6 +403,8 @@ class HarnessConfig:
             d["post_loop_modules"] = [m.as_dict() for m in self.post_loop_modules]
         if self.topology_profiles:
             d["topology_profiles"] = {k: v.as_dict() for k, v in self.topology_profiles.items()}
+        if self.run_config_defaults:
+            d["run_config_defaults"] = dict(self.run_config_defaults)
         return d
 
     @classmethod
@@ -429,6 +434,11 @@ class HarnessConfig:
             ],
             few_shot_defaults=FewShotSelectionConfig.from_dict(data.get("few_shot_defaults")),
             topology_profiles=profiles,
+            run_config_defaults=(
+                dict(data.get("run_config_defaults"))
+                if isinstance(data.get("run_config_defaults"), dict)
+                else {}
+            ),
             metadata=dict(data.get("metadata") or {}),
         )
 
@@ -536,7 +546,9 @@ class RunConfig:
     allow_validator_mutation: bool = False
     mutation_lane: Optional[RalphLane] = None
     ralph_parent_run_id: Optional[str] = None
-    proceed_on_validation_failure: bool = True
+    # Deterministic validation is the arbiter (SOUL Guardrail 1): a step that
+    # fails validation is not accepted unless the run or harness opts in.
+    proceed_on_validation_failure: bool = False
     proceed_only_on_arrow_push_failure: bool = False
     runtime_trace_enabled: bool = False
     runtime_trace_label: Optional[str] = None
