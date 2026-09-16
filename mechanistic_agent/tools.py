@@ -6579,6 +6579,7 @@ def predict_mechanistic_step(
     previous_intermediates: Optional[List[str]] = None,
     note: Optional[str] = None,
     starting_materials: Optional[List[str]] = None,
+    allowed_extra_species: Optional[List[str]] = None,
 ) -> str:
     """Validate and record a single mechanistic electron-pushing step.
 
@@ -6704,6 +6705,7 @@ def predict_mechanistic_step(
         resulting_state=resulting_state,
         target_products=target_products,
         starting_materials=starting_materials,
+        allowed_extra_species=allowed_extra_species,
     )
     contains_products = bool(target_state["contains_target_product"])
 

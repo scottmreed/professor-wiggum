@@ -299,7 +299,28 @@ def score_snapshot_against_known(
     final_known_product = known_steps[-1]["target_smiles"] if known_steps else None
     final_resulting = accepted[-1]["resulting_state"] if accepted else []
     final_reached = bool(final_known_product and final_known_product in final_resulting)
-    final_component = 1.0 if final_reached else 0.0
+
+    # Partial credit for byproduct completion: the primary (known final) product
+    # gates the component; the remaining expected products scale it. When the
+    # eval case declares no product list, this collapses to the old binary rule.
+    expected_products = _normalized_species((expected or {}).get("products")) if isinstance(expected, Mapping) else []
+    starting_pool = _normalized_species(
+        ((snapshot.get("input") or {}) if isinstance(snapshot.get("input"), Mapping) else {}).get("starting_materials")
+    )
+    expected_targets = [item for item in expected_products if item not in starting_pool] or (
+        [final_known_product] if final_known_product else []
+    )
+    if final_known_product and final_known_product not in expected_targets:
+        expected_targets.append(final_known_product)
+    targets_present = [item for item in expected_targets if item in final_resulting]
+    target_fraction = (len(targets_present) / len(expected_targets)) if expected_targets else (1.0 if final_reached else 0.0)
+    all_targets_reached = bool(expected_targets) and len(targets_present) == len(expected_targets)
+    final_component = target_fraction if final_reached else 0.0
+    unexpected_final_species = [
+        item
+        for item in final_resulting
+        if item not in expected_targets and item not in starting_pool and item not in expected_products
+    ] if accepted else []
 
     step_breakdown: List[Dict[str, Any]] = []
     validity_scores: List[float] = []
@@ -374,6 +395,20 @@ def score_snapshot_against_known(
         penalty_total += value
         penalty_items.append({"type": "extra_steps", "count": extra, "value": round(value, 4)})
 
+    # "Nothing extra beyond declared spectators": species left in the final
+    # state that are neither expected products nor starting materials are
+    # leftover intermediates or phantom reagents.
+    if unexpected_final_species and final_reached:
+        value = min(0.05 * len(unexpected_final_species), 0.15)
+        penalty_total += value
+        penalty_items.append(
+            {
+                "type": "unexpected_final_species",
+                "species": list(unexpected_final_species),
+                "value": round(value, 4),
+            }
+        )
+
     validity_component = (sum(validity_scores) / len(validity_scores)) if validity_scores else 0.0
     alignment_component = (sum(alignment_scores) / len(alignment_scores)) if alignment_scores else 0.0
     balance_payload = _overall_balance_payload(snapshot)
@@ -393,12 +428,21 @@ def score_snapshot_against_known(
         overall = min(overall, 0.55)
 
     balance_grade = str(balance_payload.get("grade") or "exact")
-    passed = final_reached and overall >= 0.70 and balance_grade in {"exact", "reconciled"}
+    passed = (
+        final_reached
+        and all_targets_reached
+        and overall >= 0.70
+        and balance_grade in {"exact", "reconciled"}
+    )
     return {
         "score": round(overall, 6),
         "passed": passed,
-        "final_product_component": final_component,
+        "final_product_component": round(final_component, 6),
         "final_product_reached": final_reached,
+        "all_target_products_reached": all_targets_reached,
+        "expected_target_products": expected_targets,
+        "missing_target_products": [item for item in expected_targets if item not in targets_present],
+        "unexpected_final_species": unexpected_final_species,
         "overall_balance_grade": balance_grade,
         "overall_balance_component": round(balance_component, 6),
         "final_known_product": final_known_product,

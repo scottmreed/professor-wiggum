@@ -821,6 +821,9 @@ class RunState:
     selected_reaction_template: Optional[Dict[str, Any]] = None
     step_start_times: Dict[str, float] = field(default_factory=dict)
     adaptive_runtime_state: Dict[str, Any] = field(default_factory=dict)
+    # Declared spectators / condition additives that may remain in the final
+    # state without blocking the "all targets reached, nothing extra" check.
+    allowed_extra_species: List[str] = field(default_factory=list)
 
     def initialise(self) -> None:
         if not self.current_state:

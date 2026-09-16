@@ -393,6 +393,7 @@ class MechanismAgent:
             previous_intermediates=state.previous_intermediates,
             starting_materials=state.run_input.starting_materials,
             note=str(note) if note else None,
+            allowed_extra_species=list(getattr(state, "allowed_extra_species", None) or []),
         )
 
         return StepResult(

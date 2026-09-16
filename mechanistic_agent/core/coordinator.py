@@ -1214,6 +1214,18 @@ class RunCoordinator:
         if not isinstance(proposal_constraints, dict) or not proposal_constraints:
             return dict(candidate), None
 
+        # Declared spectators / additives may remain in the final state without
+        # blocking the all-targets-reached completion check.
+        try:
+            state.allowed_extra_species = self._canonicalize_constraint_species_list(
+                list(proposal_constraints.get("condition_support_species") or [])
+                + list(proposal_constraints.get("persistent_species") or [])
+                + list(proposal_constraints.get("spectator_species") or [])
+                + list(proposal_constraints.get("counterion_species") or [])
+            )
+        except Exception:
+            pass
+
         repaired_candidate, repair_notes = self._apply_candidate_constraint_repairs(
             state,
             candidate,
