@@ -2857,20 +2857,50 @@ def compare_eval_runs(
     )
 
 
+def _resolve_import_eval_set_name(
+    eval_path: Path,
+    *,
+    explicit_name: Optional[str] = None,
+    base: Optional[Path] = None,
+) -> str:
+    """Name an imported eval set after its file, not a hard-coded default.
+
+    ``training_data/eval_set.json`` keeps the historical ``flower_100_default``
+    name for compatibility; every other file is named by its stem (for example
+    ``practice_set``), so imports stay distinguishable in the DB and CLI.
+    """
+    if explicit_name and str(explicit_name).strip():
+        return str(explicit_name).strip()
+    resolved = eval_path.resolve()
+    default_path = ((base or Path.cwd()) / "training_data" / "eval_set.json").resolve()
+    if resolved == default_path or resolved.name == "eval_set.json":
+        return "flower_100_default"
+    return resolved.stem
+
+
 @app.command(name="import-eval-set")
 def import_eval_set(
     path: Optional[str] = typer.Option(
         None, "--path", help="Path to eval_set.json (default: training_data/eval_set.json)"
     ),
     version: str = typer.Option("flower100_v1", "--version", help="Version label for this eval set"),
+    name: Optional[str] = typer.Option(
+        None,
+        "--name",
+        help=(
+            "Eval set name. Defaults to the file stem (e.g. practice_set) or "
+            "'flower_100_default' for the bundled training_data/eval_set.json."
+        ),
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit result as JSON"),
 ) -> None:
-    """Import the default FlowER eval set into the local DB from training_data/eval_set.json."""
+    """Import an eval set JSON file into the local DB (default: training_data/eval_set.json)."""
     base = Path.cwd()
     store = RunStore(resolve_db_path(base))
     eval_path = Path(path) if path else base / "training_data" / "eval_set.json"
     if not eval_path.exists():
         raise typer.BadParameter(f"Eval set file not found: {eval_path}")
+    eval_set_name = _resolve_import_eval_set_name(eval_path, explicit_name=name, base=base)
 
     raw = json.loads(eval_path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
@@ -2911,7 +2941,7 @@ def import_eval_set(
         for c in cases
     )
     for item in store.list_eval_sets():
-        if item.get("name") != "flower_100_default" or item.get("version") != version:
+        if item.get("name") != eval_set_name or item.get("version") != version:
             continue
         existing_cases = store.list_eval_set_cases(str(item.get("id") or ""))
         existing_has_multistep = any(
@@ -2928,7 +2958,7 @@ def import_eval_set(
             return
 
     eval_set_id = store.add_eval_set(
-        name="flower_100_default",
+        name=eval_set_name,
         version=version,
         source_path=str(eval_path),
         sha256=None,
@@ -2937,7 +2967,7 @@ def import_eval_set(
         purpose="general",
         exposed_in_ui=True,
     )
-    result = {"eval_set_id": eval_set_id, "name": "flower_100_default", "version": version, "case_count": len(cases)}
+    result = {"eval_set_id": eval_set_id, "name": eval_set_name, "version": version, "case_count": len(cases)}
     if json_output:
         typer.echo(json.dumps(result, indent=2))
     else:
