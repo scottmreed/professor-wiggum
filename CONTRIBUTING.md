@@ -58,9 +58,14 @@ What differs is **origin labeling**, so the data's provenance stays auditable:
   `declared_underlying_model`, `responder_kind`, `budget_observability`). Declare
   yours with the `MECHANISTIC_AGENT_BRIDGE_DECLARED_MODEL` and
   `MECHANISTIC_AGENT_BRIDGE_RESPONDER_KIND` env vars before running.
+- Declare whether the responder saw the verified mechanism with
+  `MECHANISTIC_AGENT_BRIDGE_SAW_GROUND_TRUTH=false|true`. Evidence files must
+  carry `responder_saw_ground_truth: false`; the evidence gate rejects `true`
+  and undeclared, and the leaderboard drops runs that declare `true`. Replaying
+  FlowER's verified steps through the bridge is not a capability measurement.
 - Fill the origin fields in the PR template (`responder`,
   `declared_underlying_model`, `budget_observability`,
-  `official_holdout_exposed_to_agent`).
+  `responder_saw_ground_truth`, `official_holdout_exposed_to_agent`).
 - `agent-bridge` is a delegated *system*, not a raw model, and its cost is
   `opaque`. It is therefore **not eligible for Track 3 cost-class SOTA claims**;
   use Tracks 1/2/4 where the artifact is chemistry/structure, not a model-cost claim.

@@ -185,7 +185,20 @@ verify it, so unset fields default to `"undeclared"`):
 export MECHANISTIC_AGENT_BRIDGE_DECLARED_MODEL="opus-4.8 (Hyperagent orchestrator + subagents)"
 export MECHANISTIC_AGENT_BRIDGE_RESPONDER_KIND="orchestrator_subagents"   # or cli | script | replay
 export MECHANISTIC_AGENT_BRIDGE_NOTES="optional free text"
+export MECHANISTIC_AGENT_BRIDGE_SAW_GROUND_TRUTH=false                    # true | false (unset = undeclared)
 ```
+
+### Ground-truth exposure (required for evidence and leaderboard use)
+
+`responder_saw_ground_truth` states whether the responder had access to the
+eval case's verified/known mechanism while answering. Only `false` makes a run
+usable as evidence: the prompt-trace evidence gate rejects files whose
+declaration is `true` **or missing**, and `RunStore.leaderboard` drops eval runs
+whose case runs declare `true`. A responder that copies FlowER's verified steps
+into its answers is producing a *replay*, not a capability measurement, and must
+declare `true`. The fast suite (`tests/fast/test_ground_truth_provenance.py`)
+drives a real run through the bridge and asserts that no request ever contains
+the verified or known mechanism, so a blind responder cannot see it by accident.
 
 ## Attribution
 
