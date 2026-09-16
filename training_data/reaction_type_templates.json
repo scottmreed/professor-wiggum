@@ -1,14 +1,15 @@
 {
   "meta": {
     "generated_at": "2026-03-14T23:02:35.292151+00:00",
-    "count": 85,
+    "count": 86,
     "mapping_count": 72,
     "description": "Expanded draft rewrite of generic reaction templates using R-group abstractions and curated row-based example assignments.",
     "notes": [
       "Source metadata references were removed from the catalog content.",
       "Example assignments were re-curated to better match the CSV transformations.",
       "Only rows with reasonably confident parent-reaction assignments are mapped in this draft.",
-      "2026-09-16: added rt_081-rt_085 (SOCl2 acid chloride formation, direct amide condensation, Boc protection, sulfonamide formation, chloroformate acylation) \u2014 hard/medium-tier FlowER classes previously absent."
+      "2026-09-16: added rt_081-rt_085 (SOCl2 acid chloride formation, direct amide condensation, Boc protection, sulfonamide formation, chloroformate acylation) \u2014 hard/medium-tier FlowER classes previously absent.",
+      "2026-09-16: added rt_086 (Menshutkin amine quaternization) \u2014 four of eight easy practice cases."
     ]
   },
   "templates": [
@@ -4764,6 +4765,43 @@
             }
           ],
           "note": "Deprotonation by the amine base."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_086",
+      "label_exact": "Menshutkin quaternization of amine with alkyl halide",
+      "slug": "menshutkin_amine_quaternization",
+      "canonical_group": "substitution",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "R3N",
+        "R'-CH2-X"
+      ],
+      "resulting_state_generic": [
+        "R3N+-CH2-R'",
+        "X-"
+      ],
+      "generic_notes": "Single SN2 step: the tertiary (or secondary) amine nitrogen lone pair attacks the alkyl halide carbon while the C-X bond breaks, giving the quaternary (or protonated) ammonium salt and halide. Also covers N-heterocycle N-alkylation with MOM-Cl, benzyl halides and alkyl iodides.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R3N.R'CH2X>>R3[N+]CH2R'.[X-] |mech:v1;lp:N>C;sigma:C-X>X|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "alkyl C",
+              "electrons": 2,
+              "description": "Amine nitrogen attacks the electrophilic carbon."
+            },
+            {
+              "start_atom": "C-X",
+              "end_atom": "X",
+              "electrons": 2,
+              "description": "Halide leaves."
+            }
+          ],
+          "note": "Concerted SN2 quaternization."
         }
       ]
     }
