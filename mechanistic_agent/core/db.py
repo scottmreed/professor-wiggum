@@ -2954,6 +2954,24 @@ class RunStore:
             "total_weight_sum": round(all_weights, 6),
         }
 
+    def _eval_run_saw_ground_truth(self, results: List[Dict[str, Any]]) -> bool:
+        """True when any case run in this eval run declares ground-truth exposure."""
+        for item in results:
+            run_id = str(item.get("run_id") or "")
+            if not run_id:
+                continue
+            try:
+                row = self.get_run_row(run_id)
+            except Exception:
+                continue
+            origin = ((row or {}).get("config") or {}).get("origin") if isinstance(row, dict) else None
+            if not isinstance(origin, dict):
+                continue
+            value = origin.get("responder_saw_ground_truth")
+            if value is True or str(value).strip().lower() in {"true", "1", "yes"}:
+                return True
+        return False
+
     def leaderboard(self, eval_set_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
         eval_set = self.get_eval_set(eval_set_id)
         is_holdout = str((eval_set or {}).get("purpose") or "general") == "leaderboard_holdout"
@@ -2971,6 +2989,10 @@ class RunStore:
                 continue
             results = results_by_run.get(eval_run_id, [])
             if not results:
+                continue
+            # Rows whose responder declared it saw the verified mechanism are
+            # ground-truth replays, not capability measurements: never rank them.
+            if self._eval_run_saw_ground_truth(results):
                 continue
             scores = [float(item["score"]) for item in results if isinstance(item.get("score"), (int, float))]
             if not scores:
