@@ -700,6 +700,8 @@ class IslandEvolutionConfig:
     # "random" = blind lane mutators; "llm" = trace-conditioned proposals from mutation_model.
     mutation_proposer: str = "random"
     mutation_model: Optional[str] = None
+    # 0 = run until interrupted; N = stop after N generations.
+    max_generations: int = 0
 
 
 @dataclass(slots=True)
