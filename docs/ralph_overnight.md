@@ -13,6 +13,26 @@ The overnight Ralph loop is a separate orchestration mode from the existing per-
 - `prompt`: create a prompt variant artifact from `skills/mechanistic/.../SKILL.md`
 - `few_shot`: create a few-shot variant artifact from `few_shot.jsonl`
 
+## Mutation Proposer
+
+Two proposers are available (program key `mutation_proposer`, CLI `--mutation-proposer`):
+
+- `random` (default): the blind lane mutators — nudge one topology integer by ±1, toggle one
+  module, append a fixed sentence to a prompt, drop the last few-shot line.
+- `llm`: `mechanistic_agent/core/llm_mutator.py` builds a compact **failure digest** from the
+  last micro-eval slice (failed validator checks with error text, reproposal reasons, rescue
+  outcomes, soft-advances) and asks `mutation_model` (default: the run model; `agent-bridge`
+  works keyless) for ONE targeted edit through the forced `harness_mutation_proposal` tool:
+  a topology field, a module flag or `run_config_defaults` key, a prompt instruction (append /
+  replace), or a few-shot example (remove / add). Proposals that name frozen surfaces, unknown
+  targets, load-bearing modules, or disallowed lanes are rejected and the blind mutator for the
+  scheduled lane runs instead (the ledger summary records the rejection). The keep/discard
+  acceptance rule below is unchanged: the model proposes, the eval decides.
+
+The same proposer is available to the island loop: `scripts/evolve_harness.py --island-mode
+--mutation-proposer llm [--mutation-model <id>]`, where the digest comes from the previous
+generation's case results for that island.
+
 ## Freeze Policy
 
 Overnight Ralph must not mutate deterministic validators, scoring logic, holdout data, or model pricing.

@@ -2106,6 +2106,16 @@ def overnight_ralph(
         help="Model identifier used for child micro-eval runs",
     ),
     harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
+    mutation_proposer: Optional[str] = typer.Option(
+        None,
+        "--mutation-proposer",
+        help="random (blind lane mutators) or llm (trace-conditioned proposal via --mutation-model); overrides the program file",
+    ),
+    mutation_model: Optional[str] = typer.Option(
+        None,
+        "--mutation-model",
+        help="Model that proposes mutations when --mutation-proposer=llm (default: the run model; agent-bridge works keyless)",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit summary as JSON"),
 ) -> None:
     """Run lane-scoped overnight Ralph hill-climbing on a frozen eval slice."""
@@ -2130,6 +2140,13 @@ def overnight_ralph(
     program_config.max_experiments = max(1, int(max_experiments))
     program_config.max_cost_usd = float(max_cost_usd)
     program_config.acceptance_threshold_pct = max(0.0, float(acceptance_threshold))
+    if mutation_proposer:
+        proposer = str(mutation_proposer).strip().lower()
+        if proposer not in {"random", "llm"}:
+            raise typer.BadParameter("--mutation-proposer must be 'random' or 'llm'")
+        program_config.mutation_proposer = proposer
+    if mutation_model:
+        program_config.mutation_model = _canonicalize_model_name_or_raise(mutation_model)
 
     store = RunStore(resolve_db_path(base))
     orchestrator = OvernightRalphOrchestrator(base_dir=base, store=store)

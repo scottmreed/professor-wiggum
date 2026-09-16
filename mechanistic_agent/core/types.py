@@ -582,6 +582,10 @@ class OvernightRalphConfig:
     acceptance_threshold_pct: float = 0.02
     allowed_lanes: List[RalphLane] = field(default_factory=lambda: ["topology", "harness"])
     program_path: str = "ralph_program.md"
+    # "random" keeps the blind lane mutators; "llm" asks mutation_model (default:
+    # the run model) to propose one trace-conditioned edit per experiment.
+    mutation_proposer: str = "random"
+    mutation_model: Optional[str] = None
     mutation_budget_per_night: Dict[str, Any] = field(default_factory=dict)
     frozen_surfaces: List[str] = field(default_factory=list)
     anti_overfitting_rules: Dict[str, Any] = field(default_factory=dict)
@@ -693,6 +697,9 @@ class IslandEvolutionConfig:
     parent_perf_weight: float = 1.0
     parent_novelty_weight: float = 1.0
     seed: int = 42
+    # "random" = blind lane mutators; "llm" = trace-conditioned proposals from mutation_model.
+    mutation_proposer: str = "random"
+    mutation_model: Optional[str] = None
 
 
 @dataclass(slots=True)

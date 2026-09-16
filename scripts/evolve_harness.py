@@ -1189,13 +1189,38 @@ def apply_island_mutation(
     base_dir: Path,
     harness_path: Path,
     rng: random.Random,
+    *,
+    mutation_proposer: str = "random",
+    mutation_model: Optional[str] = None,
+    failure_digest: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[str, str, Path]:
     """Dispatch to the appropriate lane mutator for this island.
+
+    ``mutation_proposer="llm"`` asks ``mutation_model`` to read the failure
+    digest of the previous generation and propose one targeted edit within the
+    island's allowed lanes (falls back to the blind mutator when the proposal
+    is not applicable). The acceptance rule downstream is unchanged.
 
     Returns (mutation_type, mutation_summary, mutated_asset_path).
     """
     lane = rng.choice(island.allowed_lanes)
     call_names = ISLAND_CALL_NAMES.get(island.mutation_target, [])
+
+    if str(mutation_proposer or "random").lower() == "llm":
+        from mechanistic_agent.core.llm_mutator import LLMLaneMutator
+
+        mutator_llm = LLMLaneMutator(
+            base_dir=base_dir,
+            model_name=str(mutation_model or "agent-bridge"),
+            call_names=list(call_names) or None,
+        )
+        result = mutator_llm.propose(
+            harness_path,
+            failure_digest=list(failure_digest or []),
+            allowed_lanes=list(island.allowed_lanes),
+            preferred_lane=lane,
+        )
+        return f"llm_{result.lane}", result.summary, result.asset_path
 
     if lane in ("prompt",) and call_names:
         call_name = rng.choice(call_names)
@@ -1275,6 +1300,8 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
     index_entries = load_curriculum_index(config.curriculum_index_path)
 
     rng = random.Random(island_config.seed)
+    # Per-island failure digest from the previous generation (feeds the LLM proposer).
+    latest_failure_digest: Dict[str, List[Dict[str, Any]]] = {}
     generation = archive.max_generation() + 1
     harness_path = base_dir / "harness_versions" / config.harness / "harness.json"
 
@@ -1301,6 +1328,9 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
             try:
                 mutation_type, mutation_summary, mutated_path = apply_island_mutation(
                     island, parent, runtime_base, harness_path, rng,
+                    mutation_proposer=str(getattr(island_config, "mutation_proposer", "random") or "random"),
+                    mutation_model=getattr(island_config, "mutation_model", None) or config.model_name,
+                    failure_digest=latest_failure_digest.get(island.id, []),
                 )
                 print(f"  Mutation: {mutation_type} — {mutation_summary}")
             except (FileNotFoundError, ValueError) as exc:
@@ -1393,6 +1423,12 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                 created_at=time.time(),
             )
             archive.insert(entry)
+            try:
+                from mechanistic_agent.core.llm_mutator import digest_from_case_results
+
+                latest_failure_digest[island.id] = digest_from_case_results(case_results)
+            except Exception:
+                latest_failure_digest[island.id] = []
 
             print(f"  Result: score={mean_score:.4f} (delta={score_delta:+.4f}), pass_rate={pass_rate:.1%}")
 
@@ -1442,6 +1478,17 @@ def main() -> None:
     parser.add_argument("--island-mode", action="store_true", help="Enable island-based archive evolution (ShinkaEvolve-inspired).")
     parser.add_argument("--islands", default=None, help="Comma-separated island IDs (default: mapping,reagent_conditions,topology,hard_multistep).")
     parser.add_argument("--migration-interval", type=int, default=5, help="Generations between migration attempts (default: 5).")
+    parser.add_argument(
+        "--mutation-proposer",
+        default="random",
+        choices=["random", "llm"],
+        help="Island mutation proposer: random (blind lane mutators) or llm (trace-conditioned proposals; default: random).",
+    )
+    parser.add_argument(
+        "--mutation-model",
+        default=None,
+        help="Model that proposes mutations when --mutation-proposer=llm (default: --model-name; agent-bridge works keyless).",
+    )
     parser.add_argument("--train-input", default=str(DEFAULT_FLOWER_INPUT), help="Path to FlowER train.txt.")
     parser.add_argument("--curriculum-index-path", default=str(DEFAULT_INDEX_PATH), help="Curriculum index JSONL path.")
     parser.add_argument("--lookup-cache-path", default=str(DEFAULT_LOOKUP_CACHE), help="Lookup cache SQLite path.")
@@ -1529,6 +1576,8 @@ def main() -> None:
                 islands=island_ids,
                 migration_interval=max(1, int(args.migration_interval)),
                 seed=config.seed,
+                mutation_proposer=str(getattr(args, "mutation_proposer", "random") or "random"),
+                mutation_model=getattr(args, "mutation_model", None),
             )
             evolve_islands(config, island_cfg)
         else:

@@ -26,6 +26,8 @@ class MicroEvalRunner:
         self.store = store
         self.coordinator = coordinator or RunCoordinator(store)
         self.registry = RegistrySet(base_dir)
+        # Snapshots from the most recent run_slice, for trace-conditioned mutators.
+        self.last_snapshots: List[Dict[str, Any]] = []
 
     def run_slice(
         self,
@@ -56,11 +58,13 @@ class MicroEvalRunner:
         backtracks: List[float] = []
         costs: List[float] = []
         completion_steps: List[int] = []
+        self.last_snapshots = []
 
         for case in case_list:
             run_id = self._create_case_run(case=case, base_config=base_config, harness_config_path=harness_config_path)
             self.coordinator.execute_run(run_id, threading.Event())
             snapshot = self.store.get_run_snapshot(run_id) or {}
+            self.last_snapshots.append(snapshot)
 
             completed = self._is_completed(snapshot)
             validator_pass = self._validator_passed(snapshot)
