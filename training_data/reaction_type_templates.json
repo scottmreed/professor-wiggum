@@ -1,13 +1,14 @@
 {
   "meta": {
     "generated_at": "2026-03-14T23:02:35.292151+00:00",
-    "count": 80,
+    "count": 85,
     "mapping_count": 72,
     "description": "Expanded draft rewrite of generic reaction templates using R-group abstractions and curated row-based example assignments.",
     "notes": [
       "Source metadata references were removed from the catalog content.",
       "Example assignments were re-curated to better match the CSV transformations.",
-      "Only rows with reasonably confident parent-reaction assignments are mapped in this draft."
+      "Only rows with reasonably confident parent-reaction assignments are mapped in this draft.",
+      "2026-09-16: added rt_081-rt_085 (SOCl2 acid chloride formation, direct amide condensation, Boc protection, sulfonamide formation, chloroformate acylation) \u2014 hard/medium-tier FlowER classes previously absent."
     ]
   },
   "templates": [
@@ -4312,6 +4313,457 @@
             }
           ],
           "note": "The internal alcohol attacks intramolecularly and water is lost to give the lactone."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_081",
+      "label_exact": "Acid chloride formation from carboxylic acid with thionyl chloride",
+      "slug": "acid_chloride_formation_thionyl_chloride",
+      "canonical_group": "activation",
+      "suitable_step_count": 5,
+      "current_state_generic": [
+        "R-C(=O)OH",
+        "Cl-S(=O)-Cl"
+      ],
+      "resulting_state_generic": [
+        "R-C(=O)Cl",
+        "H-Cl",
+        "O=S=O"
+      ],
+      "generic_notes": "Carboxylic acid oxygen attacks sulfur of SOCl2 giving a protonated acyl chlorosulfite; chloride is expelled from sulfur, then adds to the acyl carbon (tetrahedral intermediate); collapse releases SO2 and chloride, and a final proton transfer gives RCOCl + HCl. SOCl2 is a stoichiometric reagent, not a catalyst: it is consumed.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-C(=O)OH.ClS(=O)Cl>>R-C(=O)[OH+]S([O-])(Cl)Cl |mech:v1;lp:O(H)>S;pi:S=O>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "acid O-H:lp",
+              "end_atom": "S",
+              "electrons": 2,
+              "description": "Hydroxyl oxygen attacks sulfur; S=O pi electrons move onto oxygen."
+            }
+          ],
+          "note": "Addition of the acid oxygen to sulfur."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-C(=O)[OH+]S([O-])(Cl)Cl>>R-C(=O)[OH+]S(=O)Cl.[Cl-] |mech:v1;lp:O->S;sigma:S-Cl>Cl|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "S-O-:lp",
+              "end_atom": "S",
+              "electrons": 2,
+              "description": "Sulfinate oxygen reforms S=O."
+            },
+            {
+              "start_atom": "S-Cl",
+              "end_atom": "Cl",
+              "electrons": 2,
+              "description": "Chloride leaves sulfur."
+            }
+          ],
+          "note": "Chloride expulsion gives the protonated acyl chlorosulfite."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "R-C(=O)[OH+]S(=O)Cl.[Cl-]>>R-C(Cl)(OH)OS(=O)Cl |mech:v1;lp:Cl->C;pi:C=O>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Cl-:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Chloride adds to the carbonyl carbon."
+            },
+            {
+              "start_atom": "C=O",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Carbonyl pi electrons move to oxygen."
+            }
+          ],
+          "note": "Tetrahedral intermediate formation."
+        },
+        {
+          "step_index": 4,
+          "reaction_generic": "R-C(Cl)(OH)OS(=O)Cl>>R-C(Cl)=[OH+].O=S=O.[Cl-] |mech:v1;lp:O(H)>C;sigma:C-O>O;sigma:S-Cl>Cl|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O-H:lp",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Hydroxyl oxygen reforms the carbonyl."
+            },
+            {
+              "start_atom": "C-O(S)",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Chlorosulfite leaves and fragments to SO2 + Cl-."
+            }
+          ],
+          "note": "Collapse with loss of SO2 and chloride."
+        },
+        {
+          "step_index": 5,
+          "reaction_generic": "R-C(Cl)=[OH+].[Cl-]>>R-C(=O)Cl.HCl |mech:v1;lp:Cl->H;sigma:O-H>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "Cl-:lp",
+              "end_atom": "H",
+              "electrons": 2,
+              "description": "Chloride removes the carbonyl proton."
+            },
+            {
+              "start_atom": "O-H",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Neutral acid chloride forms."
+            }
+          ],
+          "note": "Final proton transfer to chloride gives HCl."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_082",
+      "label_exact": "Direct amide formation from carboxylic acid and amine with loss of water",
+      "slug": "direct_amide_condensation_acid_amine",
+      "canonical_group": "acylation",
+      "suitable_step_count": 4,
+      "current_state_generic": [
+        "R-C(=O)OH",
+        "R'-NH2"
+      ],
+      "resulting_state_generic": [
+        "R-C(=O)NH-R'",
+        "H2O"
+      ],
+      "generic_notes": "Uncatalysed thermal or pre-activated condensation: the amine (or hydrazide N-H) adds to the acid carbonyl giving a zwitterionic tetrahedral intermediate; proton transfer to the alkoxide, then loss of water from the neutral tetrahedral intermediate and a final N deprotonation give the amide.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R-C(=O)OH.R'NH2>>R-C([O-])(OH)[NH2+]R' |mech:v1;lp:N>C;pi:C=O>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Amine nitrogen attacks the carbonyl carbon."
+            },
+            {
+              "start_atom": "C=O",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Carbonyl pi electrons move to oxygen."
+            }
+          ],
+          "note": "Nucleophilic addition to the acid carbonyl."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-C([O-])(OH)[NH2+]R'>>R-C(OH)(OH)NHR' |mech:v1;lp:O->H;sigma:N-H>N|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O-:lp",
+              "end_atom": "H",
+              "electrons": 2,
+              "description": "Alkoxide picks up a proton."
+            },
+            {
+              "start_atom": "N-H",
+              "end_atom": "N",
+              "electrons": 2,
+              "description": "Ammonium N-H breaks."
+            }
+          ],
+          "note": "Proton transfer from N to O."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "R-C(OH)(OH)NHR'>>R-C(=[OH+])NHR'.O |mech:v1;lp:O(H)>C;sigma:C-OH2>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O-H:lp",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Hydroxyl lone pair reforms C=O."
+            },
+            {
+              "start_atom": "C-O",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Water leaves."
+            }
+          ],
+          "note": "Loss of water from the tetrahedral intermediate."
+        },
+        {
+          "step_index": 4,
+          "reaction_generic": "R-C(=[OH+])NHR'.O>>R-C(=O)NHR'.[OH3+] |mech:v1;lp:O(water)>H;sigma:O-H>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "water O:lp",
+              "end_atom": "H",
+              "electrons": 2,
+              "description": "Water removes the carbonyl proton."
+            },
+            {
+              "start_atom": "O-H",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Neutral amide forms."
+            }
+          ],
+          "note": "Final deprotonation gives the amide."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_083",
+      "label_exact": "Boc protection of amine with di-tert-butyl dicarbonate",
+      "slug": "boc_protection_amine_boc2o",
+      "canonical_group": "protection",
+      "suitable_step_count": 4,
+      "current_state_generic": [
+        "R2N-H",
+        "tBuO-C(=O)-O-C(=O)-OtBu"
+      ],
+      "resulting_state_generic": [
+        "R2N-C(=O)OtBu",
+        "tBuOH",
+        "CO2"
+      ],
+      "generic_notes": "Amine nitrogen adds to one Boc2O carbonyl (zwitterionic tetrahedral intermediate); collapse expels tert-butyl carbonate; the carbonate decarboxylates to tert-butoxide + CO2, and tert-butoxide deprotonates the carbamoyl ammonium to give the neutral Boc-amine and tBuOH.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R2NH.tBuOC(=O)OC(=O)OtBu>>R2[NH+]C([O-])(OtBu)OC(=O)OtBu |mech:v1;lp:N>C;pi:C=O>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "carbonyl C",
+              "electrons": 2,
+              "description": "Amine attacks a Boc2O carbonyl."
+            },
+            {
+              "start_atom": "C=O",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Pi electrons move to oxygen."
+            }
+          ],
+          "note": "Addition to the dicarbonate."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R2[NH+]C([O-])(OtBu)OC(=O)OtBu>>R2[NH+]C(=O)OtBu.tBuOC(=O)[O-] |mech:v1;lp:O->C;sigma:C-O>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O-:lp",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Alkoxide reforms C=O."
+            },
+            {
+              "start_atom": "C-O(carbonate)",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "tert-Butyl carbonate leaves."
+            }
+          ],
+          "note": "Collapse of the tetrahedral intermediate."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "tBuOC(=O)[O-]>>tBu[O-].O=C=O |mech:v1;lp:O->C;sigma:C-OtBu>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O-:lp",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Carboxylate oxygen forms C=O."
+            },
+            {
+              "start_atom": "C-OtBu",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "tert-Butoxide leaves as CO2 is released."
+            }
+          ],
+          "note": "Decarboxylation of tert-butyl carbonate."
+        },
+        {
+          "step_index": 4,
+          "reaction_generic": "R2[NH+]C(=O)OtBu.tBu[O-]>>R2NC(=O)OtBu.tBuOH |mech:v1;lp:O->H;sigma:N-H>N|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "tBuO-:lp",
+              "end_atom": "H",
+              "electrons": 2,
+              "description": "tert-Butoxide removes the N-H proton."
+            },
+            {
+              "start_atom": "N-H",
+              "end_atom": "N",
+              "electrons": 2,
+              "description": "Neutral carbamate forms."
+            }
+          ],
+          "note": "Final proton transfer gives tBuOH."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_084",
+      "label_exact": "Sulfonamide formation from sulfonyl chloride and amine",
+      "slug": "sulfonamide_formation_sulfonyl_chloride_amine",
+      "canonical_group": "acylation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-S(=O)(=O)Cl",
+        "R'-NH2",
+        "pyridine (base)"
+      ],
+      "resulting_state_generic": [
+        "R-S(=O)(=O)NH-R'",
+        "Cl-",
+        "pyridinium"
+      ],
+      "generic_notes": "Amine nitrogen adds to sulfur of the sulfonyl chloride; chloride is expelled from the pentacoordinate intermediate; an amine base removes the N-H proton. The base is consumed as its conjugate acid.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "RS(=O)(=O)Cl.R'NH2>>RS([O-])(=O)(Cl)[NH2+]R' |mech:v1;lp:N>S;pi:S=O>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "N:lp",
+              "end_atom": "S",
+              "electrons": 2,
+              "description": "Amine attacks sulfur."
+            },
+            {
+              "start_atom": "S=O",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "S=O pi electrons move to oxygen."
+            }
+          ],
+          "note": "Addition to sulfur."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "RS([O-])(=O)(Cl)[NH2+]R'>>RS(=O)(=O)[NH2+]R'.[Cl-] |mech:v1;lp:O->S;sigma:S-Cl>Cl|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O-:lp",
+              "end_atom": "S",
+              "electrons": 2,
+              "description": "Oxygen reforms S=O."
+            },
+            {
+              "start_atom": "S-Cl",
+              "end_atom": "Cl",
+              "electrons": 2,
+              "description": "Chloride leaves."
+            }
+          ],
+          "note": "Chloride expulsion."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "RS(=O)(=O)[NH2+]R'.pyridine>>RS(=O)(=O)NHR'.pyridinium |mech:v1;lp:N(py)>H;sigma:N-H>N|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "pyridine N:lp",
+              "end_atom": "H",
+              "electrons": 2,
+              "description": "Base removes the N-H proton."
+            },
+            {
+              "start_atom": "N-H",
+              "end_atom": "N",
+              "electrons": 2,
+              "description": "Neutral sulfonamide forms."
+            }
+          ],
+          "note": "Deprotonation by the amine base."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_085",
+      "label_exact": "Carbonate or carbamate formation from chloroformate with pyridine base",
+      "slug": "chloroformate_acylation_to_carbonate_or_carbamate",
+      "canonical_group": "acylation",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-O-C(=O)Cl",
+        "R'-OH or R'-NH2",
+        "pyridine (base)"
+      ],
+      "resulting_state_generic": [
+        "R-O-C(=O)-O-R' or R-O-C(=O)-NH-R'",
+        "Cl-",
+        "pyridinium"
+      ],
+      "generic_notes": "Alcohol or amine adds to the chloroformate carbonyl (tetrahedral intermediate); chloride is expelled; the amine base removes the O-H or N-H proton and is consumed as pyridinium.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "ROC(=O)Cl.R'OH>>ROC([O-])(Cl)[OH+]R' |mech:v1;lp:O(R')>C;pi:C=O>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "nucleophile O/N:lp",
+              "end_atom": "acyl C",
+              "electrons": 2,
+              "description": "Nucleophile attacks the chloroformate carbonyl."
+            },
+            {
+              "start_atom": "C=O",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Pi electrons move to oxygen."
+            }
+          ],
+          "note": "Addition to the chloroformate."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "ROC([O-])(Cl)[OH+]R'>>ROC(=O)[OH+]R'.[Cl-] |mech:v1;lp:O->C;sigma:C-Cl>Cl|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O-:lp",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "Alkoxide reforms C=O."
+            },
+            {
+              "start_atom": "C-Cl",
+              "end_atom": "Cl",
+              "electrons": 2,
+              "description": "Chloride leaves."
+            }
+          ],
+          "note": "Chloride expulsion."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "ROC(=O)[OH+]R'.pyridine>>ROC(=O)OR'.pyridinium |mech:v1;lp:N(py)>H;sigma:O-H>O|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "pyridine N:lp",
+              "end_atom": "H",
+              "electrons": 2,
+              "description": "Base removes the proton."
+            },
+            {
+              "start_atom": "O-H",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "Neutral carbonate/carbamate forms."
+            }
+          ],
+          "note": "Deprotonation by the amine base."
         }
       ]
     }
