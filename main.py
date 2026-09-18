@@ -1668,6 +1668,28 @@ def _run_baseline_eval_set(
         "prompt_hashes": sorted(set(prompt_hashes))[:20],
         "run_group_name": run_group_name,
     }
+
+
+def _summary_total_cost(cost_summary: Optional[dict]) -> float:
+    """Extract the run's total USD cost from a snapshot ``cost_summary`` block.
+
+    Keyless / opaque-cost runs (e.g. the agent-bridge provider, which records no
+    API spend) store ``total_cost: None``. A naive ``cost_summary.get("total_cost",
+    {}).get(...)`` then calls ``.get`` on ``None`` and tracebacks at the end of an
+    otherwise-completed run. Guard every level so the summary is always numeric.
+    """
+    if not isinstance(cost_summary, dict):
+        return 0.0
+    total_cost_block = cost_summary.get("total_cost") or {}
+    if not isinstance(total_cost_block, dict):
+        return 0.0
+    value = total_cost_block.get("total_cost", 0.0)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @app.command()
 def run(
     starting: Optional[str] = typer.Option(
@@ -1946,7 +1968,10 @@ def run(
         if isinstance(row.get("validation"), dict) and row["validation"].get("passed") is False
     ]
     cost_summary = snapshot.get("cost_summary") or {}
-    total_cost = cost_summary.get("total_cost", {}).get("total_cost", 0.0)
+    # ``total_cost`` is ``None`` for keyless / opaque-cost runs (e.g. the
+    # agent-bridge provider records no API spend); _summary_total_cost guards
+    # every level so a completed bridge run never tracebacks while summarising.
+    total_cost = _summary_total_cost(cost_summary)
     ralph_attempts = list(snapshot.get("ralph_attempts") or [])
     ralph_total_cost = sum(float(item.get("cost_usd") or 0.0) for item in ralph_attempts)
     latest_child_status = snapshot.get("ralph_latest_child_status")
@@ -2081,6 +2106,16 @@ def overnight_ralph(
         help="Model identifier used for child micro-eval runs",
     ),
     harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
+    mutation_proposer: Optional[str] = typer.Option(
+        None,
+        "--mutation-proposer",
+        help="random (blind lane mutators) or llm (trace-conditioned proposal via --mutation-model); overrides the program file",
+    ),
+    mutation_model: Optional[str] = typer.Option(
+        None,
+        "--mutation-model",
+        help="Model that proposes mutations when --mutation-proposer=llm (default: the run model; agent-bridge works keyless)",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit summary as JSON"),
 ) -> None:
     """Run lane-scoped overnight Ralph hill-climbing on a frozen eval slice."""
@@ -2105,6 +2140,13 @@ def overnight_ralph(
     program_config.max_experiments = max(1, int(max_experiments))
     program_config.max_cost_usd = float(max_cost_usd)
     program_config.acceptance_threshold_pct = max(0.0, float(acceptance_threshold))
+    if mutation_proposer:
+        proposer = str(mutation_proposer).strip().lower()
+        if proposer not in {"random", "llm"}:
+            raise typer.BadParameter("--mutation-proposer must be 'random' or 'llm'")
+        program_config.mutation_proposer = proposer
+    if mutation_model:
+        program_config.mutation_model = _canonicalize_model_name_or_raise(mutation_model)
 
     store = RunStore(resolve_db_path(base))
     orchestrator = OvernightRalphOrchestrator(base_dir=base, store=store)
@@ -2832,20 +2874,50 @@ def compare_eval_runs(
     )
 
 
+def _resolve_import_eval_set_name(
+    eval_path: Path,
+    *,
+    explicit_name: Optional[str] = None,
+    base: Optional[Path] = None,
+) -> str:
+    """Name an imported eval set after its file, not a hard-coded default.
+
+    ``training_data/eval_set.json`` keeps the historical ``flower_100_default``
+    name for compatibility; every other file is named by its stem (for example
+    ``practice_set``), so imports stay distinguishable in the DB and CLI.
+    """
+    if explicit_name and str(explicit_name).strip():
+        return str(explicit_name).strip()
+    resolved = eval_path.resolve()
+    default_path = ((base or Path.cwd()) / "training_data" / "eval_set.json").resolve()
+    if resolved == default_path or resolved.name == "eval_set.json":
+        return "flower_100_default"
+    return resolved.stem
+
+
 @app.command(name="import-eval-set")
 def import_eval_set(
     path: Optional[str] = typer.Option(
         None, "--path", help="Path to eval_set.json (default: training_data/eval_set.json)"
     ),
     version: str = typer.Option("flower100_v1", "--version", help="Version label for this eval set"),
+    name: Optional[str] = typer.Option(
+        None,
+        "--name",
+        help=(
+            "Eval set name. Defaults to the file stem (e.g. practice_set) or "
+            "'flower_100_default' for the bundled training_data/eval_set.json."
+        ),
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit result as JSON"),
 ) -> None:
-    """Import the default FlowER eval set into the local DB from training_data/eval_set.json."""
+    """Import an eval set JSON file into the local DB (default: training_data/eval_set.json)."""
     base = Path.cwd()
     store = RunStore(resolve_db_path(base))
     eval_path = Path(path) if path else base / "training_data" / "eval_set.json"
     if not eval_path.exists():
         raise typer.BadParameter(f"Eval set file not found: {eval_path}")
+    eval_set_name = _resolve_import_eval_set_name(eval_path, explicit_name=name, base=base)
 
     raw = json.loads(eval_path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
@@ -2886,7 +2958,7 @@ def import_eval_set(
         for c in cases
     )
     for item in store.list_eval_sets():
-        if item.get("name") != "flower_100_default" or item.get("version") != version:
+        if item.get("name") != eval_set_name or item.get("version") != version:
             continue
         existing_cases = store.list_eval_set_cases(str(item.get("id") or ""))
         existing_has_multistep = any(
@@ -2903,7 +2975,7 @@ def import_eval_set(
             return
 
     eval_set_id = store.add_eval_set(
-        name="flower_100_default",
+        name=eval_set_name,
         version=version,
         source_path=str(eval_path),
         sha256=None,
@@ -2912,7 +2984,7 @@ def import_eval_set(
         purpose="general",
         exposed_in_ui=True,
     )
-    result = {"eval_set_id": eval_set_id, "name": "flower_100_default", "version": version, "case_count": len(cases)}
+    result = {"eval_set_id": eval_set_id, "name": eval_set_name, "version": version, "case_count": len(cases)}
     if json_output:
         typer.echo(json.dumps(result, indent=2))
     else:

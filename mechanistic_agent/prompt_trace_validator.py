@@ -81,6 +81,7 @@ def validate_evidence_for_calls(
             continue
 
         valid_files: List[str] = []
+        ground_truth_rejections: List[str] = []
         for path in candidates:
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
@@ -89,6 +90,15 @@ def validate_evidence_for_calls(
             if not isinstance(payload, dict):
                 continue
             if payload.get("approved_bool") is not True:
+                continue
+            exposure = evidence_ground_truth_exposure(payload)
+            if exposure is not False:
+                # Evidence must state, explicitly, that the responder did NOT see
+                # the verified mechanism. Replays of ground truth are not evidence
+                # of model capability and undeclared exposure is not accepted.
+                ground_truth_rejections.append(
+                    f"{path.name}: responder_saw_ground_truth={exposure!r} (must be false)"
+                )
                 continue
             prompt_block = payload.get("prompt_version")
             if not isinstance(prompt_block, dict):
@@ -104,10 +114,39 @@ def validate_evidence_for_calls(
             valid_files.append(str(path.resolve().relative_to(base)))
 
         if not valid_files:
+            detail = ""
+            if ground_truth_rejections:
+                detail = " (rejected for ground-truth exposure: " + "; ".join(ground_truth_rejections) + ")"
             result.errors.append(
-                f"{call_name}: evidence exists but no approved+linked trace matches current prompt bundle {current_bundle[:12]}"
+                f"{call_name}: evidence exists but no approved+linked trace matches current prompt bundle {current_bundle[:12]}{detail}"
             )
             continue
         result.valid_evidence_by_call[call_name] = valid_files
 
     return result
+
+
+def evidence_ground_truth_exposure(payload: Dict[str, object]) -> object:
+    """Return the evidence file's declared ground-truth exposure.
+
+    Accepted locations: top-level ``responder_saw_ground_truth`` or
+    ``origin.responder_saw_ground_truth``. Returns ``True``/``False`` when
+    declared, ``"undeclared"`` for unparseable values, and ``None`` when absent.
+    """
+    if not isinstance(payload, dict):
+        return None
+    value: object = payload.get("responder_saw_ground_truth")
+    if value is None:
+        origin = payload.get("origin")
+        if isinstance(origin, dict):
+            value = origin.get("responder_saw_ground_truth")
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes"}:
+        return True
+    if text in {"false", "0", "no"}:
+        return False
+    return "undeclared"

@@ -28,7 +28,7 @@ Curriculum checkpoints and trainee lanes advance **as time permits**. There is n
 - Run group: `cli_eval_opus48_medium`  (FlowER **medium** tier, 3-step mechanisms)
 - Subagent quality this tier: `mechanism_step_proposal` `1.00`, `step_atom_mapping` `0.95` (the historical weak point: GPT-5.5 `0.58`, Opus 4.6 `0.965`)
 
-† Produced **keyless** via the agent bridge (no provider API key); cost is `budget_observability: opaque`, so this row is **not** eligible for a Track 3 cost-class SOTA claim. Medium tier = 3-step FlowER mechanisms (carbonate formation, carbamate aminolysis, sulfonylation); every elementary step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress). Easy-tier (1-step SN2/Menshutkin) WINs remain in the history.
+† Produced **keyless** via the agent bridge (no provider API key); cost is `budget_observability: opaque`, so this row is **not** eligible for a Track 3 cost-class SOTA claim. **Caveat:** these runs replayed FlowER's verified mechanism steps through the responder (`responder_saw_ground_truth: true`, see `local_contributions/opus48_medium_evidence.md`), so the snapshot measures harness/validator acceptance of correct chemistry, not blind model skill. The first blind hard-tier runs (Fable 5.1 via the bridge, 2026-09-16) are recorded under run group `cli_eval_fable51_hard_blind`. Medium tier = 3-step FlowER mechanisms (carbonate formation, carbamate aminolysis, sulfonylation); every elementary step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress). Easy-tier (1-step SN2/Menshutkin) WINs remain in the history.
 
 ## Checkpoints
 

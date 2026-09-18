@@ -505,7 +505,10 @@ def mine_few_shots(
             output_text = json.dumps(output, indent=2, sort_keys=True)
             example_score = score_few_shot_example(call_name, input_text=input_text, output_text=output_text)
             output_hash = hashlib.sha256(output_text.encode()).hexdigest()[:16]
-            # No filter by duplicate hash, best score, or max_few_shots_per_step — mine all eligible steps
+            # Dedupe: skip outputs already present in the lane (or mined earlier
+            # in this batch) so few-shot files do not fill with near-identical rows.
+            if output_hash in existing_hashes.get(call_name, set()):
+                continue
             mined.setdefault(call_name, []).append({
                 "input": input_text,
                 "output": output_text,
@@ -514,6 +517,17 @@ def mine_few_shots(
             })
             existing_hashes.setdefault(call_name, set()).add(output_hash)
             best_scores_by_call[call_name] = max(best_scores_by_call.get(call_name, 0.0), example_score)
+
+    # Per-lane cap: keep only the highest-scoring examples per call per batch.
+    cap = max(0, int(getattr(config, "max_few_shots_per_step", 0) or 0))
+    if cap:
+        for call_name, examples in list(mined.items()):
+            if len(examples) > cap:
+                examples.sort(key=lambda ex: float(ex.get("score") or 0.0), reverse=True)
+                dropped = examples[cap:]
+                mined[call_name] = examples[:cap]
+                for ex in dropped:
+                    existing_hashes.get(call_name, set()).discard(str(ex.get("example_key")))
     return mined
 
 
@@ -1175,13 +1189,38 @@ def apply_island_mutation(
     base_dir: Path,
     harness_path: Path,
     rng: random.Random,
+    *,
+    mutation_proposer: str = "random",
+    mutation_model: Optional[str] = None,
+    failure_digest: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[str, str, Path]:
     """Dispatch to the appropriate lane mutator for this island.
+
+    ``mutation_proposer="llm"`` asks ``mutation_model`` to read the failure
+    digest of the previous generation and propose one targeted edit within the
+    island's allowed lanes (falls back to the blind mutator when the proposal
+    is not applicable). The acceptance rule downstream is unchanged.
 
     Returns (mutation_type, mutation_summary, mutated_asset_path).
     """
     lane = rng.choice(island.allowed_lanes)
     call_names = ISLAND_CALL_NAMES.get(island.mutation_target, [])
+
+    if str(mutation_proposer or "random").lower() == "llm":
+        from mechanistic_agent.core.llm_mutator import LLMLaneMutator
+
+        mutator_llm = LLMLaneMutator(
+            base_dir=base_dir,
+            model_name=str(mutation_model or "agent-bridge"),
+            call_names=list(call_names) or None,
+        )
+        result = mutator_llm.propose(
+            harness_path,
+            failure_digest=list(failure_digest or []),
+            allowed_lanes=list(island.allowed_lanes),
+            preferred_lane=lane,
+        )
+        return f"llm_{result.lane}", result.summary, result.asset_path
 
     if lane in ("prompt",) and call_names:
         call_name = rng.choice(call_names)
@@ -1212,6 +1251,130 @@ def apply_island_mutation(
     return "few_shot_mine", result.summary, result.asset_path
 
 
+def _eval_case_step_count(case: Dict[str, Any]) -> int:
+    expected = case.get("expected") if isinstance(case.get("expected"), dict) else {}
+    for key in ("known_mechanism", "verified_mechanism"):
+        block = expected.get(key)
+        if isinstance(block, dict) and isinstance(block.get("steps"), list) and block["steps"]:
+            return len(block["steps"])
+    return 0
+
+
+def prepare_eval_set_batch(
+    *,
+    store: RunStore,
+    eval_set_id: str,
+    config: EvolutionConfig,
+    island: IslandConfig,
+    generation: int,
+    step_count_override: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Build a curriculum-shaped batch from the cases of a stored eval set.
+
+    Used by the island loop when a non-default eval set (e.g. the practice
+    set) is named, so evolution can run against committed cases instead of the
+    FlowER curriculum index. Cases rotate by generation; the hard island only
+    sees 4+ step cases. Synthetic ``entry`` rows carry the fields
+    ``run_curriculum_batch`` / ``_curriculum_summary`` expect.
+    """
+    rows = [row for row in store.list_eval_set_cases(eval_set_id) if isinstance(row, dict)]
+    scored: List[Tuple[int, Dict[str, Any]]] = []
+    for row in rows:
+        steps = _eval_case_step_count(row)
+        if step_count_override and steps != int(step_count_override):
+            continue
+        if island.eval_tier_filter == "hard" and steps < 4:
+            continue
+        scored.append((steps, row))
+    scored.sort(key=lambda item: (item[0], str(item[1].get("case_id") or "")))
+    if not scored:
+        return {"runnable_cases": [], "conversion_failures": [], "batch_start_rank": 0, "current_step_count": 0}
+
+    group = max(1, int(config.group_size))
+    offset = ((max(1, generation) - 1) * group) % len(scored)
+    selected = (scored + scored)[offset : offset + group]
+
+    runnable: List[Dict[str, Any]] = []
+    for rank, (steps, row) in enumerate(selected, start=1):
+        case_id = str(row.get("case_id") or "")
+        digits = "".join(ch for ch in case_id if ch.isdigit())
+        entry = {
+            "case_id": case_id,
+            "mechanism_id": int(digits) if digits else 0,
+            "step_count": int(steps),
+            "global_rank": offset + rank,
+            "rank_within_step_count": rank,
+            "source": "eval_set",
+        }
+        input_payload = dict(row.get("input") or {})
+        expected = dict(row.get("expected") or {})
+        runnable.append(
+            {
+                "case_id": case_id,
+                "input": {
+                    "starting_materials": list(input_payload.get("starting_materials") or []),
+                    "products": list(input_payload.get("products") or []),
+                    "temperature_celsius": input_payload.get("temperature_celsius", 25.0),
+                    "ph": input_payload.get("ph"),
+                },
+                "expected": expected,
+                "tags": list(row.get("tags") or []) + ["eval_set_island"],
+                "entry": entry,
+                "case": {
+                    "id": case_id,
+                    "starting_materials": list(input_payload.get("starting_materials") or []),
+                    "products": list(input_payload.get("products") or []),
+                    "verified_mechanism": expected.get("verified_mechanism"),
+                    "known_mechanism": expected.get("known_mechanism"),
+                },
+            }
+        )
+    return {
+        "runnable_cases": runnable,
+        "conversion_failures": [],
+        "batch_start_rank": offset + 1,
+        "current_step_count": int(selected[0][0]) if selected else 0,
+    }
+
+
+def _initial_failure_digest(store: RunStore, eval_set_id: str, *, limit: int = 8) -> List[Dict[str, Any]]:
+    """Digest the most recent runs recorded for this eval set (any run group).
+
+    Lets the LLM proposer start from real failures on generation 1 instead of an
+    empty digest. Only model-visible run data is digested.
+    """
+    try:
+        from mechanistic_agent.core.llm_mutator import build_failure_digest
+    except Exception:
+        return []
+    try:
+        eval_runs = list(store.list_eval_runs(eval_set_id) or [])
+    except Exception:
+        return []
+    eval_runs.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
+    snapshots: List[Dict[str, Any]] = []
+    for eval_run in eval_runs:
+        eval_run_id = str(eval_run.get("id") or "")
+        if not eval_run_id:
+            continue
+        try:
+            results = store.list_eval_run_results_many([eval_run_id]).get(eval_run_id, [])
+        except Exception:
+            continue
+        for item in results:
+            run_id = str(item.get("run_id") or "")
+            if not run_id:
+                continue
+            snapshot = store.get_run_snapshot(run_id)
+            if snapshot:
+                snapshots.append(snapshot)
+            if len(snapshots) >= limit:
+                break
+        if len(snapshots) >= limit:
+            break
+    return build_failure_digest(snapshots, max_runs=limit)
+
+
 def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig) -> None:
     """Archive-based island evolution loop."""
     base_dir = _PROJECT_ROOT
@@ -1239,7 +1402,18 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
 
     workspace = setup_workspace(base_dir, config.dry_run)
     runtime_base = workspace if config.dry_run else base_dir
-    runtime_store = RunStore(runtime_base / "data" / "mechanistic.db")
+    # Honour MECHANISTIC_DATA_DIR / sibling wiggum-data for real runs; a dry run
+    # keeps its shadow workspace DB.
+    runtime_store = RunStore(
+        runtime_base / "data" / "mechanistic.db" if config.dry_run else resolve_db_path(runtime_base)
+    )
+
+    # Case source: the FlowER curriculum index by default, or the cases of a
+    # non-default eval set (e.g. the practice set) when one is named explicitly.
+    eval_set_name = str(resolved_eval_set.get("name") or "")
+    use_eval_set_cases = eval_set_name not in {"", "flower_100_default"}
+    if use_eval_set_cases:
+        print(f"  Case source: eval set '{eval_set_name}' ({resolved_id})")
 
     # Set up archive
     active_islands = [isl for isl in DEFAULT_ISLANDS if isl.id in island_config.islands]
@@ -1252,16 +1426,28 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
         print(f"Seeded archive with {count} entries from leaderboard")
 
     config.thinking_level = _resolve_thinking_level(config.model_name, config.thinking_level)
-    ensure_index(
-        input_path=config.train_input,
-        index_path=config.curriculum_index_path,
-        report_path=config.curriculum_index_report_path,
-    )
-    build_lookup_cache(input_path=config.train_input, cache_path=config.lookup_cache_path)
-    index_entries = load_curriculum_index(config.curriculum_index_path)
+    index_entries: List[Dict[str, Any]] = []
+    if not use_eval_set_cases:
+        ensure_index(
+            input_path=config.train_input,
+            index_path=config.curriculum_index_path,
+            report_path=config.curriculum_index_report_path,
+        )
+        build_lookup_cache(input_path=config.train_input, cache_path=config.lookup_cache_path)
+        index_entries = load_curriculum_index(config.curriculum_index_path)
 
     rng = random.Random(island_config.seed)
+    # Per-island failure digest from the previous generation (feeds the LLM proposer).
+    latest_failure_digest: Dict[str, List[Dict[str, Any]]] = {}
+    if str(getattr(island_config, "mutation_proposer", "random")).lower() == "llm":
+        seed_digest = _initial_failure_digest(runtime_store, config.eval_set_id)
+        if seed_digest:
+            print(f"  Seeded failure digest from {len(seed_digest)} prior run(s) on this eval set")
+            for isl in active_islands:
+                latest_failure_digest[isl.id] = list(seed_digest)
     generation = archive.max_generation() + 1
+    start_generation = generation
+    max_generations = max(0, int(getattr(island_config, "max_generations", 0) or 0))
     harness_path = base_dir / "harness_versions" / config.harness / "harness.json"
 
     mode_label = "DRY RUN" if config.dry_run else "FULL RUN"
@@ -1287,6 +1473,9 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
             try:
                 mutation_type, mutation_summary, mutated_path = apply_island_mutation(
                     island, parent, runtime_base, harness_path, rng,
+                    mutation_proposer=str(getattr(island_config, "mutation_proposer", "random") or "random"),
+                    mutation_model=getattr(island_config, "mutation_model", None) or config.model_name,
+                    failure_digest=latest_failure_digest.get(island.id, []),
                 )
                 print(f"  Mutation: {mutation_type} — {mutation_summary}")
             except (FileNotFoundError, ValueError) as exc:
@@ -1294,11 +1483,15 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                 continue
 
             # 3. Run eval batch
-            progress = curriculum_history(
-                runtime_store,
-                model_name=config.model_name,
-                harness=config.harness,
-                curriculum_index_path=config.curriculum_index_path,
+            progress = (
+                {"attempted_case_ids": set(), "pass_count_by_step": {}}
+                if use_eval_set_cases
+                else curriculum_history(
+                    runtime_store,
+                    model_name=config.model_name,
+                    harness=config.harness,
+                    curriculum_index_path=config.curriculum_index_path,
+                )
             )
 
             # Apply tier filter for hard_multistep island
@@ -1306,24 +1499,34 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
             if island.eval_tier_filter == "hard":
                 step_override = 9  # 9+ step reactions
 
-            selection = next_curriculum_candidates(
-                index_entries,
-                attempted_case_ids=progress["attempted_case_ids"],
-                pass_count_by_step=progress["pass_count_by_step"],
-                required_passes_per_step=config.step_pass_target,
-                step_count_override=step_override,
-                allow_repeats=True,
-            )
-            candidates = list(selection["candidates"])
-            if not candidates:
-                print(f"  No curriculum candidates for island {island.id}")
-                continue
+            if use_eval_set_cases:
+                prepared_batch = prepare_eval_set_batch(
+                    store=runtime_store,
+                    eval_set_id=config.eval_set_id,
+                    config=config,
+                    island=island,
+                    generation=generation,
+                    step_count_override=config.step_count_filter,
+                )
+            else:
+                selection = next_curriculum_candidates(
+                    index_entries,
+                    attempted_case_ids=progress["attempted_case_ids"],
+                    pass_count_by_step=progress["pass_count_by_step"],
+                    required_passes_per_step=config.step_pass_target,
+                    step_count_override=step_override,
+                    allow_repeats=True,
+                )
+                candidates = list(selection["candidates"])
+                if not candidates:
+                    print(f"  No curriculum candidates for island {island.id}")
+                    continue
 
-            prepared_batch = prepare_curriculum_batch(
-                config=config,
-                candidate_entries=candidates,
-                current_step_count=int(selection["current_step_count"]),
-            )
+                prepared_batch = prepare_curriculum_batch(
+                    config=config,
+                    candidate_entries=candidates,
+                    current_step_count=int(selection["current_step_count"]),
+                )
             if not prepared_batch["runnable_cases"]:
                 print(f"  No runnable cases for island {island.id}")
                 continue
@@ -1379,6 +1582,12 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                 created_at=time.time(),
             )
             archive.insert(entry)
+            try:
+                from mechanistic_agent.core.llm_mutator import digest_from_case_results
+
+                latest_failure_digest[island.id] = digest_from_case_results(case_results)
+            except Exception:
+                latest_failure_digest[island.id] = []
 
             print(f"  Result: score={mean_score:.4f} (delta={score_delta:+.4f}), pass_rate={pass_rate:.1%}")
 
@@ -1401,6 +1610,9 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
 
         generation += 1
         print(f"\n=== Completed generation {generation - 1} ===\n")
+        if max_generations and (generation - start_generation) >= max_generations:
+            print(f"Reached --max-generations={max_generations}; stopping.")
+            break
 
 
 def main() -> None:
@@ -1428,6 +1640,23 @@ def main() -> None:
     parser.add_argument("--island-mode", action="store_true", help="Enable island-based archive evolution (ShinkaEvolve-inspired).")
     parser.add_argument("--islands", default=None, help="Comma-separated island IDs (default: mapping,reagent_conditions,topology,hard_multistep).")
     parser.add_argument("--migration-interval", type=int, default=5, help="Generations between migration attempts (default: 5).")
+    parser.add_argument(
+        "--mutation-proposer",
+        default="random",
+        choices=["random", "llm"],
+        help="Island mutation proposer: random (blind lane mutators) or llm (trace-conditioned proposals; default: random).",
+    )
+    parser.add_argument(
+        "--mutation-model",
+        default=None,
+        help="Model that proposes mutations when --mutation-proposer=llm (default: --model-name; agent-bridge works keyless).",
+    )
+    parser.add_argument(
+        "--max-generations",
+        type=int,
+        default=0,
+        help="Island mode: stop after this many generations (default 0 = run until interrupted).",
+    )
     parser.add_argument("--train-input", default=str(DEFAULT_FLOWER_INPUT), help="Path to FlowER train.txt.")
     parser.add_argument("--curriculum-index-path", default=str(DEFAULT_INDEX_PATH), help="Curriculum index JSONL path.")
     parser.add_argument("--lookup-cache-path", default=str(DEFAULT_LOOKUP_CACHE), help="Lookup cache SQLite path.")
@@ -1515,6 +1744,9 @@ def main() -> None:
                 islands=island_ids,
                 migration_interval=max(1, int(args.migration_interval)),
                 seed=config.seed,
+                mutation_proposer=str(getattr(args, "mutation_proposer", "random") or "random"),
+                mutation_model=getattr(args, "mutation_model", None),
+                max_generations=max(0, int(getattr(args, "max_generations", 0) or 0)),
             )
             evolve_islands(config, island_cfg)
         else:

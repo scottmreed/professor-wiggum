@@ -381,6 +381,9 @@ class HarnessConfig:
     post_loop_modules: List[ModuleSpec] = field(default_factory=list)
     few_shot_defaults: FewShotSelectionConfig = field(default_factory=FewShotSelectionConfig)
     topology_profiles: Dict[str, TopologyProfile] = field(default_factory=dict)
+    # Harness-level RunConfig defaults (e.g. proceed_on_validation_failure).
+    # Applied by the coordinator only for keys the run's own config leaves unset.
+    run_config_defaults: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> Dict[str, Any]:
@@ -400,6 +403,8 @@ class HarnessConfig:
             d["post_loop_modules"] = [m.as_dict() for m in self.post_loop_modules]
         if self.topology_profiles:
             d["topology_profiles"] = {k: v.as_dict() for k, v in self.topology_profiles.items()}
+        if self.run_config_defaults:
+            d["run_config_defaults"] = dict(self.run_config_defaults)
         return d
 
     @classmethod
@@ -429,6 +434,11 @@ class HarnessConfig:
             ],
             few_shot_defaults=FewShotSelectionConfig.from_dict(data.get("few_shot_defaults")),
             topology_profiles=profiles,
+            run_config_defaults=(
+                dict(data.get("run_config_defaults"))
+                if isinstance(data.get("run_config_defaults"), dict)
+                else {}
+            ),
             metadata=dict(data.get("metadata") or {}),
         )
 
@@ -536,7 +546,9 @@ class RunConfig:
     allow_validator_mutation: bool = False
     mutation_lane: Optional[RalphLane] = None
     ralph_parent_run_id: Optional[str] = None
-    proceed_on_validation_failure: bool = True
+    # Deterministic validation is the arbiter (SOUL Guardrail 1): a step that
+    # fails validation is not accepted unless the run or harness opts in.
+    proceed_on_validation_failure: bool = False
     proceed_only_on_arrow_push_failure: bool = False
     runtime_trace_enabled: bool = False
     runtime_trace_label: Optional[str] = None
@@ -570,6 +582,10 @@ class OvernightRalphConfig:
     acceptance_threshold_pct: float = 0.02
     allowed_lanes: List[RalphLane] = field(default_factory=lambda: ["topology", "harness"])
     program_path: str = "ralph_program.md"
+    # "random" keeps the blind lane mutators; "llm" asks mutation_model (default:
+    # the run model) to propose one trace-conditioned edit per experiment.
+    mutation_proposer: str = "random"
+    mutation_model: Optional[str] = None
     mutation_budget_per_night: Dict[str, Any] = field(default_factory=dict)
     frozen_surfaces: List[str] = field(default_factory=list)
     anti_overfitting_rules: Dict[str, Any] = field(default_factory=dict)
@@ -681,6 +697,11 @@ class IslandEvolutionConfig:
     parent_perf_weight: float = 1.0
     parent_novelty_weight: float = 1.0
     seed: int = 42
+    # "random" = blind lane mutators; "llm" = trace-conditioned proposals from mutation_model.
+    mutation_proposer: str = "random"
+    mutation_model: Optional[str] = None
+    # 0 = run until interrupted; N = stop after N generations.
+    max_generations: int = 0
 
 
 @dataclass(slots=True)
@@ -809,6 +830,9 @@ class RunState:
     selected_reaction_template: Optional[Dict[str, Any]] = None
     step_start_times: Dict[str, float] = field(default_factory=dict)
     adaptive_runtime_state: Dict[str, Any] = field(default_factory=dict)
+    # Declared spectators / condition additives that may remain in the final
+    # state without blocking the "all targets reached, nothing extra" check.
+    allowed_extra_species: List[str] = field(default_factory=list)
 
     def initialise(self) -> None:
         if not self.current_state:

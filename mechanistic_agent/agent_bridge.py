@@ -63,6 +63,32 @@ BRIDGE_POLL_ENV = "MECHANISTIC_AGENT_BRIDGE_POLL_SECONDS"
 BRIDGE_DECLARED_MODEL_ENV = "MECHANISTIC_AGENT_BRIDGE_DECLARED_MODEL"
 BRIDGE_RESPONDER_KIND_ENV = "MECHANISTIC_AGENT_BRIDGE_RESPONDER_KIND"
 BRIDGE_NOTES_ENV = "MECHANISTIC_AGENT_BRIDGE_NOTES"
+# Whether the responder had access to the verified/known mechanism while
+# answering. "false" is the only value that makes a run eligible for evidence
+# and leaderboard use; "true" marks a ground-truth replay; unset = undeclared.
+BRIDGE_SAW_GROUND_TRUTH_ENV = "MECHANISTIC_AGENT_BRIDGE_SAW_GROUND_TRUTH"
+
+
+def parse_saw_ground_truth(raw: Optional[str]) -> Any:
+    """Parse the declared ground-truth exposure flag: True / False / "undeclared"."""
+    text = str(raw or "").strip().lower()
+    if text in {"1", "true", "yes", "y"}:
+        return True
+    if text in {"0", "false", "no", "n"}:
+        return False
+    return "undeclared"
+
+
+def origin_saw_ground_truth(origin: Any) -> Any:
+    """Read ``responder_saw_ground_truth`` from an origin block (None when absent)."""
+    if not isinstance(origin, dict):
+        return None
+    value = origin.get("responder_saw_ground_truth")
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    return parse_saw_ground_truth(str(value))
 
 DEFAULT_TIMEOUT_SECONDS = 1800.0
 DEFAULT_POLL_SECONDS = 0.2
@@ -271,6 +297,7 @@ def build_origin_provenance(model: Optional[str] = None) -> Dict[str, Any]:
         "declared_underlying_model": declared,
         "responder_kind": kind,
         "budget_observability": "opaque",
+        "responder_saw_ground_truth": parse_saw_ground_truth(os.getenv(BRIDGE_SAW_GROUND_TRUTH_ENV)),
     }
     if model:
         record["bridge_model"] = str(model)

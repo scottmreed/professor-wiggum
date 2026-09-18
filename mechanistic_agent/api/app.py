@@ -2863,6 +2863,20 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "exported_at": time.time(),
             "exported_by": created_by,
         }
+        # Ground-truth exposure: hosted-model runs never see the verified
+        # mechanism (it lives only in the eval-set expected block). Bridge runs
+        # carry the responder's declaration in config.origin; undeclared stays
+        # undeclared so the evidence gate rejects it until someone states it.
+        run_origin = None
+        run_row = store.get_run_row(str(trace_row.get("run_id") or "")) if trace_row.get("run_id") else None
+        if isinstance(run_row, dict):
+            run_origin = (run_row.get("config") or {}).get("origin")
+        if isinstance(run_origin, dict):
+            payload["origin"] = dict(run_origin)
+            exposure = run_origin.get("responder_saw_ground_truth")
+            payload["responder_saw_ground_truth"] = exposure if exposure is not None else "undeclared"
+        else:
+            payload["responder_saw_ground_truth"] = False
         evidence_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         return {
             "trace_id": trace_id,

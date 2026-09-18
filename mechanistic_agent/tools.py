@@ -377,21 +377,37 @@ def _build_species_registry_and_constraints(
         if source not in entry["sources"]:
             entry["sources"].append(source)
 
+    def _is_unchanged_overall(species: str) -> bool:
+        """True only when the species appears unchanged on BOTH sides of the
+        overall reaction. Only such species may be carried forward as
+        persistent (catalyst / spectator / counterion). A stoichiometric
+        reagent that happens to be listed by the conditions step as an acid or
+        base (SOCl2, HCl, Et3N, ...) is consumed and must NOT be re-appended to
+        later resulting states."""
+        return species in canonical_starting and species in canonical_products
+
     for idx, species in enumerate(canonical_starting):
         entry = _ensure_entry(species)
         _add_source(entry, "starting_materials")
-        if species in acid_supports:
-            _add_role(entry, "acid")
-            _add_role(entry, "catalyst")
-            _add_tag(entry, "persistent")
-            _add_tag(entry, "eligible_now")
-        elif species in base_supports:
-            _add_role(entry, "base")
-            _add_role(entry, "catalyst")
-            _add_tag(entry, "persistent")
+        unchanged = _is_unchanged_overall(species)
+        if species in acid_supports or species in base_supports:
+            _add_role(entry, "acid" if species in acid_supports else "base")
+            if unchanged:
+                _add_role(entry, "catalyst")
+                _add_tag(entry, "persistent")
+            else:
+                _add_role(entry, "reagent")
+                _add_tag(entry, "consumed_on_use")
             _add_tag(entry, "eligible_now")
         elif _is_counterion_like_species(species):
             _add_role(entry, "counterion")
+            if unchanged:
+                _add_role(entry, "spectator")
+                _add_tag(entry, "persistent")
+            else:
+                _add_tag(entry, "consumed_on_use")
+            _add_tag(entry, "eligible_now")
+        elif unchanged:
             _add_role(entry, "spectator")
             _add_tag(entry, "persistent")
             _add_tag(entry, "eligible_now")
@@ -402,20 +418,23 @@ def _build_species_registry_and_constraints(
             _add_role(entry, "coreactant")
             _add_tag(entry, "eligible_now")
 
+    # Condition-derived additives (not present in the declared starting
+    # materials) are eligible reactants but never persistent: if a step
+    # consumes them (e.g. Et3N -> Et3NH+) they must not be re-added.
     for species in acid_supports:
         entry = _ensure_entry(species)
         _add_source(entry, "conditions")
         _add_role(entry, "acid")
-        _add_role(entry, "catalyst")
-        _add_tag(entry, "persistent")
+        if "starting_materials" not in entry["sources"]:
+            _add_tag(entry, "condition_additive")
         _add_tag(entry, "eligible_now")
 
     for species in base_supports:
         entry = _ensure_entry(species)
         _add_source(entry, "conditions")
         _add_role(entry, "base")
-        _add_role(entry, "catalyst")
-        _add_tag(entry, "persistent")
+        if "starting_materials" not in entry["sources"]:
+            _add_tag(entry, "condition_additive")
         _add_tag(entry, "eligible_now")
 
     for species in canonical_missing_reactants:
@@ -423,18 +442,16 @@ def _build_species_registry_and_constraints(
         _add_source(entry, "missing_reactants")
         if species in acid_supports:
             _add_role(entry, "acid")
-            _add_role(entry, "catalyst")
-            _add_tag(entry, "persistent")
         elif species in base_supports:
             _add_role(entry, "base")
-            _add_role(entry, "catalyst")
-            _add_tag(entry, "persistent")
         elif _is_counterion_like_species(species):
             _add_role(entry, "counterion")
+        else:
+            _add_role(entry, "coreactant")
+        if species in canonical_products:
             _add_role(entry, "spectator")
             _add_tag(entry, "persistent")
         else:
-            _add_role(entry, "coreactant")
             _add_tag(entry, "consumed_on_use")
         _add_tag(entry, "eligible_now")
 
@@ -6562,6 +6579,7 @@ def predict_mechanistic_step(
     previous_intermediates: Optional[List[str]] = None,
     note: Optional[str] = None,
     starting_materials: Optional[List[str]] = None,
+    allowed_extra_species: Optional[List[str]] = None,
 ) -> str:
     """Validate and record a single mechanistic electron-pushing step.
 
@@ -6687,6 +6705,7 @@ def predict_mechanistic_step(
         resulting_state=resulting_state,
         target_products=target_products,
         starting_materials=starting_materials,
+        allowed_extra_species=allowed_extra_species,
     )
     contains_products = bool(target_state["contains_target_product"])
 

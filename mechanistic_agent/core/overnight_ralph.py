@@ -65,6 +65,7 @@ class OvernightRalphOrchestrator:
         base_dir: Path,
         store: RunStore,
         coordinator: Optional[RunCoordinator] = None,
+        chat_model_factory: Optional[Any] = None,
     ) -> None:
         self.base_dir = base_dir
         self.store = store
@@ -73,6 +74,12 @@ class OvernightRalphOrchestrator:
         self.ledger = ExperimentLedger(base_dir=base_dir, store=store)
         self.stop_event = threading.Event()
         self.status = OvernightRalphStatus()
+        # Mutation proposer settings (set per run() from the program config).
+        self._mutation_proposer: str = "random"
+        self._mutation_model: Optional[str] = None
+        self._chat_model_factory = chat_model_factory
+        self._latest_failure_digest: List[Dict[str, Any]] = []
+        self._allowed_lanes: List[str] = []
 
     def request_stop(self) -> None:
         self.stop_event.set()
@@ -109,6 +116,10 @@ class OvernightRalphOrchestrator:
             allowed_lanes = list(config.allowed_lanes or ["topology", "harness"])
             if not allowed_lanes:
                 allowed_lanes = ["topology"]
+            self._mutation_proposer = str(getattr(config, "mutation_proposer", "random") or "random")
+            self._mutation_model = getattr(config, "mutation_model", None) or str(run_config.get("model_name") or run_config.get("model") or "")
+            self._allowed_lanes = list(allowed_lanes)
+            self._refresh_failure_digest()
 
             from mechanistic_agent.prompt_assets import traces_root
 
@@ -125,6 +136,11 @@ class OvernightRalphOrchestrator:
                 self.status.current_experiment = idx
 
                 mutated = self._propose_mutation(lane=lane, parent_asset=parent_asset)
+                # An LLM proposer may pick a different (allowed) lane than the
+                # scheduled one; record and apply the lane it actually mutated.
+                effective_lane = getattr(mutated, "lane", None) or lane
+                if effective_lane in {"topology", "harness", "prompt", "few_shot"}:
+                    lane = effective_lane  # type: ignore[assignment]
                 harness_override: Optional[str] = None
                 if lane in {"topology", "harness"}:
                     harness_override = str(mutated.asset_path)
@@ -136,6 +152,7 @@ class OvernightRalphOrchestrator:
                     harness_config_path=harness_override,
                 )
                 spent_cost += float(result.token_cost_usd)
+                self._refresh_failure_digest()
 
                 keep, revert_reason = self._should_keep(
                     baseline=baseline_result,
@@ -194,6 +211,18 @@ class OvernightRalphOrchestrator:
             self.status.error = str(exc)
             raise
 
+    def _refresh_failure_digest(self) -> None:
+        """Rebuild the failure digest from the micro-eval runner's latest snapshots."""
+        snapshots = getattr(self.micro_eval, "last_snapshots", None) or []
+        if not snapshots:
+            return
+        try:
+            from .llm_mutator import build_failure_digest
+
+            self._latest_failure_digest = build_failure_digest(snapshots)
+        except Exception:
+            self._latest_failure_digest = []
+
     def _resolve_parent_harness_asset(self, run_config: Dict[str, Any]) -> Path:
         harness_path = str(run_config.get("harness_config_path") or "").strip()
         if harness_path:
@@ -209,6 +238,20 @@ class OvernightRalphOrchestrator:
         return path
 
     def _propose_mutation(self, *, lane: RalphLane, parent_asset: Path):
+        if self._mutation_proposer == "llm":
+            from .llm_mutator import LLMLaneMutator
+
+            mutator = LLMLaneMutator(
+                base_dir=self.base_dir,
+                model_name=str(self._mutation_model or "agent-bridge"),
+                chat_model_factory=self._chat_model_factory,
+            )
+            return mutator.propose(
+                parent_asset,
+                failure_digest=list(self._latest_failure_digest),
+                allowed_lanes=list(self._allowed_lanes) or None,
+                preferred_lane=str(lane),
+            )
         if lane == "topology":
             return TopologyLaneMutator().propose(parent_asset)
         if lane == "harness":
@@ -339,7 +382,14 @@ def load_overnight_program(path: Path) -> OvernightRalphConfig:
         if text_lane in {"topology", "harness", "prompt", "few_shot"}:
             allowed_lanes.append(text_lane)  # type: ignore[arg-type]
 
+    proposer = str(data.get("mutation_proposer") or "random").strip().lower()
+    if proposer not in {"random", "llm"}:
+        proposer = "random"
+    mutation_model = str(data.get("mutation_model") or "").strip() or None
+
     return OvernightRalphConfig(
+        mutation_proposer=proposer,
+        mutation_model=mutation_model,
         eval_slice_id=str(data.get("eval_slice_id") or "default"),
         eval_slice_size=max(1, int(data.get("eval_slice_size") or 10)),
         eval_case_ids=[str(item) for item in (data.get("eval_case_ids") or [])],

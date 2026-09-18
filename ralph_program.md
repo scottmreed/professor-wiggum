@@ -29,6 +29,15 @@ allowed_lanes:
 - prompt
 - few_shot
 
+## Mutation proposer
+
+# random = the blind lane mutators (nudge an integer, toggle a module, append a fixed sentence, drop a few-shot line).
+# llm = ask mutation_model to read the failure digest of the last slice (failed validator checks, reproposal
+#       reasons, rescue outcomes) and propose ONE targeted edit; still gated by the acceptance rule below.
+#       Leave mutation_model empty to reuse the run model; `agent-bridge` works keyless.
+mutation_proposer: random
+mutation_model:
+
 ## Frozen surfaces
 
 # Paths that overnight Ralph must never modify (validators, scoring, eval data, holdout, model pricing).

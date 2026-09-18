@@ -298,6 +298,9 @@ def test_unverified_balance_pending_soft_advance_records_reason() -> None:
     store = _MemoryStore()
     coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
     state = _state(mode="unverified")
+    # The balance_pending soft-advance is opt-in (permissive_default harness);
+    # with the default strict flag a failed atom balance is never accepted.
+    state.run_config.proceed_on_validation_failure = True
 
     class _IntermediateAgent:
         def run(self, _state: RunState, template_guidance: Optional[Dict[str, Any]] = None) -> StepResult:
@@ -348,6 +351,64 @@ def test_unverified_balance_pending_soft_advance_records_reason() -> None:
     assert soft_events
     assert soft_events[-1]["payload"]["reason"] == "balance_pending"
     assert state.current_state == ["CCCl", "[Br-]", "O"]
+
+
+def test_strict_default_does_not_soft_advance_balance_pending() -> None:
+    """With proceed_on_validation_failure=False (default harness), a candidate that
+    fails atom balance is never accepted, even in unverified mode."""
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(mode="unverified")
+    assert state.run_config.proceed_on_validation_failure is False
+
+    class _IntermediateAgent:
+        def run(self, _state: RunState, template_guidance: Optional[Dict[str, Any]] = None) -> StepResult:
+            return StepResult(
+                step_name="mechanism_step_proposal",
+                tool_name="propose_mechanism_step",
+                output={
+                    "classification": "intermediate_step",
+                    "candidates": [
+                        {"rank": 1, "intermediate_smiles": "CCCl", "resulting_state": ["CCCl", "[Br-]", "O"]}
+                    ],
+                },
+                source="llm",
+            )
+
+    coordinator.intermediate_agent = _IntermediateAgent()  # type: ignore[assignment]
+
+    def _failed_balance_pending(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        return {
+            "status": "failed",
+            "last_validation": {
+                "passed": False,
+                "checks": [
+                    {"name": "atom_balance", "passed": False, "details": {"classification": "imbalanced", "deficit": {"O": 1}}},
+                    {"name": "state_progress", "passed": True, "details": {}},
+                ],
+            },
+            "failed_checks": ["atom_balance"],
+            "validation_signature": "atom-balance",
+            "candidate_rank": 1,
+            "rescue_attempted": True,
+            "rescue_outcome": "no_changes",
+            "mechanism_output": {
+                "current_state": ["CCBr", "[Cl-]"],
+                "resulting_state": ["CCCl", "[Br-]", "O"],
+                "contains_target_product": True,
+            },
+        }
+
+    coordinator._try_candidate_with_retries = _failed_balance_pending  # type: ignore[method-assign]
+    # No candidate validates and nothing is soft-accepted, so the run pauses
+    # for a user decision instead of inventing a step (SOUL Guardrail 5).
+    with pytest.raises(_RunPaused):
+        coordinator._run_mechanism_loop(state, threading.Event())
+
+    soft_events = [ev for ev in store.events if ev["event_type"] == "mechanism_step_soft_advance"]
+    assert not soft_events
+    assert state.current_state == ["CCBr", "[Cl-]"]
+    assert state.paused is True
 
 
 def test_verified_mode_does_not_soft_advance_balance_pending() -> None:

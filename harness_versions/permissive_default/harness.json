@@ -1,7 +1,7 @@
 {
-  "name": "default",
+  "name": "permissive_default",
   "schema_version": "2.1",
-  "description": "Standard mechanistic reasoning harness. Pre-loop analysis followed by iterative step proposal with deterministic validation.",
+  "description": "Permissive control variant of the default harness: identical module graph, but run_config_defaults.proceed_on_validation_failure is true so a validation-failing candidate can be soft-accepted and re-evaluated post-loop. Kept for A/B comparison against 'default'; not the reference harness for leaderboard claims.",
   "tool_calling_mode": "forced",
   "few_shot_defaults": {
     "enabled": true,
@@ -354,7 +354,7 @@
     }
   ],
   "run_config_defaults": {
-    "proceed_on_validation_failure": false,
+    "proceed_on_validation_failure": true,
     "proceed_only_on_arrow_push_failure": false
   },
   "topology_profiles": {
@@ -395,28 +395,8 @@
     "changelog": [
       {
         "version": 1,
-        "date": "2024-01-01",
-        "description": "Initial default harness migrated from hardcoded pipeline in coordinator.py."
-      },
-      {
-        "version": 2,
-        "date": "2026-03-01",
-        "description": "Migrated to schema_version 2.0: added explicit step ordering, loop_module section, validator_skill references, tool_calling_mode, and execution_note for human readability."
-      },
-      {
-        "version": 3,
-        "date": "2026-03-05",
-        "description": "Schema 2.1: added topology_profiles for SAS / centralized MAS / independent MAS / decentralized MAS coordination strategies."
-      },
-      {
-        "version": 4,
-        "date": "2026-03-10",
-        "description": "Added post_loop_modules (past_failure_reevaluation), run_config_defaults (proceed_on_validation_failure, proceed_only_on_arrow_push_failure). ModulePhase extended with 'post_loop'."
-      },
-      {
-        "version": 5,
         "date": "2026-09-16",
-        "description": "run_config_defaults.proceed_on_validation_failure set to false so deterministic validation is the arbiter (SOUL Guardrail 1). The coordinator now actually applies run_config_defaults and gates the balance_pending soft-advance on the same flag. The previous permissive behaviour lives on as harness_versions/permissive_default for A/B comparison."
+        "description": "Created from default v5 as the named permissive variant (soft-advance on validation failure enabled) so the old behaviour can be compared against strict validation."
       }
     ]
   }

@@ -81,6 +81,9 @@ class RunCoordinator:
         self.intermediate_agent = IntermediateAgent(executor)
         self.mechanism_agent = MechanismAgent(executor)
         self.reflection_agent = ReflectionAgent()
+        # Per-run cache of candidate-rescue results keyed by failure signature so
+        # the same imbalance is never re-asked of the model within one run.
+        self._rescue_cache: Dict[str, Dict[str, StepResult]] = {}
         self._agent_registry: Dict[str, Any] = {
             "BalanceAgent": self.balance_agent,
             "ConditionsAgent": self.conditions_agent,
@@ -1214,6 +1217,18 @@ class RunCoordinator:
         if not isinstance(proposal_constraints, dict) or not proposal_constraints:
             return dict(candidate), None
 
+        # Declared spectators / additives may remain in the final state without
+        # blocking the all-targets-reached completion check.
+        try:
+            state.allowed_extra_species = self._canonicalize_constraint_species_list(
+                list(proposal_constraints.get("condition_support_species") or [])
+                + list(proposal_constraints.get("persistent_species") or [])
+                + list(proposal_constraints.get("spectator_species") or [])
+                + list(proposal_constraints.get("counterion_species") or [])
+            )
+        except Exception:
+            pass
+
         repaired_candidate, repair_notes = self._apply_candidate_constraint_repairs(
             state,
             candidate,
@@ -1314,6 +1329,57 @@ class RunCoordinator:
             "tool_calling_used": False,
             "example_id": example_id,
         }
+
+    # RunConfig keys a harness may default via ``run_config_defaults``.
+    _HARNESS_RUN_CONFIG_DEFAULT_KEYS: frozenset = frozenset(
+        {
+            "proceed_on_validation_failure",
+            "proceed_only_on_arrow_push_failure",
+            "candidate_rescue_enabled",
+            "retry_same_candidate_max",
+            "max_reproposals_per_step",
+            "repeat_failure_signature_limit",
+        }
+    )
+
+    def _apply_harness_run_config_defaults(
+        self,
+        state: RunState,
+        harness: Optional[HarnessConfig],
+        *,
+        raw_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Apply ``harness.run_config_defaults`` for keys the run left unset.
+
+        Explicit per-run values (present in the stored run config) always win;
+        the harness only fills gaps. Returns the applied overrides so callers
+        and tests can inspect them.
+        """
+        if harness is None or not getattr(harness, "run_config_defaults", None):
+            return {}
+        explicit = raw_config if isinstance(raw_config, dict) else {}
+        applied: Dict[str, Any] = {}
+        for key, value in dict(harness.run_config_defaults).items():
+            if key not in self._HARNESS_RUN_CONFIG_DEFAULT_KEYS:
+                continue
+            if key in explicit and explicit.get(key) is not None:
+                continue
+            current = getattr(state.run_config, key, None)
+            if isinstance(current, bool):
+                coerced: Any = self._coerce_bool(value, current)
+            elif isinstance(current, int):
+                coerced = self._coerce_int(value, current)
+            else:
+                coerced = value
+            setattr(state.run_config, key, coerced)
+            applied[key] = coerced
+        if applied:
+            self.store.append_event(
+                state.run_id,
+                "harness_run_config_defaults_applied",
+                {"harness": getattr(harness, "name", None), "applied": applied},
+            )
+        return applied
 
     def _run_initial_phase(self, state: RunState, harness: Optional[HarnessConfig] = None) -> None:
         """Run pre-loop analysis modules. Driven by harness config when provided."""
@@ -1872,6 +1938,31 @@ class RunCoordinator:
         resulting_state = [str(x) for x in output.get("resulting_state") or []]
         if not current_state or not resulting_state:
             return None
+
+        cache_key = self._rescue_cache_key(
+            current_state=current_state,
+            resulting_state=resulting_state,
+            failed_checks=failed_checks,
+        )
+        run_cache = getattr(self, "_rescue_cache", None)
+        if run_cache is None:
+            run_cache = {}
+            self._rescue_cache = run_cache
+        cached = run_cache.get(state.run_id, {}).get(cache_key)
+        if cached is not None:
+            self.store.append_event(
+                state.run_id,
+                "candidate_rescue_cache_hit",
+                {
+                    "attempt": state.step_index + 1,
+                    "candidate_rank": candidate_rank,
+                    "failed_checks": failed_checks,
+                    "cache_key": cache_key,
+                },
+                step_name="candidate_rescue",
+            )
+            return cached
+
         self.store.append_event(
             state.run_id,
             "candidate_rescue_started",
@@ -1933,7 +2024,23 @@ class RunCoordinator:
             },
             step_name="candidate_rescue",
         )
+        run_cache.setdefault(state.run_id, {})[cache_key] = rescue_result
         return rescue_result
+
+    @staticmethod
+    def _rescue_cache_key(
+        *,
+        current_state: List[str],
+        resulting_state: List[str],
+        failed_checks: List[str],
+    ) -> str:
+        """Stable signature of a rescue request: same species delta + same failed checks."""
+        payload = {
+            "current": sorted(str(x) for x in current_state),
+            "resulting": sorted(str(x) for x in resulting_state),
+            "failed_checks": sorted(str(x) for x in failed_checks or []),
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
     def _record_validation_checks(
         self,
@@ -2695,8 +2802,13 @@ class RunCoordinator:
         proposal_output: Dict[str, Any],
         enabled_validators: Optional[set[str]] = None,
         loop_start: Optional[float] = None,
+        allow_rescue: bool = True,
     ) -> Dict[str, Any]:
         """Validate a single candidate with up to 3 retry attempts.
+
+        ``allow_rescue=False`` validates the candidate without spending a
+        candidate-rescue LLM call (used for lower-ranked alternates once a
+        higher-ranked candidate has already validated).
 
         Returns a dict with keys:
         - ``status``: ``validated`` | ``failed`` | ``incomplete``
@@ -2922,7 +3034,22 @@ class RunCoordinator:
                 }
 
             rescue_result: Optional[StepResult] = None
-            if self._runtime_budget_guard_triggered(
+            if not allow_rescue:
+                # A higher-ranked candidate already validated for this step;
+                # alternates are validated for branch points only and must not
+                # spend an LLM rescue call.
+                rescue_outcome = "skipped_alternate"
+                self.store.append_event(
+                    state.run_id,
+                    "candidate_rescue_skipped_alternate",
+                    {
+                        "attempt": state.step_index + 1,
+                        "candidate_rank": candidate.get("rank"),
+                        "failed_checks": list(last_failed_checks),
+                    },
+                    step_name="candidate_rescue",
+                )
+            elif self._runtime_budget_guard_triggered(
                 state,
                 loop_start=loop_start,
                 step_name="candidate_rescue",
@@ -4137,7 +4264,14 @@ class RunCoordinator:
                     _ev = self._enabled_validators(harness) if harness else None
                     try:
                         attempt_result = self._try_candidate_with_retries(
-                            state, candidate, proposal_output, enabled_validators=_ev, loop_start=start,
+                            state,
+                            candidate,
+                            proposal_output,
+                            enabled_validators=_ev,
+                            loop_start=start,
+                            # Once a candidate has validated, alternates are only
+                            # checked for branch points: no rescue LLM calls.
+                            allow_rescue=not validated,
                         )
                     except Exception as exc:
                         attempt_result = {
@@ -4665,7 +4799,10 @@ class RunCoordinator:
                             return
                         continue
                     # ── Deferred atom-balance soft-advance (unverified only) ─────
-                    if state.mode == "unverified":
+                    # Gated on proceed_on_validation_failure: with the flag off
+                    # (default harness), a candidate that fails atom balance is
+                    # never accepted, so deterministic validation stays the arbiter.
+                    if state.mode == "unverified" and state.run_config.proceed_on_validation_failure:
                         balance_pending_candidate = self._best_balance_pending_candidate(
                             candidate_attempts=candidate_attempts,
                         )
@@ -5381,6 +5518,11 @@ class RunCoordinator:
                 return
 
         harness = self._resolve_harness(state)
+        self._apply_harness_run_config_defaults(
+            state,
+            harness,
+            raw_config=run_row.get("config") if isinstance(run_row.get("config"), dict) else {},
+        )
 
         # Set thread-local model context so tool functions can read model config.
         model_context.set_run_context(

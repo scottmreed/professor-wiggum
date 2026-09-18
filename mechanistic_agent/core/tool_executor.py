@@ -191,6 +191,7 @@ class ToolExecutor:
         previous_intermediates: List[str],
         starting_materials: List[str],
         note: Optional[str],
+        allowed_extra_species: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         # Keep a deterministic fallback only when proposal output is incomplete.
         pushes = electron_pushes or [{"kind": "lone_pair", "source_atom": "0", "target_atom": "1", "electrons": 2}]
@@ -206,5 +207,6 @@ class ToolExecutor:
                 previous_intermediates=previous_intermediates,
                 note=note,
                 starting_materials=starting_materials,
+                allowed_extra_species=allowed_extra_species,
             )
         )

@@ -30,16 +30,16 @@ def test_reaction_type_catalog_matches_taxonomy_labels_exactly() -> None:
     catalog = load_reaction_type_catalog_for_runtime()
     labels = list(catalog.get("taxonomy_labels") or [])
     assert labels == _taxonomy_labels()
-    assert len(labels) == 80
+    assert len(labels) == 86
 
 
 def test_reaction_type_catalog_has_stable_ids() -> None:
     catalog = load_reaction_type_catalog_for_runtime()
     templates = list(catalog.get("templates") or [])
     ids = [str(item.get("type_id") or "") for item in templates if isinstance(item, dict)]
-    assert len(ids) == 80
+    assert len(ids) == 86
     assert ids[0] == "rt_001"
-    assert ids[-1] == "rt_080"
+    assert ids[-1] == "rt_086"
 
 
 def test_runtime_catalog_loads_from_reaction_type_templates_only(tmp_path: Path) -> None:
@@ -53,7 +53,7 @@ def test_runtime_catalog_loads_from_reaction_type_templates_only(tmp_path: Path)
     assert not (training_dir / "rxn_map.txt").exists()
 
     catalog = load_reaction_type_catalog(tmp_path)
-    assert len(list(catalog.get("templates") or [])) == 80
+    assert len(list(catalog.get("templates") or [])) == 86
     assert list(catalog.get("taxonomy_labels") or [])[0]
 
 
