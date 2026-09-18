@@ -1268,6 +1268,7 @@ def prepare_eval_set_batch(
     island: IslandConfig,
     generation: int,
     step_count_override: Optional[int] = None,
+    prioritize_case_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Build a curriculum-shaped batch from the cases of a stored eval set.
 
@@ -1276,6 +1277,11 @@ def prepare_eval_set_batch(
     FlowER curriculum index. Cases rotate by generation; the hard island only
     sees 4+ step cases. Synthetic ``entry`` rows carry the fields
     ``run_curriculum_batch`` / ``_curriculum_summary`` expect.
+
+    ``prioritize_case_ids`` (normally the cases whose latest recorded result on
+    this eval set failed) are rotated through first, so a mutation proposed
+    from failure traces is evaluated on the cases that produced those traces
+    instead of on cases that already pass.
     """
     rows = [row for row in store.list_eval_set_cases(eval_set_id) if isinstance(row, dict)]
     scored: List[Tuple[int, Dict[str, Any]]] = []
@@ -1287,6 +1293,11 @@ def prepare_eval_set_batch(
             continue
         scored.append((steps, row))
     scored.sort(key=lambda item: (item[0], str(item[1].get("case_id") or "")))
+    priority = {str(cid) for cid in (prioritize_case_ids or []) if str(cid)}
+    if priority:
+        scored = [item for item in scored if str(item[1].get("case_id") or "") in priority] + [
+            item for item in scored if str(item[1].get("case_id") or "") not in priority
+        ]
     if not scored:
         return {"runnable_cases": [], "conversion_failures": [], "batch_start_rank": 0, "current_step_count": 0}
 
@@ -1335,6 +1346,37 @@ def prepare_eval_set_batch(
         "batch_start_rank": offset + 1,
         "current_step_count": int(selected[0][0]) if selected else 0,
     }
+
+
+def prior_failing_case_ids(store: RunStore, eval_set_id: str) -> List[str]:
+    """Case ids whose most recent recorded result on this eval set did not pass.
+
+    Every eval run on the set counts (CLI evals and earlier island generations
+    alike), so a case drops out of the list as soon as a newer run passes it.
+    Sorted for determinism. Uses only pass/fail verdicts, never case ground truth.
+    """
+    try:
+        eval_runs = list(store.list_eval_runs(eval_set_id) or [])
+    except Exception:
+        return []
+    run_ids = [str(row.get("id") or "") for row in eval_runs if row.get("id")]
+    if not run_ids:
+        return []
+    created_at = {str(row.get("id") or ""): float(row.get("created_at") or 0.0) for row in eval_runs}
+    try:
+        grouped = store.list_eval_run_results_many(run_ids)
+    except Exception:
+        return []
+    latest: Dict[str, Tuple[float, bool]] = {}
+    for eval_run_id, results in grouped.items():
+        stamp = created_at.get(eval_run_id, 0.0)
+        for item in results:
+            case_id = str(item.get("case_id") or "")
+            if not case_id or item.get("pass_bool") is None:
+                continue
+            if case_id not in latest or stamp > latest[case_id][0]:
+                latest[case_id] = (stamp, bool(item.get("pass_bool")))
+    return sorted(case_id for case_id, (_, passed) in latest.items() if not passed)
 
 
 def _initial_failure_digest(store: RunStore, eval_set_id: str, *, limit: int = 8) -> List[Dict[str, Any]]:
@@ -1500,6 +1542,9 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                 step_override = 9  # 9+ step reactions
 
             if use_eval_set_cases:
+                failing_case_ids = prior_failing_case_ids(runtime_store, config.eval_set_id)
+                if failing_case_ids:
+                    print(f"  Scheduling previously failing case(s) first: {', '.join(failing_case_ids[:6])}")
                 prepared_batch = prepare_eval_set_batch(
                     store=runtime_store,
                     eval_set_id=config.eval_set_id,
@@ -1507,6 +1552,7 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                     island=island,
                     generation=generation,
                     step_count_override=config.step_count_filter,
+                    prioritize_case_ids=failing_case_ids,
                 )
             else:
                 selection = next_curriculum_candidates(
