@@ -74,7 +74,11 @@ from mechanistic_agent.prompt_assets import (
     load_call_few_shot_examples,
     score_few_shot_example,
 )
-from mechanistic_agent.scoring import score_snapshot_against_known, score_subagents_from_step_outputs
+from mechanistic_agent.scoring import (
+    DEFAULT_SCORING_VERSION,
+    score_snapshot_against_known,
+    score_subagents_from_step_outputs,
+)
 from mechanistic_agent.smiles_utils import strip_atom_mapping_list
 
 
@@ -785,12 +789,20 @@ def run_curriculum_batch(
 
             snapshot = store.get_run_snapshot(run_id) or {}
             step_outputs = snapshot.get("step_outputs", [])
-            graded = score_snapshot_against_known(snapshot, expected) if expected else {"score": 0.0, "passed": False}
+            graded = (
+                score_snapshot_against_known(snapshot, expected, scoring_version=DEFAULT_SCORING_VERSION)
+                if expected
+                else {"score": 0.0, "passed": False}
+            )
             score = float(graded.get("score", 0.0))
             passed = bool(graded.get("passed", False))
             subagent_scores: Dict[str, Any] = {}
             try:
-                subagent_scores = score_subagents_from_step_outputs(step_outputs)
+                subagent_scores = score_subagents_from_step_outputs(
+                    step_outputs,
+                    scoring_version=DEFAULT_SCORING_VERSION,
+                    mapping_agreement=graded.get("mapping_agreement"),
+                )
             except Exception:
                 pass
             current_state = snapshot.get("current_state", [])
@@ -813,6 +825,7 @@ def run_curriculum_batch(
                     "eval_mode": "harness",
                     "subagent_scores": subagent_scores,
                     "mapping_agreement": graded.get("mapping_agreement"),
+                    "scoring_version": DEFAULT_SCORING_VERSION,
                     "run_status": run_status,
                     "current_state": current_state,
                 },

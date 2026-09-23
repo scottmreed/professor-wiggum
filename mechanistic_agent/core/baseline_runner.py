@@ -463,6 +463,7 @@ def score_baseline_result(
         "score": graded["score"],
         "passed": graded["passed"],
         "scoring_breakdown": graded,
+        "scoring_version": graded.get("scoring_version"),
         "step_count": len(result.get("raw_steps") or []),
         "mechanism_type": result.get("mechanism_type"),
         "error": result.get("error"),
