@@ -1,6 +1,7 @@
 """Explicit run coordinator for the local-first mechanistic runtime."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -10,7 +11,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from mechanistic_agent.model_registry import get_default_model
-from mechanistic_agent.smiles_utils import canonicalize_if_valid
+from mechanistic_agent.smiles_utils import canonicalize_if_valid, strip_atom_mapping_list
 
 from . import model_context
 from .arrow_push import predict_arrow_push_annotation
@@ -24,6 +25,12 @@ from .scratchpad import (
 )
 from .baseline_runner import BaselineRunner
 from .db import RunStore
+from .global_mapping_context import (
+    MAPPED_SPECIES_CONTEXT_KEY,
+    mapped_current_state_for,
+    render_global_mapping,
+    summarize_global_mapping,
+)
 from .mechanism_moves import normalize_electron_pushes, repair_candidate_reaction_smirks
 from .reaction_type_templates import (
     compact_template_for_prompt,
@@ -57,6 +64,7 @@ from .types import (
     TemplateGuidanceState,
     TopologyProfile,
     StepValidationCheck,
+    normalize_loop_state_mapping,
     StepValidationResult,
 )
 from .validators import ALL_VALIDATOR_IDS, validate_mechanism_step_output
@@ -81,6 +89,9 @@ class RunCoordinator:
         self.intermediate_agent = IntermediateAgent(executor)
         self.mechanism_agent = MechanismAgent(executor)
         self.reflection_agent = ReflectionAgent()
+        # Per-run cache of candidate-rescue results keyed by failure signature so
+        # the same imbalance is never re-asked of the model within one run.
+        self._rescue_cache: Dict[str, Dict[str, StepResult]] = {}
         self._agent_registry: Dict[str, Any] = {
             "BalanceAgent": self.balance_agent,
             "ConditionsAgent": self.conditions_agent,
@@ -95,16 +106,29 @@ class RunCoordinator:
 
     @property
     def _base_dir(self):
-        """Resolve project base directory from store DB path.
+        """Resolve Mechanistic repo root (code + committed assets).
 
         Returns ``None`` when the store is a test mock without ``db_path``.
         """
         db_path = getattr(self.store, "db_path", None)
         if db_path is None:
             return None
+        from mechanistic_agent.data_paths import repo_root
+
+        return repo_root()
+
+    def _trace_data_root(self):
+        db_path = getattr(self.store, "db_path", None)
+        if db_path is None:
+            return None
         from pathlib import Path
-        p = Path(db_path).parent
-        return p.parent if p.name == "data" else p
+
+        from mechanistic_agent.data_paths import data_root_for_db
+
+        return data_root_for_db(Path(db_path))
+
+    def _scratchpad_root(self):
+        return self._trace_data_root() or self._base_dir
 
     def _resolve_harness(self, state: RunState) -> HarnessConfig:
         """Resolve harness config from run config, falling back to default."""
@@ -177,8 +201,8 @@ class RunCoordinator:
             reasoning_level=config.get("reasoning_level"),
             optional_llm_tools=list(config.get("optional_llm_tools") or []),
             functional_groups_enabled=self._coerce_bool(
-                config.get("functional_groups_enabled", False),
-                False,
+                config.get("functional_groups_enabled", True),
+                True,
             ),
             intermediate_prediction_enabled=self._coerce_bool(
                 config.get("intermediate_prediction_enabled", True),
@@ -327,6 +351,11 @@ class RunCoordinator:
                 if config.get("runtime_trace_label")
                 else None
             ),
+            example_reaction_type_bypass=(
+                self._coerce_bool(config.get("example_reaction_type_bypass"), True)
+                if config.get("example_reaction_type_bypass") is not None
+                else None
+            ),
         )
         mode: RunMode = str(run_row.get("mode") or "unverified")  # type: ignore[assignment]
 
@@ -337,6 +366,8 @@ class RunCoordinator:
             run_config=run_config,
         )
         state.initialise()
+        boundary = payload.get("input_boundary") if isinstance(payload.get("input_boundary"), dict) else {}
+        state.mapped_seed_species = [str(s) for s in (boundary.get("original_starting_materials") or [])]
         self._hydrate_state_from_outputs(state)
         return state
 
@@ -353,6 +384,9 @@ class RunCoordinator:
             key=lambda row: (int(row.get("attempt") or 0), int(row.get("retry_index") or 0))
         )
         if not mechanism_rows:
+            # No passed step outputs: nothing else to hydrate (unchanged), but a
+            # resume snapshot, if one exists, is still authoritative.
+            self._restore_resume_state(state)
             return
 
         latest = mechanism_rows[-1]
@@ -409,12 +443,17 @@ class RunCoordinator:
                     emit_event=False,
                 )
 
+        # Branch points (with their untried alternatives) and the mapped loop
+        # state come from the latest ``run_resume_state`` snapshot when one
+        # exists; older runs fall back to event replay (no alternatives).
+        restored_resume_state = self._restore_resume_state(state)
+
         # Reconstruct branch points and failed paths from stored events.
         events = self.store.list_events(state.run_id) if hasattr(self.store, "list_events") else []
         for ev in events:
             ev_type = ev.get("event_type") or ""
             payload = ev.get("payload") or {}
-            if ev_type == "branch_point_created":
+            if ev_type == "branch_point_created" and not restored_resume_state:
                 bp = BranchPoint(
                     step_index=int(payload.get("step_index") or 0),
                     current_state=list(payload.get("current_state") or []),
@@ -425,9 +464,8 @@ class RunCoordinator:
                         else None
                     ),
                 )
-                # Restore alternative count (alternatives themselves are lost on
-                # serialisation but the branch point existence is preserved for
-                # backtracking decisions).
+                # Legacy runs (no run_resume_state rows): the alternatives were
+                # never persisted, so only the branch point's existence survives.
                 state.branch_points.append(bp)
             elif ev_type == "failed_path_recorded":
                 fp = FailedPath(
@@ -440,6 +478,186 @@ class RunCoordinator:
             elif ev_type == "template_guidance_state_updated":
                 if isinstance(payload, dict):
                     state.template_guidance_state = TemplateGuidanceState.from_dict(payload)
+
+    # ------------------------------------------------------------------
+    # Resume-state persistence (PRD §9.4 blocker 3, §10.12-10.13)
+    # ------------------------------------------------------------------
+
+    RESUME_STATE_SCHEMA = "run_resume_state.v1"
+
+    @staticmethod
+    def _snapshot_next_id(snapshot: Any) -> int:
+        if not isinstance(snapshot, dict):
+            return 0
+        try:
+            return int((snapshot.get("allocator") or {}).get("next_id") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _mapped_id_high_water(self, state: RunState) -> int:
+        marks = [int(state.mapped_id_high_water or 0), self._snapshot_next_id(state.mapped_loop_state)]
+        marks.extend(self._snapshot_next_id(snap) for snap in state.mapped_state_history.values())
+        return max(marks)
+
+    def _resume_state_payload(self, state: RunState) -> Dict[str, Any]:
+        state.mapped_id_high_water = self._mapped_id_high_water(state)
+        return {
+            "schema": self.RESUME_STATE_SCHEMA,
+            "step_index": state.step_index,
+            "current_state": list(state.current_state),
+            "previous_intermediates": list(state.previous_intermediates),
+            "branch_points": [bp.to_persisted_dict() for bp in state.branch_points],
+            "mapped_loop_state": state.mapped_loop_state,
+            "mapped_state_history": {
+                str(k): v for k, v in sorted(state.mapped_state_history.items())
+            },
+            "mapped_id_high_water": state.mapped_id_high_water,
+        }
+
+    def _persist_resume_state(self, state: RunState, kind: str) -> None:
+        """Snapshot branch points + mapped loop state so resume restores them.
+
+        Persistence only: never alters the run's path and never raises into
+        the loop.
+        """
+        recorder = getattr(self.store, "record_run_resume_state", None)
+        if not callable(recorder):
+            return
+        try:
+            recorder(
+                state.run_id,
+                kind=kind,
+                step_index=state.step_index,
+                payload=self._resume_state_payload(state),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._trace(
+                state,
+                f"RESUME_STATE_PERSIST_FAILED kind={kind} error={type(exc).__name__}: {exc}",
+            )
+
+    def _restore_resume_state(self, state: RunState) -> bool:
+        """Restore the latest resume snapshot onto ``state``. Returns True if found."""
+        loader = getattr(self.store, "get_latest_run_resume_state", None)
+        if not callable(loader):
+            return False
+        try:
+            row = loader(state.run_id)
+        except Exception:  # pragma: no cover - defensive
+            return False
+        payload = row.get("payload") if isinstance(row, dict) else None
+        if not isinstance(payload, dict) or payload.get("schema") != self.RESUME_STATE_SCHEMA:
+            return False
+
+        # Loop cursor as of the last applied candidate. Exact, unlike the
+        # step-output heuristic above, which cannot see which candidate was
+        # chosen after a backtrack or among parallel candidates.
+        if isinstance(payload.get("current_state"), list):
+            state.current_state = [str(s) for s in payload["current_state"]]
+        if isinstance(payload.get("previous_intermediates"), list):
+            state.previous_intermediates = [str(s) for s in payload["previous_intermediates"]]
+        try:
+            state.step_index = int(payload.get("step_index") or 0)
+        except (TypeError, ValueError):
+            pass
+
+        state.branch_points = [
+            BranchPoint.from_persisted_dict(bp)
+            for bp in (payload.get("branch_points") or [])
+            if isinstance(bp, dict)
+        ]
+
+        history_raw = payload.get("mapped_state_history")
+        history: Dict[int, Dict[str, Any]] = {}
+        if isinstance(history_raw, dict):
+            for key, snap in history_raw.items():
+                try:
+                    history[int(key)] = dict(snap)
+                except (TypeError, ValueError):
+                    continue
+        state.mapped_state_history = history
+        mapped = payload.get("mapped_loop_state")
+        state.mapped_loop_state = dict(mapped) if isinstance(mapped, dict) else None
+        try:
+            stored_mark = int(payload.get("mapped_id_high_water") or 0)
+        except (TypeError, ValueError):
+            stored_mark = 0
+        state.mapped_id_high_water = max(stored_mark, self._mapped_id_high_water(state))
+        # The allocator only advances: carry the run-wide high-water mark into
+        # the live snapshot's allocator so no id issued before the pause (on
+        # any path) is reissued after resume.
+        if state.mapped_loop_state is not None and state.mapped_id_high_water:
+            allocator = dict(state.mapped_loop_state.get("allocator") or {})
+            allocator["next_id"] = max(
+                self._snapshot_next_id(state.mapped_loop_state), state.mapped_id_high_water
+            )
+            state.mapped_loop_state["allocator"] = allocator
+        return True
+
+    def _consume_resumed_alternative(self, state: RunState, candidate: BranchCandidate) -> BranchCandidate:
+        """Mark the last-chance alternative as taken on its restored branch point.
+
+        Mirrors ``_backtrack``'s bookkeeping (pop, exhaust, drop later branch
+        points, update chosen) for the ``last_chance_backtrack`` resume path so
+        the alternative is not offered twice and the remaining ones stay
+        reachable. Returns the persisted candidate (with its validation
+        summary) when it matches; otherwise the candidate unchanged.
+        """
+        peek = self._peek_next_alternative(state)
+        if peek is None:
+            return candidate
+        bp, alt = peek
+        if (
+            bp.step_index != state.step_index
+            or alt.rank != candidate.rank
+            or alt.intermediate_smiles != candidate.intermediate_smiles
+        ):
+            return candidate
+        index = state.branch_points.index(bp)
+        taken = bp.alternatives.pop(0)
+        if not bp.alternatives:
+            bp.exhausted = True
+        state.branch_points = state.branch_points[: index + 1]
+        bp.chosen_candidate = taken
+        return taken
+
+    def _record_branch_point(
+        self,
+        state: RunState,
+        chosen: BranchCandidate,
+        alternatives: List[BranchCandidate],
+    ) -> BranchPoint:
+        """Store a branch point (Step D) and persist it with its alternatives."""
+        bp = BranchPoint(
+            step_index=state.step_index,
+            current_state=list(state.current_state),
+            previous_intermediates=list(state.previous_intermediates),
+            template_guidance_snapshot=(
+                state.template_guidance_state.as_dict()
+                if state.template_guidance_state is not None
+                else None
+            ),
+            chosen_candidate=chosen,
+            alternatives=alternatives,
+        )
+        state.branch_points.append(bp)
+        self.store.append_event(
+            state.run_id,
+            "branch_point_created",
+            {
+                "step_index": state.step_index,
+                "current_state": list(state.current_state),
+                "previous_intermediates": list(state.previous_intermediates),
+                "template_guidance_snapshot": (
+                    bp.template_guidance_snapshot if bp.template_guidance_snapshot is not None else {}
+                ),
+                "chosen_rank": chosen.rank,
+                "alternative_count": len(alternatives),
+                "alternative_ranks": [a.rank for a in alternatives],
+            },
+        )
+        self._persist_resume_state(state, "branch_point")
+        return bp
 
     def _step_model(self, state: RunState, step_name: str) -> Optional[str]:
         return state.run_config.step_models.get(step_name, state.run_config.model)
@@ -706,7 +924,7 @@ class RunCoordinator:
             attempt=result.attempt,
         )
         model_version_id: Optional[str] = None
-        if result.source == "llm" and resolved_model:
+        if result.source in ("llm", "jev") and resolved_model:
             model_version_id = self.store.upsert_model_version(
                 model_name=resolved_model,
                 reasoning_level=resolved_reasoning,
@@ -721,7 +939,7 @@ class RunCoordinator:
         duration_human = None
         if duration_seconds is not None:
             if duration_seconds < 60:
-                duration_human = ".1fs"
+                duration_human = f"{duration_seconds:.1f}s"
             elif duration_seconds < 3600:
                 minutes = int(duration_seconds // 60)
                 seconds = duration_seconds % 60
@@ -933,10 +1151,18 @@ class RunCoordinator:
         selected_label = str(output.get("selected_label_exact") or "").strip()
         selected_type_id = str(output.get("selected_type_id") or "").strip() or None
         confidence = float(output.get("confidence") or 0.0)
-        _thresh_cfg = state.run_config.reaction_template_confidence_threshold
-        confidence_threshold = float(_thresh_cfg if _thresh_cfg is not None else 0.65)
-        _margin_cfg = state.run_config.reaction_template_margin_threshold
-        margin_threshold = float(_margin_cfg if _margin_cfg is not None else 0.10)
+        from mechanistic_agent.decisions.policies import resolve_reaction_type_gates
+
+        # LLM selections use the RunConfig gates; Jev selections use the
+        # harness jev.thresholds when set, else the same RunConfig gates.
+        gates = resolve_reaction_type_gates(
+            decision_engine=str(output.get("decision_engine") or "") or None,
+            jev=getattr(state, "jev_config", None),
+            run_confidence_threshold=state.run_config.reaction_template_confidence_threshold,
+            run_margin_threshold=state.run_config.reaction_template_margin_threshold,
+        )
+        confidence_threshold = float(gates["confidence_threshold"])
+        margin_threshold = float(gates["margin_threshold"])
         confidence_gap = self._selection_confidence_gap(output)
 
         if selected_label and selected_label != "no_match" and state.selected_reaction_template:
@@ -1125,18 +1351,11 @@ class RunCoordinator:
                 canonical_byproducts,
             )
 
-        atom_mapping_output = self._latest_output_by_step(state.run_id, "atom_mapping") or {}
-        atom_mapping_summary = {}
-        if isinstance(atom_mapping_output, dict):
-            llm_response = atom_mapping_output.get("llm_response")
-            atom_mapping_summary = {
-                "confidence": atom_mapping_output.get("confidence"),
-                "unmapped_atoms": (
-                    list(llm_response.get("unmapped_atoms") or [])[:12]
-                    if isinstance(llm_response, dict)
-                    else []
-                ),
-            }
+        # attempt_atom_mapping nests confidence under llm_response; see
+        # global_mapping_context.summarize_global_mapping.
+        atom_mapping_summary = summarize_global_mapping(
+            self._latest_output_by_step(state.run_id, "atom_mapping")
+        )
 
         if not proposal_constraints and not species_registry and not participant_summary and not atom_mapping_summary:
             return None
@@ -1146,6 +1365,35 @@ class RunCoordinator:
             "species_registry": species_registry[:12],
             "participant_summary": participant_summary,
             "atom_mapping_summary": atom_mapping_summary,
+        }
+
+    def _build_global_mapping_species_context(self, state: RunState) -> Optional[Dict[str, List[str]]]:
+        """Atom-mapped SMILES rendered from the global ``atom_mapping`` output.
+
+        Returns the ``mapped_starting_materials`` / ``mapped_products`` /
+        ``mapped_current_state`` arguments for ``propose_intermediates``, or
+        ``None`` when the module did not run or no mapped pair is usable.
+        """
+        output = self._latest_output_by_step(state.run_id, "atom_mapping")
+        if not isinstance(output, dict):
+            return None
+        llm_response = output.get("llm_response")
+        if not isinstance(llm_response, dict):
+            return None
+        # Render on the same map-free canonical SMILES the mapping LLM saw.
+        starting = strip_atom_mapping_list(list(state.run_input.starting_materials))
+        products = strip_atom_mapping_list(list(state.run_input.products))
+        rendered = render_global_mapping(starting, products, llm_response.get("mapped_atoms"))
+        mapped_starting = list(rendered.get("mapped_starting_materials") or [])
+        mapped_products = list(rendered.get("mapped_products") or [])
+        if not mapped_starting and not mapped_products:
+            return None
+        return {
+            "mapped_starting_materials": mapped_starting,
+            "mapped_products": mapped_products,
+            "mapped_current_state": mapped_current_state_for(
+                list(state.current_state), starting, mapped_starting
+            ),
         }
 
     def _apply_candidate_constraint_repairs(
@@ -1200,6 +1448,18 @@ class RunCoordinator:
         proposal_constraints = guidance.get("proposal_constraints")
         if not isinstance(proposal_constraints, dict) or not proposal_constraints:
             return dict(candidate), None
+
+        # Declared spectators / additives may remain in the final state without
+        # blocking the all-targets-reached completion check.
+        try:
+            state.allowed_extra_species = self._canonicalize_constraint_species_list(
+                list(proposal_constraints.get("condition_support_species") or [])
+                + list(proposal_constraints.get("persistent_species") or [])
+                + list(proposal_constraints.get("spectator_species") or [])
+                + list(proposal_constraints.get("counterion_species") or [])
+            )
+        except Exception:
+            pass
 
         repaired_candidate, repair_notes = self._apply_candidate_constraint_repairs(
             state,
@@ -1302,8 +1562,61 @@ class RunCoordinator:
             "example_id": example_id,
         }
 
+    # RunConfig keys a harness may default via ``run_config_defaults``.
+    _HARNESS_RUN_CONFIG_DEFAULT_KEYS: frozenset = frozenset(
+        {
+            "proceed_on_validation_failure",
+            "proceed_only_on_arrow_push_failure",
+            "candidate_rescue_enabled",
+            "retry_same_candidate_max",
+            "max_reproposals_per_step",
+            "repeat_failure_signature_limit",
+        }
+    )
+
+    def _apply_harness_run_config_defaults(
+        self,
+        state: RunState,
+        harness: Optional[HarnessConfig],
+        *,
+        raw_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Apply ``harness.run_config_defaults`` for keys the run left unset.
+
+        Explicit per-run values (present in the stored run config) always win;
+        the harness only fills gaps. Returns the applied overrides so callers
+        and tests can inspect them.
+        """
+        if harness is None or not getattr(harness, "run_config_defaults", None):
+            return {}
+        explicit = raw_config if isinstance(raw_config, dict) else {}
+        applied: Dict[str, Any] = {}
+        for key, value in dict(harness.run_config_defaults).items():
+            if key not in self._HARNESS_RUN_CONFIG_DEFAULT_KEYS:
+                continue
+            if key in explicit and explicit.get(key) is not None:
+                continue
+            current = getattr(state.run_config, key, None)
+            if isinstance(current, bool):
+                coerced: Any = self._coerce_bool(value, current)
+            elif isinstance(current, int):
+                coerced = self._coerce_int(value, current)
+            else:
+                coerced = value
+            setattr(state.run_config, key, coerced)
+            applied[key] = coerced
+        if applied:
+            self.store.append_event(
+                state.run_id,
+                "harness_run_config_defaults_applied",
+                {"harness": getattr(harness, "name", None), "applied": applied},
+            )
+        return applied
+
     def _run_initial_phase(self, state: RunState, harness: Optional[HarnessConfig] = None) -> None:
         """Run pre-loop analysis modules. Driven by harness config when provided."""
+        if harness is not None:
+            self._configure_decision_policy(state, harness)
         existing = self._existing_steps(state.run_id)
         context: Dict[str, Optional[Dict[str, Any]]] = {}
 
@@ -1416,15 +1729,40 @@ class RunCoordinator:
             if key not in full_context and val is not None:
                 full_context[key] = val
 
+        reaction_type_result = self._select_reaction_type_result(state, catalog, full_context)
+        output = reaction_type_result.output or {}
+        self._apply_reaction_type_selection(state, output, emit_event=True)
+        return reaction_type_result
+
+    def _select_reaction_type_result(
+        self,
+        state: RunState,
+        catalog: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> StepResult:
+        """Reaction-type selection shared by the harness and legacy pre-loop paths.
+
+        When the run has an ``example_id`` and the example bypass is enabled
+        (default, today's behaviour), the curated label is used without a model
+        call, and a ``no_match`` from the model is replaced by the example
+        heuristic. Comparison runs disable the bypass (PRD §7.3) via the run
+        config key ``example_reaction_type_bypass``, the env var
+        ``MECHANISTIC_EXAMPLE_REACTION_TYPE_BYPASS`` or the harness
+        ``decision_policy.example_reaction_type_bypass``.
+        """
+        example_id = state.run_input.example_id
+        bypass_enabled, bypass_source = self._example_reaction_type_bypass(state)
+        use_example = bool(example_id) and bypass_enabled
+
         mapped_output: Optional[Dict[str, Any]] = None
-        if state.run_input.example_id:
-            mapping = example_mapping_for_reaction_id(catalog, state.run_input.example_id)
+        if use_example:
+            mapping = example_mapping_for_reaction_id(catalog, example_id)
             if isinstance(mapping, dict):
                 mapped_output = self._build_example_mapping_output(
                     mapping=mapping,
                     catalog=catalog,
                     reason="Deterministic mapping from reaction_type_templates example_mappings.",
-                    example_id=state.run_input.example_id,
+                    example_id=example_id,
                 )
 
         if mapped_output is not None:
@@ -1437,16 +1775,16 @@ class RunCoordinator:
         else:
             reaction_type_result = self.reaction_type_agent.run(
                 state,
-                balance_analysis=full_context.get("balance_analysis"),
-                functional_groups=full_context.get("functional_groups"),
-                ph_recommendation=full_context.get("ph_recommendation"),
-                initial_conditions=full_context.get("initial_conditions"),
-                missing_reagents=full_context.get("missing_reagents"),
-                atom_mapping=full_context.get("atom_mapping"),
+                balance_analysis=context.get("balance_analysis"),
+                functional_groups=context.get("functional_groups"),
+                ph_recommendation=context.get("ph_recommendation"),
+                initial_conditions=context.get("initial_conditions"),
+                missing_reagents=context.get("missing_reagents"),
+                atom_mapping=context.get("atom_mapping"),
             )
             output = reaction_type_result.output or {}
             selected_label = str(output.get("selected_label_exact") or "").strip().lower()
-            if state.run_input.example_id and selected_label == "no_match":
+            if use_example and selected_label == "no_match":
                 fallback_mapping = suggest_reaction_type_for_example(
                     catalog,
                     starting_materials=list(state.run_input.starting_materials),
@@ -1457,13 +1795,21 @@ class RunCoordinator:
                         mapping=fallback_mapping,
                         catalog=catalog,
                         reason="Example fallback heuristic applied after no_match selection.",
-                        example_id=state.run_input.example_id,
+                        example_id=example_id,
                     )
                     if isinstance(mapped_output, dict):
+                        # Keep the model's decision trace; the call still happened.
+                        for key in ("decision_trace", "decision_engine", "jev_fallback"):
+                            if key in output:
+                                mapped_output[key] = output[key]
                         reaction_type_result.output = mapped_output
 
-        output = reaction_type_result.output or {}
-        self._apply_reaction_type_selection(state, output, emit_event=True)
+        if example_id:
+            reaction_type_result.output = dict(reaction_type_result.output or {})
+            reaction_type_result.output["example_reaction_type_bypass"] = {
+                "enabled": bypass_enabled,
+                "source": bypass_source,
+            }
         return reaction_type_result
 
     def _run_inject_canonical_byproducts(
@@ -1692,52 +2038,7 @@ class RunCoordinator:
                 step_name="reaction_type_mapping",
                 tool_name="select_reaction_type",
             )
-            mapped_output: Optional[Dict[str, Any]] = None
-            if state.run_input.example_id:
-                mapping = example_mapping_for_reaction_id(catalog, state.run_input.example_id)
-                if isinstance(mapping, dict):
-                    mapped_output = self._build_example_mapping_output(
-                        mapping=mapping,
-                        catalog=catalog,
-                        reason="Deterministic mapping from reaction_type_templates example_mappings.",
-                        example_id=state.run_input.example_id,
-                    )
-
-            if mapped_output is not None:
-                reaction_type_result = StepResult(
-                    step_name="reaction_type_mapping",
-                    tool_name="select_reaction_type",
-                    output=mapped_output,
-                    source="deterministic",
-                )
-            else:
-                reaction_type_result = self.reaction_type_agent.run(
-                    state,
-                    balance_analysis=context.get("balance_analysis"),
-                    functional_groups=context.get("functional_groups"),
-                    ph_recommendation=context.get("ph_recommendation"),
-                    initial_conditions=context.get("initial_conditions"),
-                    missing_reagents=context.get("missing_reagents"),
-                    atom_mapping=context.get("atom_mapping"),
-                )
-                output = reaction_type_result.output or {}
-                selected_label = str(output.get("selected_label_exact") or "").strip().lower()
-                if state.run_input.example_id and selected_label == "no_match":
-                    fallback_mapping = suggest_reaction_type_for_example(
-                        catalog,
-                        starting_materials=list(state.run_input.starting_materials),
-                        products=list(state.run_input.products),
-                    )
-                    if isinstance(fallback_mapping, dict):
-                        mapped_output = self._build_example_mapping_output(
-                            mapping=fallback_mapping,
-                            catalog=catalog,
-                            reason="Example fallback heuristic applied after no_match selection.",
-                            example_id=state.run_input.example_id,
-                        )
-                        if isinstance(mapped_output, dict):
-                            reaction_type_result.output = mapped_output
-
+            reaction_type_result = self._select_reaction_type_result(state, catalog, context)
             self._record_step(state, reaction_type_result)
             output = reaction_type_result.output or {}
             self._apply_reaction_type_selection(state, output, emit_event=True)
@@ -1859,6 +2160,31 @@ class RunCoordinator:
         resulting_state = [str(x) for x in output.get("resulting_state") or []]
         if not current_state or not resulting_state:
             return None
+
+        cache_key = self._rescue_cache_key(
+            current_state=current_state,
+            resulting_state=resulting_state,
+            failed_checks=failed_checks,
+        )
+        run_cache = getattr(self, "_rescue_cache", None)
+        if run_cache is None:
+            run_cache = {}
+            self._rescue_cache = run_cache
+        cached = run_cache.get(state.run_id, {}).get(cache_key)
+        if cached is not None:
+            self.store.append_event(
+                state.run_id,
+                "candidate_rescue_cache_hit",
+                {
+                    "attempt": state.step_index + 1,
+                    "candidate_rank": candidate_rank,
+                    "failed_checks": failed_checks,
+                    "cache_key": cache_key,
+                },
+                step_name="candidate_rescue",
+            )
+            return cached
+
         self.store.append_event(
             state.run_id,
             "candidate_rescue_started",
@@ -1920,7 +2246,23 @@ class RunCoordinator:
             },
             step_name="candidate_rescue",
         )
+        run_cache.setdefault(state.run_id, {})[cache_key] = rescue_result
         return rescue_result
+
+    @staticmethod
+    def _rescue_cache_key(
+        *,
+        current_state: List[str],
+        resulting_state: List[str],
+        failed_checks: List[str],
+    ) -> str:
+        """Stable signature of a rescue request: same species delta + same failed checks."""
+        payload = {
+            "current": sorted(str(x) for x in current_state),
+            "resulting": sorted(str(x) for x in resulting_state),
+            "failed_checks": sorted(str(x) for x in failed_checks or []),
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:16]
 
     def _record_validation_checks(
         self,
@@ -2682,8 +3024,13 @@ class RunCoordinator:
         proposal_output: Dict[str, Any],
         enabled_validators: Optional[set[str]] = None,
         loop_start: Optional[float] = None,
+        allow_rescue: bool = True,
     ) -> Dict[str, Any]:
         """Validate a single candidate with up to 3 retry attempts.
+
+        ``allow_rescue=False`` validates the candidate without spending a
+        candidate-rescue LLM call (used for lower-ranked alternates once a
+        higher-ranked candidate has already validated).
 
         Returns a dict with keys:
         - ``status``: ``validated`` | ``failed`` | ``incomplete``
@@ -2909,7 +3256,22 @@ class RunCoordinator:
                 }
 
             rescue_result: Optional[StepResult] = None
-            if self._runtime_budget_guard_triggered(
+            if not allow_rescue:
+                # A higher-ranked candidate already validated for this step;
+                # alternates are validated for branch points only and must not
+                # spend an LLM rescue call.
+                rescue_outcome = "skipped_alternate"
+                self.store.append_event(
+                    state.run_id,
+                    "candidate_rescue_skipped_alternate",
+                    {
+                        "attempt": state.step_index + 1,
+                        "candidate_rank": candidate.get("rank"),
+                        "failed_checks": list(last_failed_checks),
+                    },
+                    step_name="candidate_rescue",
+                )
+            elif self._runtime_budget_guard_triggered(
                 state,
                 loop_start=loop_start,
                 step_name="candidate_rescue",
@@ -3058,8 +3420,9 @@ class RunCoordinator:
                 attempt=state.step_index + 1,
                 retry_index=retry_index,
             )
+            trace_root = self._scratchpad_root()
             _scratchpad_validation_retry(
-                self._base_dir,
+                trace_root,
                 state.run_id,
                 step_index=state.step_index + 1,
                 retry_index=retry_index,
@@ -3130,9 +3493,91 @@ class RunCoordinator:
             "mechanism_output": last_mechanism_output,
         }
 
-    def _apply_candidate(self, state: RunState, candidate: BranchCandidate) -> None:
+    @staticmethod
+    def _configure_decision_policy(state: RunState, harness: Optional[HarnessConfig]) -> None:
+        """Copy ``decision_policy`` and ``jev`` from the harness onto the run state (PRD §17)."""
+        cfg = harness if harness is not None else HarnessConfig()
+        state.decision_policy = copy.deepcopy(cfg.decision_policy)
+        state.jev_config = copy.deepcopy(cfg.jev)
+
+    @staticmethod
+    def _example_reaction_type_bypass(state: RunState) -> Tuple[bool, str]:
+        """Whether the curated example_id reaction-type shortcut may run, and why."""
+        from mechanistic_agent.decisions.policies import resolve_example_bypass
+
+        return resolve_example_bypass(
+            run_value=state.run_config.example_reaction_type_bypass,
+            policy=state.decision_policy,
+        )
+
+    @staticmethod
+    def _configure_loop_state_mapping(state: RunState, harness: Optional[HarnessConfig]) -> None:
+        """Copy the persistent-identity harness flags onto the run state (PRD §9)."""
+        cfg = harness if harness is not None else HarnessConfig()
+        state.loop_state_mapping = normalize_loop_state_mapping(getattr(cfg, "loop_state_mapping", "stripped"))
+        state.record_smirks_state_agreement = bool(getattr(cfg, "record_smirks_state_agreement", True))
+
+    def _record_smirks_state_agreement(
+        self,
+        state: RunState,
+        candidate: BranchCandidate,
+        previous_state: List[str],
+    ) -> None:
+        """Execute the chosen candidate on the mapped loop state and record the
+        SMIRKS-vs-stated-state agreement in its validation summary.
+
+        Recording only: acceptance, retries and branching are unaffected, and
+        any executor error is captured in the record instead of raised.
+        """
+        if not (state.record_smirks_state_agreement or state.loop_state_mapping == "mapped"):
+            return
+        resulting = candidate.resulting_state
+        if not isinstance(resulting, list) or not resulting:
+            return
+        mechanism_output = candidate.mechanism_output or {}
+        intermediate_output = candidate.intermediate_output or {}
+        reaction_smirks = str(
+            mechanism_output.get("reaction_smirks") or intermediate_output.get("reaction_smirks") or ""
+        ).strip()
+        electron_pushes = mechanism_output.get("electron_pushes") or intermediate_output.get("electron_pushes")
+        try:
+            from .mapped_state import advance_mapped_loop_state
+
+            snapshot, record = advance_mapped_loop_state(
+                state.mapped_loop_state,
+                previous_state=previous_state,
+                stated_resulting_state=[str(s) for s in resulting],
+                reaction_smirks=reaction_smirks or None,
+                electron_pushes=electron_pushes,
+                history=state.mapped_state_history,
+                step_index=state.step_index,
+                seed_species=state.mapped_seed_species if state.step_index == 0 else None,
+            )
+            state.mapped_loop_state = snapshot
+        except Exception as exc:  # pragma: no cover - defensive, never blocks a step
+            state.mapped_loop_state = None
+            record = {
+                "smirks_state_agreement": None,
+                "executed": False,
+                "failure_category": "executor_exception",
+                "error": f"{type(exc).__name__}: {exc}",
+                "blocking": False,
+            }
+        record["loop_state_mapping"] = state.loop_state_mapping
+        summary = dict(candidate.validation_summary or {})
+        summary["smirks_state_agreement"] = record
+        candidate.validation_summary = summary
+
+    def _apply_candidate(
+        self,
+        state: RunState,
+        candidate: BranchCandidate,
+        *,
+        resume_state_kind: str = "accepted_step",
+    ) -> None:
         """Apply a validated candidate to the run state."""
         previous_state = list(state.current_state)
+        self._record_smirks_state_agreement(state, candidate, previous_state)
         resulting = candidate.resulting_state
         if isinstance(resulting, list) and resulting:
             state.current_state = [str(s) for s in resulting]
@@ -3202,13 +3647,14 @@ class RunCoordinator:
             retry_index=0,
         )
         _scratchpad_step_accepted(
-            self._base_dir,
+            self._scratchpad_root(),
             state.run_id,
             step_index=state.step_index,
             intermediate_smiles=candidate.intermediate_smiles,
             resulting_state=list(state.current_state),
             candidate_rank=candidate.rank,
         )
+        self._persist_resume_state(state, resume_state_kind)
 
     def _collect_failed_path_steps(self, state: RunState, from_step_index: int) -> List[Dict[str, Any]]:
         """Gather mechanism step outputs from the DB for steps after *from_step_index*."""
@@ -3261,7 +3707,7 @@ class RunCoordinator:
                 },
             )
             _scratchpad_failed_path(
-                self._base_dir,
+                self._scratchpad_root(),
                 state.run_id,
                 branch_step_index=bp.step_index,
                 candidate_rank=chosen_rank,
@@ -3291,7 +3737,7 @@ class RunCoordinator:
             bp.chosen_candidate = next_alt
 
             # Apply the alternative candidate
-            self._apply_candidate(state, next_alt)
+            self._apply_candidate(state, next_alt, resume_state_kind="backtrack")
 
             self.store.append_event(
                 state.run_id,
@@ -3316,7 +3762,7 @@ class RunCoordinator:
                 retry_index=0,
             )
             _scratchpad_backtrack(
-                self._base_dir,
+                self._scratchpad_root(),
                 state.run_id,
                 reverted_to_step=bp.step_index,
                 alternative_rank=next_alt.rank,
@@ -3440,10 +3886,17 @@ class RunCoordinator:
             merged = dict(template_guidance or {})
             merged.update(proposal_hints)
             template_guidance = merged
+        # Carried to IntermediateAgent, which pops it into the explicit
+        # mapped_* arguments of propose_intermediates (never JSON-rendered).
+        mapped_species_context = self._build_global_mapping_species_context(state)
+        if mapped_species_context:
+            merged = dict(template_guidance or {})
+            merged[MAPPED_SPECIES_CONTEXT_KEY] = mapped_species_context
+            template_guidance = merged
 
         # Inject condensed scratchpad summary so the LLM can avoid
         # repeating failed approaches without seeing full branch/backtrack detail.
-        scratchpad_summary = read_scratchpad_summary(self._base_dir, state.run_id)
+        scratchpad_summary = read_scratchpad_summary(self._scratchpad_root(), state.run_id)
         if scratchpad_summary:
             merged = dict(template_guidance or {})
             merged["scratchpad_summary"] = scratchpad_summary
@@ -4014,6 +4467,7 @@ class RunCoordinator:
         max_steps = max(1, state.run_config.max_steps)
         reproposals_by_step: Dict[int, int] = {}
         reproposal_hints: Dict[int, Dict[str, Any]] = {}
+        self._configure_loop_state_mapping(state, harness)
 
         while state.step_index < max_steps:
             if stop_event.is_set() or state.stop_requested:
@@ -4052,7 +4506,7 @@ class RunCoordinator:
                         "resumed_from_pause": True,
                     },
                 )
-                self._apply_candidate(state, chosen)
+                self._apply_candidate(state, chosen, resume_state_kind="backtrack")
             else:
                 # --- Step A: Propose mechanism step candidates (topology-aware) ---
                 proposal_hints = dict(reproposal_hints.get(state.step_index + 1) or {})
@@ -4123,7 +4577,14 @@ class RunCoordinator:
                     _ev = self._enabled_validators(harness) if harness else None
                     try:
                         attempt_result = self._try_candidate_with_retries(
-                            state, candidate, proposal_output, enabled_validators=_ev, loop_start=start,
+                            state,
+                            candidate,
+                            proposal_output,
+                            enabled_validators=_ev,
+                            loop_start=start,
+                            # Once a candidate has validated, alternates are only
+                            # checked for branch points: no rescue LLM calls.
+                            allow_rescue=not validated,
                         )
                     except Exception as exc:
                         attempt_result = {
@@ -4651,7 +5112,10 @@ class RunCoordinator:
                             return
                         continue
                     # ── Deferred atom-balance soft-advance (unverified only) ─────
-                    if state.mode == "unverified":
+                    # Gated on proceed_on_validation_failure: with the flag off
+                    # (default harness), a candidate that fails atom balance is
+                    # never accepted, so deterministic validation stays the arbiter.
+                    if state.mode == "unverified" and state.run_config.proceed_on_validation_failure:
                         balance_pending_candidate = self._best_balance_pending_candidate(
                             candidate_attempts=candidate_attempts,
                         )
@@ -4805,34 +5269,7 @@ class RunCoordinator:
 
                 # --- Step D: Store branch point if alternatives exist ---
                 if alternatives:
-                    bp = BranchPoint(
-                        step_index=state.step_index,
-                        current_state=list(state.current_state),
-                        previous_intermediates=list(state.previous_intermediates),
-                        template_guidance_snapshot=(
-                            state.template_guidance_state.as_dict()
-                            if state.template_guidance_state is not None
-                            else None
-                        ),
-                        chosen_candidate=chosen,
-                        alternatives=alternatives,
-                    )
-                    state.branch_points.append(bp)
-                    self.store.append_event(
-                        state.run_id,
-                        "branch_point_created",
-                        {
-                            "step_index": state.step_index,
-                            "current_state": list(state.current_state),
-                            "previous_intermediates": list(state.previous_intermediates),
-                            "template_guidance_snapshot": (
-                                bp.template_guidance_snapshot if bp.template_guidance_snapshot is not None else {}
-                            ),
-                            "chosen_rank": chosen.rank,
-                            "alternative_count": len(alternatives),
-                            "alternative_ranks": [a.rank for a in alternatives],
-                        },
-                    )
+                    self._record_branch_point(state, chosen, alternatives)
 
                 # --- Step E: Apply the chosen candidate ---
                 self._apply_candidate(state, chosen)
@@ -5367,6 +5804,12 @@ class RunCoordinator:
                 return
 
         harness = self._resolve_harness(state)
+        self._apply_harness_run_config_defaults(
+            state,
+            harness,
+            raw_config=run_row.get("config") if isinstance(run_row.get("config"), dict) else {},
+        )
+        self._configure_decision_policy(state, harness)
 
         # Set thread-local model context so tool functions can read model config.
         model_context.set_run_context(
@@ -5413,6 +5856,11 @@ class RunCoordinator:
                         details.get("revert_previous_intermediates") or state.previous_intermediates
                     )
                     state.step_index = int(details.get("revert_to_step") or state.step_index)
+                    # With persisted alternatives, take this one off its branch
+                    # point exactly as _backtrack would (no-op for legacy runs).
+                    state.pending_resume_candidate = self._consume_resumed_alternative(
+                        state, state.pending_resume_candidate
+                    )
                     revert_template_guidance = details.get("revert_template_guidance_state")
                     if isinstance(revert_template_guidance, dict):
                         state.template_guidance_state = TemplateGuidanceState.from_dict(
@@ -5441,7 +5889,7 @@ class RunCoordinator:
                 },
             )
             _scratchpad_init(
-                self._base_dir,
+                self._scratchpad_root(),
                 run_id,
                 state.run_input.starting_materials,
                 state.run_input.products,

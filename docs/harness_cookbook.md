@@ -230,7 +230,7 @@ The leaderboard aggregates per-subagent scores. A well-designed harness change s
 
 ## Contribution checklist
 
-Before opening a Track 4 PR, verify:
+Before opening a harness PR, verify:
 
 - [ ] Harness saved as a named variant under `harness_versions/<name>/`
 - [ ] `tests/fast/test_harness_config.py` passes
@@ -239,4 +239,4 @@ Before opening a Track 4 PR, verify:
 - [ ] For added steps: skill file exists and prompt is between the required markers
 - [ ] PR description references the harness name and links eval delta evidence
 
-See [templates/contributions/track4_harness_pr.md](../templates/contributions/track4_harness_pr.md) for the PR template.
+Harness changes are behavior-changing and require medium-tier improvement; see [change_evidence_policy.md](change_evidence_policy.md).

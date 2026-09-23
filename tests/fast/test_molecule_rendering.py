@@ -13,12 +13,8 @@ from mechanistic_agent.api.app import _MOLECULE_IMAGE_CACHE, _render_molecule, c
 
 
 def _prepare_base(tmp_path: Path) -> Path:
-    (tmp_path / "prompt_versions" / "shared").mkdir(parents=True)
-    (tmp_path / "prompt_versions" / "calls" / "assess_initial_conditions").mkdir(parents=True)
-    (tmp_path / "prompt_versions" / "calls" / "predict_missing_reagents").mkdir(parents=True)
-    (tmp_path / "prompt_versions" / "calls" / "attempt_atom_mapping").mkdir(parents=True)
-    (tmp_path / "prompt_versions" / "calls" / "propose_mechanism_step").mkdir(parents=True)
-    (tmp_path / "prompt_versions" / "calls" / "evaluate_run_judge").mkdir(parents=True)
+    mechanistic = tmp_path / "skills" / "mechanistic"
+    (mechanistic / "base_system").mkdir(parents=True)
     (tmp_path / "skills" / "demo").mkdir(parents=True)
     (tmp_path / "mechanistic_agent" / "ui").mkdir(parents=True)
     (tmp_path / "data").mkdir(parents=True)
@@ -26,7 +22,10 @@ def _prepare_base(tmp_path: Path) -> Path:
     (tmp_path / "traces" / "runs").mkdir(parents=True)
     (tmp_path / "traces" / "evidence").mkdir(parents=True)
 
-    (tmp_path / "prompt_versions" / "shared" / "base_system.md").write_text("shared base", encoding="utf-8")
+    (mechanistic / "base_system" / "SKILL.md").write_text(
+        "---\nkind: shared_base\ncall_name: base_system\n---\n<!-- PROMPT_START -->\nshared base\n<!-- PROMPT_END -->\n",
+        encoding="utf-8",
+    )
     for call_name in [
         "assess_initial_conditions",
         "predict_missing_reagents",
@@ -34,8 +33,12 @@ def _prepare_base(tmp_path: Path) -> Path:
         "propose_mechanism_step",
         "evaluate_run_judge",
     ]:
-        call_dir = tmp_path / "prompt_versions" / "calls" / call_name
-        (call_dir / "base.md").write_text(f"{call_name} base", encoding="utf-8")
+        call_dir = mechanistic / call_name
+        call_dir.mkdir(parents=True)
+        (call_dir / "SKILL.md").write_text(
+            f"---\nkind: llm\ncall_name: {call_name}\n---\n<!-- PROMPT_START -->\n{call_name} base\n<!-- PROMPT_END -->\n",
+            encoding="utf-8",
+        )
         (call_dir / "few_shot.jsonl").write_text("", encoding="utf-8")
     (tmp_path / "skills" / "demo" / "SKILL.md").write_text("# demo", encoding="utf-8")
     (tmp_path / "mechanistic_agent" / "ui" / "index.html").write_text("ok", encoding="utf-8")

@@ -28,6 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from mechanistic_agent.data_paths import bulk_training_dir, repo_training_dir
 from mechanistic_agent.flower_curriculum import (
     DEFAULT_DATASET_PATH,
     DEFAULT_FLOWER_INPUT,
@@ -36,12 +37,14 @@ from mechanistic_agent.flower_curriculum import (
 )
 from mechanistic_agent.flower_rendering import render_curriculum_pngs, render_pngs
 
-_TRAINING_DATA = Path(__file__).resolve().parents[1] / "training_data"
-DEFAULT_DATASET_OUTPUT = _TRAINING_DATA / "flower_mechanisms_100_pngs"
-DEFAULT_CURRICULUM_OUTPUT = _TRAINING_DATA / "flower_curriculum_pngs"
-DEFAULT_EVAL_OUTPUT = _TRAINING_DATA / "eval_set_pngs"
-DEFAULT_EVAL_INPUT = _TRAINING_DATA / "eval_set.json"
-DEFAULT_MULTISTEP_INPUT = _TRAINING_DATA / "flower_mechanisms_multistep.json"
+_REPO = Path(__file__).resolve().parents[1]
+_BULK_TRAINING = bulk_training_dir(_REPO)
+_REPO_TRAINING = repo_training_dir(_REPO)
+DEFAULT_DATASET_OUTPUT = _BULK_TRAINING / "flower_mechanisms_100_pngs"
+DEFAULT_CURRICULUM_OUTPUT = _BULK_TRAINING / "flower_curriculum_pngs"
+DEFAULT_EVAL_OUTPUT = _BULK_TRAINING / "eval_set_pngs"
+DEFAULT_EVAL_INPUT = _REPO_TRAINING / "eval_set.json"
+DEFAULT_MULTISTEP_INPUT = _BULK_TRAINING / "flower_mechanisms_multistep.json"
 
 
 def _parse_args() -> argparse.Namespace:

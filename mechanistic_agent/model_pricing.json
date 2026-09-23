@@ -1,4 +1,17 @@
 {
+  "agent-bridge": {
+    "id": "agent-bridge",
+    "family": "agent",
+    "provider": "agent_bridge",
+    "supports_tools": true,
+    "label": "Agent Bridge (keyless)",
+    "description": "Keyless provider: an external agent/subagent answers each tool call via the MECHANISTIC_AGENT_BRIDGE_DIR exchange directory instead of a hosted API. The responder receives only the model-visible inputs (messages, tools, tool_choice). Pricing is zero because there is no API spend.",
+    "pricing_per_million": {
+      "input": 0.0,
+      "cached_input": 0.0,
+      "output": 0.0
+    }
+  },
   "gpt-5": {
     "id": "gpt-5",
     "family": "openai",
@@ -247,22 +260,96 @@
       "default": "high",
       "levels": {
         "lowest": {
-          "thinking": { "type": "disabled" }
+          "thinking": {
+            "type": "disabled"
+          }
         },
         "low": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "low"
         },
         "high": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "high"
         },
         "highest": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "high"
         },
         "max": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "max"
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 5.0,
+      "cached_input": 0.5,
+      "output": 25.0
+    }
+  },
+  "claude-opus-4-7": {
+    "id": "claude-opus-4-7",
+    "family": "claude",
+    "provider": "anthropic",
+    "supports_tools": true,
+    "best_in_class": true,
+    "label": "Claude Opus 4.7",
+    "description": "Anthropic Claude Opus 4.7 via the direct Anthropic Messages API",
+    "pricing_per_million": {
+      "input": 5.0,
+      "cached_input": 0.5,
+      "output": 25.0
+    }
+  },
+  "anthropic/claude-opus-4.8": {
+    "id": "anthropic/claude-opus-4.8",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "best_in_class": true,
+    "label": "Claude Opus 4.8",
+    "description": "Anthropic's strongest Claude model (Opus 4.8) for long-running professional and scientific reasoning tasks.",
+    "reasoning": {
+      "parameter": "thinking",
+      "merge_levels": true,
+      "default": "high",
+      "levels": {
+        "lowest": {
+          "thinking": {
+            "type": "disabled"
+          }
+        },
+        "low": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "low"
+        },
+        "high": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "high"
+        },
+        "highest": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "high"
+        },
+        "max": {
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "max"
         }
       }
@@ -465,26 +552,38 @@
       "default": "high",
       "levels": {
         "lowest": {
-          "thinking": { "type": "disabled" }
+          "thinking": {
+            "type": "disabled"
+          }
         },
         "low": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "low"
         },
         "medium": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "medium"
         },
         "high": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "high"
         },
         "highest": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "high"
         },
         "max": {
-          "thinking": { "type": "adaptive" },
+          "thinking": {
+            "type": "adaptive"
+          },
           "effort": "max"
         }
       }
@@ -493,6 +592,34 @@
       "input": 3.0,
       "cached_input": 0.3,
       "output": 15.0
+    }
+  },
+  "typesafe/jev-1.13": {
+    "id": "typesafe/jev-1.13",
+    "family": "typesafe",
+    "provider": "openrouter",
+    "model_kind": "decision",
+    "supports_tools": false,
+    "api_model_id": "typesafe/jev-1.13",
+    "decision_endpoint": "https://openrouter.ai/api/alpha/decisions",
+    "decision_types": [
+      "choice",
+      "score",
+      "noul"
+    ],
+    "limits": {
+      "choice_max_options": 255,
+      "score_min_levels": 2,
+      "score_max_levels": 10,
+      "max_state_plus_question_tokens": 32000
+    },
+    "billing": "input_only",
+    "label": "Jev 1.13 (TypeSafe decision model)",
+    "description": "Typed decision model (Choice / Score / Noul) reached through OpenRouter's Decisions API (POST /api/alpha/decisions). Not a chat model: get_chat_model refuses it; use llm.get_decision_model. Pinned version; thresholds do not transfer across versions. Input-only billing.",
+    "pricing_per_million": {
+      "input": 0.042,
+      "cached_input": 0.0,
+      "output": 0.0
     }
   }
 }

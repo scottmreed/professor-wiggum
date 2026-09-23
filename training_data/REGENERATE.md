@@ -25,9 +25,13 @@ python main.py curriculum build-lookup
 python scripts/build_flower_mechanism_dataset.py
 ```
 
-Expected output:
+Expected output (under **wiggum-data** when using the default sibling layout):
+
 - `training_data/flower_mechanism_index.jsonl` (~65 MB, ~257,167 lines)
 - `training_data/flower_mechanism_index_report.json` (generation stats)
+- `data/flower_train_lookup.sqlite` (via `main.py curriculum build-lookup`)
+
+See [docs/DATA_SETUP.md](../docs/DATA_SETUP.md) for checkout layout.
 
 ### When is this needed?
 
@@ -38,7 +42,7 @@ Expected output:
 
 ## Reaction PNGs
 
-PNG visualizations of reaction mechanisms are generated locally and not tracked (except for 5 samples in `sample_pngs/`).
+PNG visualizations live in the bulk data checkout (`flower_curriculum_pngs/`, `eval_set_pngs/`) — see [docs/DATA_SETUP.md](../docs/DATA_SETUP.md).
 
 ```bash
 # Render curriculum PNGs

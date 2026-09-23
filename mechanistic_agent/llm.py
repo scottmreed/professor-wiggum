@@ -57,6 +57,34 @@ def is_anthropic_model(model_name: Optional[str]) -> bool:
         return False
 
 
+def is_agent_bridge_model(model_name: Optional[str]) -> bool:
+    """Return True when the model is served by the keyless agent bridge.
+
+    The agent bridge lets an external agent/subagent stand in for a hosted model
+    (no API key) while receiving exactly the inputs a hosted model would. It is
+    selected by the catalog ``provider`` field being ``"agent_bridge"``.
+    """
+    if not model_name:
+        return False
+    try:
+        from mechanistic_agent.model_registry import get_model_provider
+        return get_model_provider(model_name) == "agent_bridge"
+    except Exception:
+        return False
+
+
+def is_decision_model(model_name: Optional[str]) -> bool:
+    """Return True when the catalog marks the model as ``model_kind: "decision"``."""
+    if not model_name:
+        return False
+    try:
+        from mechanistic_agent.model_registry import is_decision_model as _is_decision
+
+        return _is_decision(model_name)
+    except Exception:
+        return False
+
+
 def _resolve_google_api_key(user_key: Optional[str] = None) -> Optional[str]:
     if user_key:
         return user_key
@@ -87,6 +115,12 @@ def _resolve_anthropic_api_key(user_key: Optional[str] = None) -> Optional[str]:
 
 def get_model_api_key(model_name: Optional[str], user_key: Optional[str] = None) -> Optional[str]:
     """Return the provider API key for the given model name."""
+    if is_agent_bridge_model(model_name):
+        # The bridge is answered by a local agent/subagent, not a hosted API, so
+        # there is no credential to resolve. Return a non-empty sentinel so the
+        # many callers that gate on "is a key configured?" treat the bridge as
+        # available. This value is never sent anywhere or used as a credential.
+        return user_key or "agent-bridge-local"
     if is_gemini_model(model_name):
         return _resolve_google_api_key(user_key)
     if is_anthropic_model(model_name):
@@ -97,6 +131,8 @@ def get_model_api_key(model_name: Optional[str], user_key: Optional[str] = None)
 
 
 def get_provider_label(model_name: Optional[str]) -> str:
+    if is_agent_bridge_model(model_name):
+        return "Agent Bridge"
     if is_gemini_model(model_name):
         return "Gemini"
     if is_anthropic_model(model_name):
@@ -133,6 +169,37 @@ def extract_text_content(message: Any) -> Optional[str]:
             if isinstance(part, dict) and "text" in part
         ).strip() or None
     return str(content).strip() or None
+
+
+def serialise_chat_messages(messages: Any) -> list[Dict[str, str]]:
+    """Normalise chat messages into the ``[{role, content}]`` list sent to providers.
+
+    This is exactly the message representation ``_OpenAIChatAdapter.invoke`` sends
+    to a hosted chat-completions API. The keyless agent-bridge provider reuses
+    this helper so that an external agent/subagent standing in for the model
+    receives precisely the same message view a keyed provider would — no more and
+    no less. Keeping a single implementation guarantees the two paths cannot drift.
+    """
+    serialised: list[Dict[str, str]] = []
+    for message in messages or []:
+        content = getattr(message, "content", None)
+        if content is None and isinstance(message, dict):
+            content = message.get("content")
+        role = "user"
+        if isinstance(message, dict):
+            maybe_role = str(message.get("role") or "").strip().lower()
+            if maybe_role in {"system", "user", "assistant", "tool"}:
+                role = maybe_role
+        else:
+            name = message.__class__.__name__.lower()
+            if "system" in name:
+                role = "system"
+            elif "human" in name or "user" in name:
+                role = "user"
+            elif "assistant" in name or "ai" in name:
+                role = "assistant"
+        serialised.append({"role": role, "content": str(content or "")})
+    return serialised
 
 
 class _SimpleMessage:
@@ -172,25 +239,7 @@ class _OpenAIChatAdapter:
         tools: Any = None,
         tool_choice: Any = None,
     ) -> Any:
-        serialised = []
-        for message in messages or []:
-            content = getattr(message, "content", None)
-            if content is None and isinstance(message, dict):
-                content = message.get("content")
-            role = "user"
-            if isinstance(message, dict):
-                maybe_role = str(message.get("role") or "").strip().lower()
-                if maybe_role in {"system", "user", "assistant", "tool"}:
-                    role = maybe_role
-            else:
-                name = message.__class__.__name__.lower()
-                if "system" in name:
-                    role = "system"
-                elif "human" in name or "user" in name:
-                    role = "user"
-                elif "assistant" in name or "ai" in name:
-                    role = "assistant"
-            serialised.append({"role": role, "content": str(content or "")})
+        serialised = serialise_chat_messages(messages)
 
         params: Dict[str, Any] = {"model": self._model, "messages": serialised}
         if self._temperature is not None:
@@ -589,7 +638,28 @@ def get_chat_model(
 
     Routes to OpenRouter for Claude and OLMo models, Gemini for Google models,
     and OpenAI for all others.  Pass ``user_api_key`` to override env vars.
+
+    Models whose catalog provider is ``"agent_bridge"`` route to the keyless
+    agent bridge, which forwards the request to an external agent/subagent
+    instead of a hosted API and therefore needs no API key.
     """
+    if is_decision_model(model_name):
+        raise ValueError(
+            f"Model '{model_name}' is a decision model (catalog model_kind='decision'), not a chat "
+            "model. It answers typed Choice/Score/Noul questions, not chat or tool calls; use "
+            "mechanistic_agent.llm.get_decision_model() instead."
+        )
+
+    if is_agent_bridge_model(model_name):
+        from .agent_bridge import AgentBridgeAdapter
+
+        return AgentBridgeAdapter(
+            model=model_name,
+            temperature=temperature,
+            timeout=timeout,
+            model_kwargs=model_kwargs,
+        )
+
     if is_gemini_model(model_name):
         api_key = _resolve_google_api_key(user_api_key)
         if not api_key:
@@ -643,6 +713,44 @@ def get_chat_model(
         model_kwargs=model_kwargs,
         api_key=api_key,
     )
+
+
+def get_decision_model(
+    model_name: Optional[str] = None,
+    *,
+    timeout: Optional[float] = None,
+    user_api_key: Optional[str] = None,
+    transport: Any = None,
+) -> Any:
+    """Return a :class:`~mechanistic_agent.decisions.jev.JevDecisionClient`.
+
+    This is the explicit route for catalog entries with ``model_kind:
+    "decision"`` (PRD §16.2). ``model_name`` defaults to the catalog's default
+    decision model. Decision models are reached through OpenRouter's Decisions
+    API, so the key is the same ``OPENROUTER_API_KEY`` used for OpenRouter chat
+    models. A missing key is not raised here: the client returns failure
+    records (``missing_api_key``) so callers can fall back.
+    """
+    from .decisions.jev import JevDecisionClient
+    from .model_registry import get_default_decision_model, get_model_provider
+
+    name = model_name or get_default_decision_model()
+    if not name or not is_decision_model(name):
+        raise ValueError(
+            f"Model '{model_name}' is not a decision model (catalog model_kind != 'decision')."
+        )
+    provider = get_model_provider(name)
+    if provider != "openrouter":
+        raise ValueError(
+            f"Decision model '{name}' has provider '{provider}'; only 'openrouter' "
+            "(Decisions API) is routed."
+        )
+    kwargs: Dict[str, Any] = {"api_key": _resolve_openrouter_api_key(user_api_key)}
+    if timeout is not None:
+        kwargs["timeout"] = float(timeout)
+    if transport is not None:
+        kwargs["transport"] = transport
+    return JevDecisionClient(name, **kwargs)
 
 
 def adapter_supports_forced_tools(model_name: Optional[str]) -> bool:

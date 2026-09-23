@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from mechanistic_agent.scoring import score_snapshot_against_known, score_subagents_from_step_outputs
+from functools import partial
+
+from mechanistic_agent import scoring as _scoring
+
+# These fixtures pin scoring v1 (the pre-versioning scorer). v2 behaviour is
+# covered in test_scoring_v2.py.
+score_snapshot_against_known = partial(_scoring.score_snapshot_against_known, scoring_version="v1")
+score_subagents_from_step_outputs = partial(_scoring.score_subagents_from_step_outputs, scoring_version="v1")
 
 
 def _expected(min_steps: int = 2):

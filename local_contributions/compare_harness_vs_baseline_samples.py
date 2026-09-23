@@ -157,8 +157,11 @@ def _configure_rdkit_logging(show_warnings: bool) -> None:
 
 
 def _load_cases(base: Path, min_step: int, max_step: int, bucket_rank: int) -> List[EvalCase]:
-    holdout_path = base / "training_data" / "leaderboard_holdout" / "eval_set_holdout.json"
-    bucket_path = base / "training_data" / "leaderboard_holdout" / "eval_step_buckets_holdout.json"
+    from mechanistic_agent.data_paths import holdout_dir
+
+    holdout_root = holdout_dir(base)
+    holdout_path = holdout_root / "eval_set_holdout.json"
+    bucket_path = holdout_root / "eval_step_buckets_holdout.json"
 
     raw_cases = json.loads(holdout_path.read_text(encoding="utf-8"))
     raw_buckets = json.loads(bucket_path.read_text(encoding="utf-8"))

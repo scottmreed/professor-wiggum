@@ -686,3 +686,78 @@ __all__ = [
     "MECHANISM_STEP_PROPOSAL_TOOL",
     "PREDICT_FULL_MECHANISM_TOOL",
 ]
+
+
+# ---------------------------------------------------------------------------
+# 7. harness_mutation_proposal  (LLM-proposed, trace-conditioned harness edit)
+# ---------------------------------------------------------------------------
+
+HARNESS_MUTATION_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "harness_mutation_proposal",
+        "description": (
+            "Propose exactly one targeted, machine-applicable edit to the harness "
+            "(topology field, module flag, prompt instruction, or few-shot lane) "
+            "that addresses the dominant failure pattern in the digest."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Free-form diagnosis of the failure digest.",
+                },
+                "lane": {
+                    "type": "string",
+                    "enum": ["topology", "harness", "prompt", "few_shot"],
+                    "description": "Which editable surface the proposal changes.",
+                },
+                "operation": {
+                    "type": "string",
+                    "enum": [
+                        "set_field",
+                        "set_enabled",
+                        "set_run_config_default",
+                        "set_decision_policy",
+                        "append_instruction",
+                        "replace_instruction",
+                        "remove_few_shot",
+                        "add_few_shot",
+                    ],
+                    "description": "Edit operation; must be valid for the chosen lane.",
+                },
+                "target": {
+                    "type": "string",
+                    "description": (
+                        "topology: '<profile>.<field>'; harness: module id, run_config_defaults key, "
+                        "or 'decision_policy.<key>' for set_decision_policy (editable: reaction_type); "
+                        "prompt/few_shot: the call name (e.g. propose_mechanism_step)."
+                    ),
+                },
+                "value": {
+                    "description": (
+                        "New value: integer for topology fields, boolean/int for harness keys, "
+                        "an engine enum for decision_policy keys (reaction_type: 'llm' or 'jev'), "
+                        "instruction text for prompts, an index (remove) or {input, output} object (add) for few-shots."
+                    ),
+                },
+                "old_text": {
+                    "type": "string",
+                    "description": "For replace_instruction: exact existing text inside the prompt block to replace.",
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": "Why this edit addresses the observed failures (cite the digest).",
+                },
+                "expected_effect": {
+                    "type": "string",
+                    "description": "Which failed check or reproposal reason should decrease.",
+                },
+            },
+            "required": ["lane", "operation", "target", "value", "rationale"],
+        },
+    },
+}
+
+__all__.append("HARNESS_MUTATION_TOOL")

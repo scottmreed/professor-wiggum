@@ -244,7 +244,26 @@ def extract_mechanism_moves(expression: str) -> Tuple[str, List[MechanismMove], 
     return core, [], details
 
 
+def mapped_smiles_parser_params(*, sanitize: bool = False) -> "Chem.SmilesParserParams":
+    """SMILES parser params that keep explicit (mapped) hydrogens.
+
+    RDKit's default parse removes explicit ``[H:n]`` atoms, which silently drops
+    every proton move from a fully mapped reaction. Shared with
+    ``mapped_state`` so both parse mapped SMIRKS the same way.
+    """
+    params = Chem.SmilesParserParams()
+    params.removeHs = False
+    params.sanitize = sanitize
+    return params
+
+
 def reaction_bond_deltas(reaction_smirks: str) -> List[Dict[str, Any]]:
+    """Bond-order changes between the two sides of a mapped reaction SMIRKS.
+
+    Explicit mapped hydrogens are kept, so bonds to ``[H:n]`` (proton and
+    hydride moves) are reported like heavy-atom bonds. Species are still
+    sanitized as before, so heavy-atom bond orders are unchanged.
+    """
     if Chem is None:
         return []
     core, _metadata = split_cxsmiles_metadata(reaction_smirks)
@@ -258,7 +277,7 @@ def reaction_bond_deltas(reaction_smirks: str) -> List[Dict[str, Any]]:
             smiles = str(token or "").strip()
             if not smiles:
                 continue
-            mol = Chem.MolFromSmiles(smiles)
+            mol = Chem.MolFromSmiles(smiles, mapped_smiles_parser_params(sanitize=True))
             if mol is None:
                 continue
             for bond in mol.GetBonds():
@@ -365,6 +384,7 @@ __all__ = [
     "MechanismMoveFormatError",
     "extract_mechanism_moves",
     "implied_bond_deltas",
+    "mapped_smiles_parser_params",
     "normalize_electron_pushes",
     "parse_mechanism_moves",
     "reaction_bond_deltas",

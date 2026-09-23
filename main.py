@@ -32,6 +32,8 @@ from mechanistic_agent.model_registry import (
     resolve_model_key,
     to_internal_reasoning_level,
 )
+from mechanistic_agent.llm import is_agent_bridge_model
+from mechanistic_agent.data_paths import db_path as resolve_db_path, holdout_eval_set_path
 from mechanistic_agent.eval_set_resolution import (
     EvalSetResolutionError,
     case_ids_hash,
@@ -247,6 +249,8 @@ def _build_eval_case_summary(
     case_step_count: Optional[int],
     subagent_scores: Dict[str, Any],
     scored_error: Optional[str] = None,
+    mapping_agreement: Optional[Dict[str, Any]] = None,
+    scoring_version: Optional[str] = None,
 ) -> Dict[str, Any]:
     diagnostics = _extract_eval_run_diagnostics(snapshot)
     summary: Dict[str, Any] = {
@@ -258,6 +262,11 @@ def _build_eval_case_summary(
         "eval_mode": "harness",
         "subagent_scores": subagent_scores,
     }
+    if mapping_agreement is not None:
+        # Benchmark mapping recall; the v2 mapping component of the score.
+        summary["mapping_agreement"] = mapping_agreement
+    if scoring_version:
+        summary["scoring_version"] = scoring_version
     summary.update(diagnostics)
     summary.update(_extract_chemistry_backend_diagnostics(snapshot))
     return summary
@@ -443,6 +452,7 @@ def _render_leaderboard_markdown(
     timestamp = generated_at or time.strftime("%Y-%m-%d %H:%M:%S")
     uses_weighted = any(str(item.get("aggregate_weighting") or "") for item in items)
     includes_cost = any("total_cost" in item for item in items)
+    includes_calls = any("llm_calls" in item for item in items)
     ranking_text = (
         "- Ranking order: weighted quality score, then weighted pass rate, then lower total cost."
         if uses_weighted
@@ -458,8 +468,8 @@ def _render_leaderboard_markdown(
         "",
         "## PR Acceptance Rule",
         "",
-        "A PR is only mergeable if it improves the relevant leaderboard gate for its contribution track.",
-        "Single-reaction submissions are explicitly excluded from merge gates; they are review inputs only.",
+        "A behavior-changing PR is only mergeable if it improves the relevant leaderboard gate for its change type "
+        "(see docs/change_evidence_policy.md). Bug fixes and infrastructure changes need fast tests only.",
         "",
     ]
     if items:
@@ -503,29 +513,30 @@ def _render_leaderboard_markdown(
             "",
         ]
     )
+    header_cols = ["Rank", "Model", "Thinking", "Type", "Score", "Outcome", "Pass", "Cases"]
     if includes_cost:
-        lines.extend(
-            [
-                "| Rank | Model | Thinking | Type | Score | Outcome | Pass | Cases | Cost | Group |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "| Rank | Model | Thinking | Type | Score | Outcome | Pass | Cases | Group |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-            ]
-        )
+        header_cols.append("Cost")
+    if includes_calls:
+        header_cols.extend(["LLM Calls", "LLM Tokens"])
+    header_cols.append("Group")
+    lines.extend(
+        [
+            "| " + " | ".join(header_cols) + " |",
+            "| " + " | ".join(["---"] * len(header_cols)) + " |",
+        ]
+    )
     if not items:
-        if includes_cost:
-            lines.append("| - | - | - | - | - | - | - | - | - | No completed rows |")
-        else:
-            lines.append("| - | - | - | - | - | - | - | - | No completed rows |")
+        placeholder_cols = ["-"] * (len(header_cols) - 1) + ["No completed rows"]
+        lines.append("| " + " | ".join(placeholder_cols) + " |")
         return "\n".join(lines)
 
+    has_bridge_origin = False
     for index, row in enumerate(items, 1):
         model = str(row.get("model_name") or row.get("model") or "unknown")
+        is_bridge = is_agent_bridge_model(model)
+        if is_bridge:
+            has_bridge_origin = True
+        model_cell = f"`{model}`" + (" †" if is_bridge else "")
         thinking = str(row.get("thinking_level") or "none")
         run_type = "Baseline" if row.get("is_baseline") else "Harness"
         pts = _leaderboard_row_to_pts(row)
@@ -534,16 +545,40 @@ def _render_leaderboard_markdown(
         pass_rate = f"{float(row.get('weighted_pass_rate') or row.get('deterministic_pass_rate') or 0.0) * 100.0:.1f}%"
         case_count = str(row.get("case_count") or 0)
         group = str(row.get("run_group_name") or "n/a")
+        row_cells = [
+            str(index),
+            model_cell,
+            f"`{thinking}`",
+            run_type,
+            score_display,
+            outcome,
+            pass_rate,
+            case_count,
+        ]
         if includes_cost:
             total_cost = float(row.get("total_cost") or 0.0)
-            cost_display = f"${total_cost:.3f}"
-            lines.append(
-                f"| {index} | `{model}` | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | {cost_display} | `{group}` |"
-            )
-        else:
-            lines.append(
-                f"| {index} | `{model}` | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | `{group}` |"
-            )
+            row_cells.append(f"${total_cost:.3f}")
+        if includes_calls:
+            llm_calls = int(row.get("llm_calls") or 0)
+            llm_tokens = int(row.get("llm_tokens") or 0)
+            row_cells.append(str(llm_calls))
+            row_cells.append(f"{llm_tokens:,}")
+        row_cells.append(f"`{group}`")
+        lines.append("| " + " | ".join(row_cells) + " |")
+    if has_bridge_origin:
+        lines.extend(
+            [
+                "",
+                "> † **Agent-bridge origin.** Rows marked † were produced by the keyless "
+                "`agent-bridge` provider — a *delegated system* in which an external "
+                "agent/subagent answers each model call, not a hosted model. Deterministic "
+                "RDKit validation gates these runs exactly like any other, so the score is "
+                "directly comparable; but cost is `budget_observability: opaque` (no API "
+                "spend is recorded, and inner agent spend is not measured), so agent-bridge "
+                "rows are **not eligible for cost-class SOTA claims**. The declared "
+                "origin is recorded in each run's `config.origin`.",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -1568,6 +1603,7 @@ def _run_baseline_eval_set(
                 "scoring_breakdown": graded.get("scoring_breakdown", {}),
                 "error": graded.get("error"),
                 "eval_mode": "baseline",
+                "scoring_version": graded.get("scoring_version"),
                 "run_metadata": {
                     "eval_set_id": resolved_eval_set.eval_set_id,
                     "eval_set_purpose": resolved_eval_set.purpose,
@@ -1647,6 +1683,28 @@ def _run_baseline_eval_set(
         "prompt_hashes": sorted(set(prompt_hashes))[:20],
         "run_group_name": run_group_name,
     }
+
+
+def _summary_total_cost(cost_summary: Optional[dict]) -> float:
+    """Extract the run's total USD cost from a snapshot ``cost_summary`` block.
+
+    Keyless / opaque-cost runs (e.g. the agent-bridge provider, which records no
+    API spend) store ``total_cost: None``. A naive ``cost_summary.get("total_cost",
+    {}).get(...)`` then calls ``.get`` on ``None`` and tracebacks at the end of an
+    otherwise-completed run. Guard every level so the summary is always numeric.
+    """
+    if not isinstance(cost_summary, dict):
+        return 0.0
+    total_cost_block = cost_summary.get("total_cost") or {}
+    if not isinstance(total_cost_block, dict):
+        return 0.0
+    value = total_cost_block.get("total_cost", 0.0)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @app.command()
 def run(
     starting: Optional[str] = typer.Option(
@@ -1770,7 +1828,7 @@ def run(
 
     base = Path.cwd()
     registry = RegistrySet(base)
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     store.record_assets(
         [
             {
@@ -1925,7 +1983,10 @@ def run(
         if isinstance(row.get("validation"), dict) and row["validation"].get("passed") is False
     ]
     cost_summary = snapshot.get("cost_summary") or {}
-    total_cost = cost_summary.get("total_cost", {}).get("total_cost", 0.0)
+    # ``total_cost`` is ``None`` for keyless / opaque-cost runs (e.g. the
+    # agent-bridge provider records no API spend); _summary_total_cost guards
+    # every level so a completed bridge run never tracebacks while summarising.
+    total_cost = _summary_total_cost(cost_summary)
     ralph_attempts = list(snapshot.get("ralph_attempts") or [])
     ralph_total_cost = sum(float(item.get("cost_usd") or 0.0) for item in ralph_attempts)
     latest_child_status = snapshot.get("ralph_latest_child_status")
@@ -2004,7 +2065,7 @@ def vote(
         raise typer.BadParameter("Candidate payloads must be JSON objects")
 
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     row = store.get_run_row(run_id)
     if row is None:
         raise typer.BadParameter(f"Run not found: {run_id}")
@@ -2060,6 +2121,16 @@ def overnight_ralph(
         help="Model identifier used for child micro-eval runs",
     ),
     harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
+    mutation_proposer: Optional[str] = typer.Option(
+        None,
+        "--mutation-proposer",
+        help="random (blind lane mutators) or llm (trace-conditioned proposal via --mutation-model); overrides the program file",
+    ),
+    mutation_model: Optional[str] = typer.Option(
+        None,
+        "--mutation-model",
+        help="Model that proposes mutations when --mutation-proposer=llm (default: the run model; agent-bridge works keyless)",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit summary as JSON"),
 ) -> None:
     """Run lane-scoped overnight Ralph hill-climbing on a frozen eval slice."""
@@ -2084,8 +2155,15 @@ def overnight_ralph(
     program_config.max_experiments = max(1, int(max_experiments))
     program_config.max_cost_usd = float(max_cost_usd)
     program_config.acceptance_threshold_pct = max(0.0, float(acceptance_threshold))
+    if mutation_proposer:
+        proposer = str(mutation_proposer).strip().lower()
+        if proposer not in {"random", "llm"}:
+            raise typer.BadParameter("--mutation-proposer must be 'random' or 'llm'")
+        program_config.mutation_proposer = proposer
+    if mutation_model:
+        program_config.mutation_model = _canonicalize_model_name_or_raise(mutation_model)
 
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     orchestrator = OvernightRalphOrchestrator(base_dir=base, store=store)
     plan = select_step_models(model_name=model_name)
     run_config = {
@@ -2137,6 +2215,163 @@ def serve(
         port=port,
         reload=reload,
     )
+
+
+@app.command(name="bridge-serve")
+def bridge_serve(
+    bridge_dir: Optional[str] = typer.Option(
+        None,
+        "--bridge-dir",
+        help="Exchange directory (defaults to $MECHANISTIC_AGENT_BRIDGE_DIR).",
+    ),
+    command: Optional[str] = typer.Option(
+        None,
+        "--command",
+        "-c",
+        help=(
+            "Responder command. Receives each request JSON on stdin and must print "
+            'the response JSON {"tool_calls":[{"name":...,"arguments":{...}}]} on '
+            "stdout. A bare arguments object is also accepted and wrapped for the "
+            "forced tool."
+        ),
+    ),
+    replay: Optional[str] = typer.Option(
+        None,
+        "--replay",
+        help=(
+            "Directory of pre-seeded response files keyed by request basename. "
+            "No agent is invoked — deterministic, keyless CI replay."
+        ),
+    ),
+    poll_seconds: float = typer.Option(0.2, "--poll-seconds", help="Polling interval in seconds."),
+    idle_timeout: float = typer.Option(
+        0.0,
+        "--idle-timeout",
+        help="Exit after this many seconds with no pending requests (0 = run forever).",
+    ),
+    max_requests: int = typer.Option(
+        0, "--max-requests", help="Stop after answering N requests (0 = unlimited)."
+    ),
+    once: bool = typer.Option(
+        False, "--once", help="Answer at most one pending request, then exit."
+    ),
+) -> None:
+    """Answer agent-bridge model calls so the harness can run keyless.
+
+    Polls the bridge exchange directory and produces a structured tool-call
+    response for each pending request. Choose exactly one responder source:
+
+    \b
+      --command   hand each request to an external agent/CLI/script
+      --replay    serve pre-seeded responses (deterministic, no agent, no keys)
+
+    With neither, pending requests are listed and the loop waits — the pattern an
+    orchestrator uses when it answers the request files itself. The bridge fails
+    loud and never falls back to a hosted model.
+    """
+    import os
+    import subprocess
+
+    from mechanistic_agent.agent_bridge import (
+        pending_requests,
+        read_request,
+        write_response,
+    )
+
+    resolved_dir = bridge_dir or os.getenv("MECHANISTIC_AGENT_BRIDGE_DIR")
+    if not resolved_dir:
+        raise typer.BadParameter(
+            "Set --bridge-dir or the MECHANISTIC_AGENT_BRIDGE_DIR environment variable."
+        )
+    if command and replay:
+        raise typer.BadParameter("Use only one of --command or --replay, not both.")
+
+    def _forced_tool_name(model_input: Dict[str, Any]) -> str:
+        choice = model_input.get("tool_choice") or {}
+        if isinstance(choice, dict):
+            return str((choice.get("function") or {}).get("name") or "")
+        return ""
+
+    def _coerce_response(raw: Dict[str, Any], model_input: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalise a responder payload into write_response kwargs."""
+        if isinstance(raw, dict) and "tool_calls" in raw:
+            return {
+                "tool_calls": list(raw.get("tool_calls") or []),
+                "content": str(raw.get("content") or ""),
+                "usage": raw.get("usage") if isinstance(raw.get("usage"), dict) else None,
+            }
+        # Treat the whole object as the arguments for the forced tool.
+        return {
+            "tool_calls": [{"name": _forced_tool_name(model_input), "arguments": raw}],
+            "content": "",
+            "usage": None,
+        }
+
+    def _answer_via_command(request: Dict[str, Any], model_input: Dict[str, Any]) -> Dict[str, Any]:
+        proc = subprocess.run(
+            command,
+            shell=True,
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Responder command exited {proc.returncode}: {proc.stderr.strip()[:500]}"
+            )
+        out = proc.stdout.strip()
+        if out.startswith("```"):  # tolerate fenced output
+            out = out.strip("`")
+            out = out[out.find("{") : out.rfind("}") + 1]
+        try:
+            parsed = json.loads(out)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Responder command did not emit valid JSON: {exc}; got: {out[:300]!r}"
+            ) from exc
+        return _coerce_response(parsed, model_input)
+
+    def _answer_via_replay(req_name: str, model_input: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        seed = Path(replay).expanduser() / req_name
+        if not seed.exists():
+            return None
+        parsed = json.loads(seed.read_text(encoding="utf-8"))
+        return _coerce_response(parsed, model_input)
+
+    answered = 0
+    idle_since: Optional[float] = None
+    mode_label = "command" if command else ("replay" if replay else "observe")
+    typer.echo(f"bridge-serve: dir={resolved_dir} mode={mode_label}")
+    while True:
+        pending = pending_requests(resolved_dir)
+        if not pending:
+            if idle_timeout > 0:
+                idle_since = idle_since if idle_since is not None else time.monotonic()
+                if time.monotonic() - idle_since >= idle_timeout:
+                    typer.echo("bridge-serve: idle timeout reached; exiting.")
+                    return
+            time.sleep(poll_seconds)
+            continue
+        idle_since = None
+        for req_path in pending:
+            request = read_request(req_path)
+            model_input = request.get("model_input") or {}
+            if command:
+                kwargs = _answer_via_command(request, model_input)
+            elif replay:
+                kwargs = _answer_via_replay(req_path.name, model_input)
+                if kwargs is None:
+                    # No seed yet for this request; wait for it to appear.
+                    continue
+            else:
+                typer.echo(f"bridge-serve: pending {req_path.name} (no responder configured)")
+                time.sleep(poll_seconds)
+                continue
+            write_response(req_path, bridge_dir=resolved_dir, **kwargs)
+            answered += 1
+            typer.echo(f"bridge-serve: answered {req_path.name} ({answered} total)")
+            if once or (max_requests > 0 and answered >= max_requests):
+                return
 
 
 @app.command()
@@ -2239,7 +2474,7 @@ def baseline(
     if requested_tiers:
         # ---- Tier mode: run easy/medium/hard in sequence via local CLI ----
         base = Path.cwd()
-        store = RunStore(base / "data" / "mechanistic.db")
+        store = RunStore(resolve_db_path(base))
         registry = RegistrySet(base)
         model_family = get_model_family(model_name) or "unknown"
         harness_hash = registry.bundle_hashes(model_name=model_name).get("prompt_bundle_hash", "")
@@ -2349,7 +2584,7 @@ def baseline(
     if eval_set_id:
         # ---- Eval-set mode: run all cases and record to leaderboard ----
         base = Path.cwd()
-        store = RunStore(base / "data" / "mechanistic.db")
+        store = RunStore(resolve_db_path(base))
         registry = RegistrySet(base)
         model_family = get_model_family(model_name) or "unknown"
         harness_hash = registry.bundle_hashes(model_name=model_name).get("prompt_bundle_hash", "")
@@ -2510,7 +2745,7 @@ def baseline_runset_official_cmd(
 ) -> None:
     """Run the official holdout-only baseline eval (one-shot mode)."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     try:
         resolved_eval_set = resolve_eval_set(
             store=store,
@@ -2558,7 +2793,7 @@ def seed_simulated(
     is available.
     """
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
 
     if delete:
         result = store.delete_simulated_leaderboard_rows(eval_set_id=eval_set_id)
@@ -2580,7 +2815,7 @@ def compare_eval_runs(
 ) -> None:
     """Compare reproducibility metadata between two eval runs."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
 
     def _run_summary(eval_run_id: str) -> Dict[str, Any]:
         row = store.get_eval_run(eval_run_id)
@@ -2654,20 +2889,50 @@ def compare_eval_runs(
     )
 
 
+def _resolve_import_eval_set_name(
+    eval_path: Path,
+    *,
+    explicit_name: Optional[str] = None,
+    base: Optional[Path] = None,
+) -> str:
+    """Name an imported eval set after its file, not a hard-coded default.
+
+    ``training_data/eval_set.json`` keeps the historical ``flower_100_default``
+    name for compatibility; every other file is named by its stem (for example
+    ``practice_set``), so imports stay distinguishable in the DB and CLI.
+    """
+    if explicit_name and str(explicit_name).strip():
+        return str(explicit_name).strip()
+    resolved = eval_path.resolve()
+    default_path = ((base or Path.cwd()) / "training_data" / "eval_set.json").resolve()
+    if resolved == default_path or resolved.name == "eval_set.json":
+        return "flower_100_default"
+    return resolved.stem
+
+
 @app.command(name="import-eval-set")
 def import_eval_set(
     path: Optional[str] = typer.Option(
         None, "--path", help="Path to eval_set.json (default: training_data/eval_set.json)"
     ),
     version: str = typer.Option("flower100_v1", "--version", help="Version label for this eval set"),
+    name: Optional[str] = typer.Option(
+        None,
+        "--name",
+        help=(
+            "Eval set name. Defaults to the file stem (e.g. practice_set) or "
+            "'flower_100_default' for the bundled training_data/eval_set.json."
+        ),
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit result as JSON"),
 ) -> None:
-    """Import the default FlowER eval set into the local DB from training_data/eval_set.json."""
+    """Import an eval set JSON file into the local DB (default: training_data/eval_set.json)."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     eval_path = Path(path) if path else base / "training_data" / "eval_set.json"
     if not eval_path.exists():
         raise typer.BadParameter(f"Eval set file not found: {eval_path}")
+    eval_set_name = _resolve_import_eval_set_name(eval_path, explicit_name=name, base=base)
 
     raw = json.loads(eval_path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
@@ -2708,7 +2973,7 @@ def import_eval_set(
         for c in cases
     )
     for item in store.list_eval_sets():
-        if item.get("name") != "flower_100_default" or item.get("version") != version:
+        if item.get("name") != eval_set_name or item.get("version") != version:
             continue
         existing_cases = store.list_eval_set_cases(str(item.get("id") or ""))
         existing_has_multistep = any(
@@ -2725,7 +2990,7 @@ def import_eval_set(
             return
 
     eval_set_id = store.add_eval_set(
-        name="flower_100_default",
+        name=eval_set_name,
         version=version,
         source_path=str(eval_path),
         sha256=None,
@@ -2734,7 +2999,7 @@ def import_eval_set(
         purpose="general",
         exposed_in_ui=True,
     )
-    result = {"eval_set_id": eval_set_id, "name": "flower_100_default", "version": version, "case_count": len(cases)}
+    result = {"eval_set_id": eval_set_id, "name": eval_set_name, "version": version, "case_count": len(cases)}
     if json_output:
         typer.echo(json.dumps(result, indent=2))
     else:
@@ -2754,8 +3019,8 @@ def import_holdout_eval_set(
 ) -> None:
     """Import the isolated leaderboard holdout eval set into the local DB."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
-    eval_path = Path(path) if path else base / "training_data" / "leaderboard_holdout" / "eval_set_holdout.json"
+    store = RunStore(resolve_db_path(base))
+    eval_path = Path(path) if path else holdout_eval_set_path(base)
     if not eval_path.exists():
         raise typer.BadParameter(f"Holdout eval set file not found: {eval_path}")
 
@@ -2853,7 +3118,7 @@ def leaderboard(
         raise typer.BadParameter("choose at most one of --json or --markdown")
 
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     items = store.leaderboard(eval_set_id=eval_set_id, limit=max(1, min(limit, 100)))
     items = _filter_leaderboard_rows(items, completed_only=completed_only)
 
@@ -2927,7 +3192,7 @@ def leaderboard_official(
 ) -> None:
     """Print leaderboard rows for the official holdout suite."""
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     try:
         resolved = resolve_eval_set(
             store=store,
@@ -2984,6 +3249,11 @@ def update_leaderboard_artifacts_cmd(
         "--refresh-curriculum/--no-refresh-curriculum",
         help="Also run curriculum render-readme to refresh curriculum/generated/leaderboard_*.json",
     ),
+    curriculum_model_name: str = typer.Option(
+        OPUS_MODEL,
+        "--curriculum-model-name",
+        help="Model passed to curriculum render-readme when --refresh-curriculum is enabled",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print changes without writing files"),
 ) -> None:
     """Regenerate LEADERBOARD.md Arena table and curriculum/generated/ from live leaderboard data.
@@ -2991,7 +3261,7 @@ def update_leaderboard_artifacts_cmd(
     Run after eval-runset-official to sync LEADERBOARD.md and curriculum artifacts.
     """
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     try:
         resolved = resolve_eval_set(
             store=store,
@@ -3031,8 +3301,10 @@ def update_leaderboard_artifacts_cmd(
         raise typer.Exit(1)
 
     if refresh_curriculum and not dry_run:
-        typer.echo("Refreshing curriculum/generated/ (leaderboard_*.json, readme_context.json)...")
-        render_curriculum_readme(base, store)
+        typer.echo(
+            f"Refreshing curriculum/generated/ (leaderboard_*.json, readme_context.json) for {curriculum_model_name}..."
+        )
+        render_curriculum_readme(base, store, model_name=curriculum_model_name)
         gen_dir = base / "curriculum" / "generated"
         if gen_dir.is_dir():
             typer.echo(f"Updated {gen_dir}/")
@@ -3044,7 +3316,7 @@ def curriculum_status_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit curriculum status as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = build_curriculum_status(base, store, model_name=model_name)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3072,7 +3344,7 @@ def curriculum_submit_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit queue payload as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = submit_curriculum_release(base, store, model_name=model_name)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3086,7 +3358,7 @@ def curriculum_publish_due_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit published checkpoints as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = publish_due_curriculum_releases(base, store)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3103,7 +3375,7 @@ def curriculum_publish_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit checkpoint as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = publish_curriculum_release(base, store, queue_id=checkpoint_id, force=force)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3113,11 +3385,17 @@ def curriculum_publish_cmd(
 
 
 @curriculum_app.command("render-readme")
-def curriculum_render_readme_cmd() -> None:
+def curriculum_render_readme_cmd(
+    model_name: str = typer.Option(
+        OPUS_MODEL,
+        "--model-name",
+        help="Exact model id for leaderboard snapshot (as stored on leaderboard rows, e.g. gpt-5.5 or anthropic/claude-opus-4.6)",
+    ),
+) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
-    render_curriculum_readme(base, store)
-    typer.echo("Rendered curriculum README")
+    store = RunStore(resolve_db_path(base))
+    render_curriculum_readme(base, store, model_name=model_name)
+    typer.echo(f"Rendered curriculum README (model_name={model_name})")
 
 
 @curriculum_app.command("history")
@@ -3126,7 +3404,7 @@ def curriculum_history_cmd(
     json_output: bool = typer.Option(False, "--json", help="Emit checkpoint history as JSON"),
 ) -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     payload = curriculum_history(store, model_name=model_name)
     if json_output:
         typer.echo(json.dumps(payload, indent=2, default=str))
@@ -3141,7 +3419,7 @@ def curriculum_history_cmd(
 @curriculum_app.command("tag-history")
 def curriculum_tag_history_cmd() -> None:
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     checkpoints = curriculum_history(store, model_name=OPUS_MODEL)
     for item in checkpoints:
         typer.echo(f"{item.get('release_date')} {item.get('git_tag') or 'n/a'}")
@@ -3192,7 +3470,11 @@ def _execute_harness_eval_run(
     selected_case_ids: Optional[Sequence[str]] = None,
     planner_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    from mechanistic_agent.scoring import score_snapshot_against_known, score_subagents_from_step_outputs
+    from mechanistic_agent.scoring import (
+        DEFAULT_SCORING_VERSION,
+        score_snapshot_against_known,
+        score_subagents_from_step_outputs,
+    )
 
     resolved_eval_set_id = str(resolved_eval_set.eval_set_id)
     model_family = get_model_family(model_name) or "unknown"
@@ -3308,14 +3590,22 @@ def _execute_harness_eval_run(
             snapshot = store.get_run_snapshot(run_id) or {}
             step_outputs = snapshot.get("step_outputs", [])
 
-            graded = score_snapshot_against_known(snapshot, expected) if expected else {"score": 0.0, "passed": False}
+            graded = (
+                score_snapshot_against_known(snapshot, expected, scoring_version=DEFAULT_SCORING_VERSION)
+                if expected
+                else {"score": 0.0, "passed": False}
+            )
             score = float(graded.get("score", 0.0))
             passed = bool(graded.get("passed", False))
             all_graded.append(graded)
 
             subagent_scores: Dict[str, Any] = {}
             try:
-                subagent_scores = score_subagents_from_step_outputs(step_outputs)
+                subagent_scores = score_subagents_from_step_outputs(
+                    step_outputs,
+                    scoring_version=DEFAULT_SCORING_VERSION,
+                    mapping_agreement=graded.get("mapping_agreement"),
+                )
             except Exception:
                 pass
 
@@ -3330,6 +3620,8 @@ def _execute_harness_eval_run(
                 case_step_count=case_step_count,
                 subagent_scores=subagent_scores,
                 scored_error=graded.get("error"),
+                mapping_agreement=graded.get("mapping_agreement"),
+                scoring_version=DEFAULT_SCORING_VERSION,
             )
             chemistry = summary.get("chemistry_backend") if isinstance(summary.get("chemistry_backend"), dict) else {}
             if chemistry:
@@ -3451,6 +3743,81 @@ def _execute_harness_eval_run(
     if json_output:
         typer.echo(json.dumps(result_obj, indent=2))
     return result_obj
+
+
+@app.command(name="rescore-eval-results")
+def rescore_eval_results_cmd(
+    scoring_version: str = typer.Option(
+        "v2", "--scoring-version", help="Scoring version to recompute under (v1 or v2)."
+    ),
+    eval_set_id: Optional[str] = typer.Option(None, "--eval-set-id", help="Restrict to one eval set."),
+    eval_run_ids: Optional[List[str]] = typer.Option(
+        None, "--eval-run-id", help="Restrict to eval run(s); repeatable."
+    ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Write recomputed results into the DB (backed up first). Default is a dry run on a temporary copy.",
+    ),
+    backup: bool = typer.Option(True, "--backup/--no-backup", help="With --apply, copy the DB to <db>.pre-rescore-<ts>.bak first."),
+    db_path: Optional[Path] = typer.Option(None, "--db-path", help="SQLite DB (default: resolved data root)."),
+    use_curriculum: bool = typer.Option(
+        True,
+        "--curriculum/--no-curriculum",
+        help="Resolve curriculum cases (flower_<id>) from the FlowER lookup cache when the eval set lacks them.",
+    ),
+    markdown_output: Optional[Path] = typer.Option(None, "--output", help="Also write the delta table (Markdown) here."),
+    json_output: bool = typer.Option(False, "--json", help="Emit the delta rows as JSON."),
+    completed_only: bool = typer.Option(True, "--completed-only/--include-running", help="Leaderboard row filter."),
+) -> None:
+    """Recompute stored eval results from stored traces under a scoring version.
+
+    Prints a per-leaderboard-row table: score before, score after, delta. Without
+    --apply nothing is written: the DB is copied (SQLite backup API) to a
+    temporary directory, rescored there, and the copy is deleted.
+    """
+    from mechanistic_agent.rescoring import format_delta_markdown, run_rescore
+    from mechanistic_agent.scoring import normalize_scoring_version
+
+    try:
+        version = normalize_scoring_version(scoring_version)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    path = Path(db_path).expanduser() if db_path else resolve_db_path(Path.cwd())
+    if not path.is_file():
+        typer.echo(
+            f"Runtime DB not found at {path}. Set MECHANISTIC_DATA_DIR or pass --db-path.", err=True
+        )
+        raise typer.Exit(1)
+
+    result = run_rescore(
+        path,
+        scoring_version=version,
+        apply=apply,
+        eval_set_id=eval_set_id,
+        eval_run_ids=list(eval_run_ids or []) or None,
+        backup=backup,
+        row_filter=lambda rows: _filter_leaderboard_rows(rows, completed_only=completed_only),
+        use_curriculum=use_curriculum,
+    )
+    table = format_delta_markdown(result.delta_rows, result.report)
+    if json_output:
+        typer.echo(json.dumps({"counts": result.report.counts(), "rows": result.delta_rows}, indent=2, default=str))
+    else:
+        mode = "APPLIED to" if result.applied else "DRY RUN (temporary copy of)"
+        typer.echo(f"{mode} {result.db_path}")
+        if result.backup_path:
+            typer.echo(f"Backup: {result.backup_path}")
+        typer.echo(table)
+    if markdown_output is not None:
+        markdown_output.write_text(table + "\n", encoding="utf-8")
+        typer.echo(f"Wrote delta table to {markdown_output}")
+    if result.applied:
+        typer.echo(
+            "Leaderboard rows now read the recomputed scores. Regenerate artifacts with "
+            "`python main.py leaderboard --eval-set-id <id> --markdown --output LEADERBOARD.md` "
+            "and `python main.py update-leaderboard-artifacts`."
+        )
 
 
 @app.command(name="eval")
@@ -3612,7 +3979,7 @@ def eval_cmd(
         raise typer.BadParameter("--max-per-tier must be at least 1 when set")
 
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     registry = RegistrySet(base)
     model_family = get_model_family(model_name) or "unknown"
     if requested_tiers:
@@ -3654,6 +4021,18 @@ def eval_cmd(
                 tier_definitions_path=tier_definitions_path,
                 allow_holdout=allow_holdout,
             )
+            if not status.get("requested_tier_has_cases"):
+                requested_context = status["tier_contexts"].get(requested_tier) or {}
+                source_name = str(requested_context.get("source_name") or "unknown")
+                source_path = str(requested_context.get("source_path") or "unknown")
+                raise typer.BadParameter(
+                    f"Tier '{requested_tier}' resolves to 0 cases via its active source "
+                    f"'{source_name}' ({source_path}). Populate that tier's case list "
+                    f"(training_data/eval_tiers.json or training_data/baseline_tiers_clawdiator.json, "
+                    f"whichever training_data/development_leaderboard_policy.json selects for "
+                    f"'{requested_tier}') before running `eval --tier {requested_tier}` "
+                    "or `--leaderboard-status-only`."
+                )
             if not json_output:
                 _print_development_leaderboard_status(
                     status=status,
@@ -4003,7 +4382,7 @@ def eval_runset_official_cmd(
     for prompt tuning or harness development.
     """
     base = Path.cwd()
-    store = RunStore(base / "data" / "mechanistic.db")
+    store = RunStore(resolve_db_path(base))
     model_name = _canonicalize_model_name_or_raise(model_name)
     resolved_max_cases = int(max_cases) if max_cases is not None else 20
     if resolved_max_cases < 1:

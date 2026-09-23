@@ -61,7 +61,7 @@ From this set, `eval_tiers.json` defines three difficulty tiers of 10 reactions 
 - **Medium** (5–8 steps): Friedel-Crafts, Wittig, SNAr, Jones oxidation, Boc deprotection
 - **Hard** (9–19 steps): Mannich, Mitsunobu, DCC condensation, Ing-Manske, aldol condensation
 
-PR approval gates on tier performance (see [CONTRIBUTING.md](CONTRIBUTING.md) for the specific requirements per contribution type). The tier definitions themselves are updatable by contributors following the same PR process as subagent additions.
+PR approval gates on tier performance (see [docs/change_evidence_policy.md](docs/change_evidence_policy.md) for the specific requirements per change type). The tier definitions themselves are updatable through the same evidence-gated PR process as subagent additions.
 
 ---
 
@@ -114,7 +114,7 @@ The system is designed to fail loudly rather than silently degrade. Specifically
 
 ### Stage 0 — Human in the loop (current)
 
-A human runs reactions, reviews traces, approves them, and opens PRs with evidence. The system records everything, but a person decides what to merge.
+A human or an agent runs reactions, reviews traces, approves them, and opens PRs with evidence. The system records everything, but the maintainer decides what to merge. Outside users contribute observations (issues, code) rather than operating this loop themselves.
 
 ### Stage 1 — Automated approval with human review
 

@@ -11,10 +11,11 @@ from mechanistic_agent.core.tool_executor import ToolExecutor
 def test_run_conditions_strips_atom_maps(monkeypatch) -> None:
     captured = {}
 
-    def fake_conditions(starting, products, ph):
+    def fake_conditions(starting, products, ph, functional_groups_enabled=None):
         captured["starting"] = starting
         captured["products"] = products
         captured["ph"] = ph
+        captured["functional_groups_enabled"] = functional_groups_enabled
         return '{"ok": true}'
 
     monkeypatch.setattr(tool_executor_module, "assess_initial_conditions", fake_conditions)

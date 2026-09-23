@@ -153,18 +153,27 @@ def assess_target_product_state(
     resulting_state: List[str],
     target_products: List[str],
     starting_materials: Optional[List[str]] = None,
+    allowed_extra_species: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Classify whether a step has reached the primary target product.
+    """Classify whether a step has reached the target products.
 
     Spectator products already present in the starting pool are excluded from
     target completion checks. Among the remaining targets, the heaviest species
-    are treated as the primary products that should trigger completion.
+    are treated as the *primary* products.
+
+    ``contains_target_product`` (the run-completion flag) is true only when
+    **every** productive target is present in the resulting state and nothing
+    extra remains beyond the declared targets, the starting materials, and
+    ``allowed_extra_species`` (declared spectators / persistent species).
+    ``contains_primary_target_product`` keeps the older, lenient semantics
+    (heaviest product present) for partial-credit scoring.
     """
 
     current_signatures = normalize_species_for_matching(current_state or [])
     resulting_signatures = normalize_species_for_matching(resulting_state or [])
     target_signatures = normalize_species_for_matching(target_products or [])
     starting_signatures = normalize_species_for_matching(starting_materials or [])
+    allowed_signatures = normalize_species_for_matching(allowed_extra_species or [])
 
     spectator_targets = [item for item in target_signatures if item in starting_signatures]
     productive_targets = [item for item in target_signatures if item not in starting_signatures]
@@ -182,10 +191,23 @@ def assess_target_product_state(
 
     matched_targets = [item for item in target_signatures if item in resulting_signatures]
     matched_primary_targets = [item for item in primary_targets if item in resulting_signatures]
+    missing_targets = [item for item in productive_targets if item not in resulting_signatures]
+    all_targets_reached = bool(productive_targets) and not missing_targets
+    unexpected_species = [
+        item
+        for item in resulting_signatures
+        if item not in target_signatures
+        and item not in starting_signatures
+        and item not in allowed_signatures
+    ]
 
     return {
-        "contains_target_product": bool(matched_primary_targets),
+        "contains_target_product": bool(all_targets_reached and not unexpected_species),
+        "contains_primary_target_product": bool(matched_primary_targets),
+        "all_targets_reached": all_targets_reached,
         "matched_target_products": matched_targets,
+        "missing_target_products": missing_targets,
+        "unexpected_species": unexpected_species,
         "matched_primary_target_products": matched_primary_targets,
         "primary_target_products": primary_targets,
         "productive_target_products": productive_targets,

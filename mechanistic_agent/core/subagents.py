@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from .global_mapping_context import MAPPED_SPECIES_CONTEXT_KEY
 from .tool_executor import ToolExecutor
 from .types import RunState, StepResult, StepValidationResult
 
@@ -66,6 +67,7 @@ class ConditionsAgent:
             state.run_input.starting_materials,
             state.run_input.products,
             state.run_input.ph,
+            functional_groups_enabled=state.run_config.functional_groups_enabled,
         )
         model = state.run_config.step_models.get("initial_conditions", state.run_config.model)
         usage, cost = _extract_step_cost(conditions_output, model)
@@ -106,6 +108,7 @@ class MissingReagentsAgent:
             starting=state.run_input.starting_materials,
             products=state.run_input.products,
             conditions_guidance=conditions_output,
+            functional_groups_enabled=state.run_config.functional_groups_enabled,
         )
         model = state.run_config.step_models.get("missing_reagents", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)
@@ -173,18 +176,28 @@ class MappingAgent:
             mapped_atoms=mapped_atoms,
             backend_config=backend_config,
         )
+        if validation is None:
+            # rdkit-agent could not be executed; record that explicitly so the
+            # trace never looks "validated" when nothing ran.
+            output["atom_map_validation"] = {
+                "passed": None,
+                "skipped": True,
+                "reason": "rdkit_cli_unavailable",
+            }
+            return None
         # When validation finds errors, clamp confidence so downstream
         # consumers know the mapping is unreliable.
-        if validation is not None and not validation.passed:
-            if isinstance(llm_response.get("confidence"), (int, float)):
-                llm_response["confidence"] = min(float(llm_response["confidence"]), 0.3)
-            output["atom_map_validation"] = validation.as_dict()
-        elif validation is not None:
-            output["atom_map_validation"] = validation.as_dict()
+        if not validation.passed and isinstance(llm_response.get("confidence"), (int, float)):
+            llm_response["confidence"] = min(float(llm_response["confidence"]), 0.3)
+        output["atom_map_validation"] = validation.as_dict()
         return validation
 
     def run(self, state: RunState) -> StepResult:
-        output = self.executor.run_mapping(state.run_input.starting_materials, state.run_input.products)
+        output = self.executor.run_mapping(
+            state.run_input.starting_materials,
+            state.run_input.products,
+            functional_groups_enabled=state.run_config.functional_groups_enabled,
+        )
         model = state.run_config.step_models.get("atom_mapping", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)
         validation = self._validate_mapping(
@@ -230,6 +243,50 @@ class MappingAgent:
 @dataclass(slots=True)
 class ReactionTypeAgent:
     executor: ToolExecutor
+    # Optional decision client override (tests, calibration). None = route
+    # through llm.get_decision_model for the harness jev.model.
+    jev_client: Any = None
+
+    def _run_jev(self, state: RunState, context: Dict[str, Any]) -> StepResult:
+        output = self.executor.run_reaction_type_mapping_jev(
+            starting=state.run_input.starting_materials,
+            products=state.run_input.products,
+            jev_config=state.jev_config,
+            client=self.jev_client,
+            **context,
+        )
+        decision_usage = output.pop("_decision_usage", None)
+        decision_cost = output.pop("_decision_cost", None)
+        if str(output.get("decision_engine") or "") == "llm":
+            # Jev failed and the LLM selector answered; bill both to the step.
+            from mechanistic_agent.model_registry import update_cost_totals, update_usage_totals
+
+            llm_model = state.run_config.step_models.get("reaction_type_mapping", state.run_config.model)
+            usage, cost = _extract_step_cost(output, output.get("model_used") or llm_model)
+            usage = dict(usage or {})
+            cost = dict(cost or {})
+            if isinstance(decision_usage, dict):
+                update_usage_totals(usage, decision_usage)
+            if isinstance(decision_cost, dict):
+                update_cost_totals(cost, decision_cost)
+            return StepResult(
+                step_name="reaction_type_mapping",
+                tool_name="select_reaction_type",
+                output=output,
+                model=str(output.get("model_used") or llm_model),
+                source="llm",
+                token_usage=usage or None,
+                cost=cost or None,
+            )
+        return StepResult(
+            step_name="reaction_type_mapping",
+            tool_name="select_reaction_type",
+            output=output,
+            model=str(output.get("model_used") or "") or None,
+            source="jev",
+            token_usage=decision_usage if isinstance(decision_usage, dict) else None,
+            cost=decision_cost if isinstance(decision_cost, dict) else None,
+        )
 
     def run(
         self,
@@ -242,6 +299,19 @@ class ReactionTypeAgent:
         missing_reagents: Optional[Dict[str, Any]] = None,
         atom_mapping: Optional[Dict[str, Any]] = None,
     ) -> StepResult:
+        policy = getattr(state, "decision_policy", None)
+        if getattr(policy, "reaction_type", "llm") == "jev":
+            return self._run_jev(
+                state,
+                dict(
+                    balance_analysis=balance_analysis,
+                    functional_groups=functional_groups,
+                    ph_recommendation=ph_recommendation,
+                    initial_conditions=initial_conditions,
+                    missing_reagents=missing_reagents,
+                    atom_mapping=atom_mapping,
+                ),
+            )
         output = self.executor.run_reaction_type_mapping(
             starting=state.run_input.starting_materials,
             products=state.run_input.products,
@@ -264,6 +334,29 @@ class ReactionTypeAgent:
         )
 
 
+def _mapped_loop_current_state(state: RunState) -> Optional[List[str]]:
+    """Mapped current_state for the proposal prompt under loop_state_mapping="mapped".
+
+    Returns None in the default "stripped" mode (production behaviour).
+    """
+    if getattr(state, "loop_state_mapping", "stripped") != "mapped":
+        return None
+    try:
+        from .mapped_state import sync_mapped_loop_state
+
+        mapped, _origin = sync_mapped_loop_state(
+            state.mapped_loop_state,
+            current_state=state.current_state,
+            history=state.mapped_state_history,
+            step_index=state.step_index,
+            seed_species=state.mapped_seed_species if state.step_index == 0 else None,
+        )
+    except Exception:
+        return None
+    state.mapped_loop_state = mapped.snapshot()
+    return list(mapped.species)
+
+
 @dataclass(slots=True)
 class IntermediateAgent:
     executor: ToolExecutor
@@ -274,6 +367,12 @@ class IntermediateAgent:
         *,
         template_guidance: Optional[Dict[str, Any]] = None,
     ) -> StepResult:
+        mapped_context: Dict[str, Any] = {}
+        if isinstance(template_guidance, dict) and MAPPED_SPECIES_CONTEXT_KEY in template_guidance:
+            template_guidance = dict(template_guidance)
+            popped = template_guidance.pop(MAPPED_SPECIES_CONTEXT_KEY)
+            if isinstance(popped, dict):
+                mapped_context = popped
         output = self.executor.run_intermediates(
             starting=state.run_input.starting_materials,
             products=state.run_input.products,
@@ -284,6 +383,11 @@ class IntermediateAgent:
             step_index=state.step_index,
             step_mapping_context=state.latest_step_mapping,
             template_guidance=template_guidance,
+            mapped_loop_current_state=_mapped_loop_current_state(state),
+            mapped_starting_materials=list(mapped_context.get("mapped_starting_materials") or []),
+            mapped_products=list(mapped_context.get("mapped_products") or []),
+            mapped_current_state=list(mapped_context.get("mapped_current_state") or []),
+            functional_groups_enabled=state.run_config.functional_groups_enabled,
         )
         model = state.run_config.step_models.get("intermediates", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)
@@ -393,6 +497,7 @@ class MechanismAgent:
             previous_intermediates=state.previous_intermediates,
             starting_materials=state.run_input.starting_materials,
             note=str(note) if note else None,
+            allowed_extra_species=list(getattr(state, "allowed_extra_species", None) or []),
         )
 
         return StepResult(
@@ -400,7 +505,11 @@ class MechanismAgent:
             tool_name="predict_mechanistic_step",
             output=output,
             attempt=state.step_index + 1,
-            source="llm",
+            # predict_mechanistic_step performs purely deterministic RDKit
+            # validation of the LLM-proposed candidate; it makes no model
+            # call of its own, so it must not be counted as an "llm" step
+            # (see PRD_jev_atom_identity_mechanistic.md §5, §18).
+            source="deterministic",
         )
 
 

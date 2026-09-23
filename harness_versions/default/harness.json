@@ -57,7 +57,7 @@
       "description": "SMARTS pattern matching identifies reactive functional groups (alcohols, ketones, amines, etc.) and leaving groups across all starting materials and products. Runs once; output informs atom-mapping context.",
       "io_schema": {
         "inputs": ["starting_materials (SMILES[])", "products (SMILES[])"],
-        "outputs": ["functional_groups (object: group -> count)", "leaving_groups (string[])"]
+        "outputs": ["functional_groups (object: group -> count)"]
       }
     },
     {
@@ -79,7 +79,7 @@
       "config_gate": null,
       "prompt_call_name": null,
       "group_key": "conditions_pair",
-      "description": "Rule-based pH suggestion. If the user supplies a pH it is returned as-is. Otherwise, uses Dimorphite-DL protonation profiles or a heuristic acid/base scoring of the molecules. Runs once; the recommended pH is passed to the Assess Reaction Conditions LLM call.",
+      "description": "Rule-based pH suggestion. If the user supplies a pH it is returned as-is. Otherwise, uses Dimorphite-DL protonation profiles or a heuristic acid/base scoring of the molecules. Runs once; only select_reaction_type consumes this output today (the Assess Reaction Conditions LLM call receives only the user-supplied pH, not this recommendation).",
       "io_schema": {
         "inputs": ["starting_materials (SMILES[])", "products (SMILES[])", "user_ph (optional)"],
         "outputs": ["recommended_ph (float)", "source (user/heuristic/dimorphite)"]
@@ -354,7 +354,7 @@
     }
   ],
   "run_config_defaults": {
-    "proceed_on_validation_failure": true,
+    "proceed_on_validation_failure": false,
     "proceed_only_on_arrow_push_failure": false
   },
   "topology_profiles": {
@@ -412,6 +412,11 @@
         "version": 4,
         "date": "2026-03-10",
         "description": "Added post_loop_modules (past_failure_reevaluation), run_config_defaults (proceed_on_validation_failure, proceed_only_on_arrow_push_failure). ModulePhase extended with 'post_loop'."
+      },
+      {
+        "version": 5,
+        "date": "2026-09-16",
+        "description": "run_config_defaults.proceed_on_validation_failure set to false so deterministic validation is the arbiter (SOUL Guardrail 1). The coordinator now actually applies run_config_defaults and gates the balance_pending soft-advance on the same flag. The previous permissive behaviour lives on as harness_versions/permissive_default for A/B comparison."
       }
     ]
   }

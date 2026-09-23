@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+from _optional_assets import require_repo_asset
+
 try:  # pragma: no cover - optional dependency in test runtime
     from rdkit import Chem
 except Exception:  # pragma: no cover - defensive
@@ -53,13 +55,13 @@ def _normalize_smiles(smiles: str) -> str:
 
 
 def test_taxonomy_has_53_stable_entries_and_preserves_labels() -> None:
-    # reaction_type_templates.json: expanded rt_xxx catalog (80 entries, decoupled from rxn_map_expanded taxonomy)
+    # reaction_type_templates.json: expanded rt_xxx catalog (86 entries, decoupled from rxn_map_expanded taxonomy)
     template_payload = _load_json(REACTION_TYPE_TEMPLATES)
     templates = list(template_payload.get("templates") or [])
     template_ids = [str(row.get("type_id") or "") for row in templates]
-    assert len(template_ids) == 80
+    assert len(template_ids) == 86
     assert template_ids[0] == "rt_001"
-    assert template_ids[-1] == "rt_080"
+    assert template_ids[-1] == "rt_086"
 
     # rxn_map_expanded.json: original mt_xxx taxonomy is preserved at 53 entries
     payload = _load_json(RXN_MAP_EXPANDED)
@@ -99,7 +101,7 @@ def test_reaction_steps_have_contiguous_indices_dbe_and_aps() -> None:
     assert len(payload["reactions"]) >= 20
 
     template_rows = template_payload.get("templates", [])
-    assert len(template_rows) == 80
+    assert len(template_rows) == 86
     assert template_payload.get("example_mappings")
     by_label = {row["label_exact"]: row for row in template_rows}
     assert "Finkelstein halide exchange" in by_label
@@ -159,6 +161,7 @@ def test_template_step_counts_cover_observed_eval_depth() -> None:
 
 
 def test_notebook_smoke_and_required_cells() -> None:
+    require_repo_asset("training_data/rxn_map_visualizer.ipynb")
     notebook = _load_json(RXN_NOTEBOOK)
     assert notebook.get("nbformat") == 4
     cells = notebook.get("cells", [])

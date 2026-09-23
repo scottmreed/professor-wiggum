@@ -40,6 +40,33 @@ _DETERMINISTIC_SUBAGENTS = frozenset(
     {"balance_analysis", "functional_groups", "ph_recommendation", "reflection"}
 )
 
+# Scoring versions.
+#   v1: the mapping part of per-step validity (20%) and the step_atom_mapping
+#       subagent score are the mapping LLM's self-reported confidence (0.5 when
+#       absent). Kept to reproduce historical numbers exactly.
+#   v2: the mapping component is measured, not self-reported: benchmark
+#       mapping agreement when the case has a benchmark mapping, else the
+#       stored ``rdkit-agent atom-map check`` pass/fail, else a neutral 0.5.
+#       Every component carries ``mapping_component_source``.
+SCORING_V1 = "v1"
+SCORING_V2 = "v2"
+SCORING_VERSIONS = (SCORING_V1, SCORING_V2)
+DEFAULT_SCORING_VERSION = SCORING_V2
+LEGACY_SCORING_VERSION = SCORING_V1  # results recorded before versioning
+
+MAPPING_SOURCE_BENCHMARK = "benchmark_agreement"
+MAPPING_SOURCE_ATOM_MAP_CHECK = "atom_map_check"
+MAPPING_SOURCE_NEUTRAL = "neutral_default"
+MAPPING_SOURCE_SELF_REPORTED = "self_reported_confidence"  # v1 only
+_NEUTRAL_MAPPING_COMPONENT = 0.5
+
+
+def normalize_scoring_version(value: Any) -> str:
+    text = str(value or DEFAULT_SCORING_VERSION).strip().lower()
+    if text not in SCORING_VERSIONS:
+        raise ValueError(f"unknown scoring_version {value!r}; expected one of {SCORING_VERSIONS}")
+    return text
+
 
 def _as_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -189,6 +216,55 @@ def _build_mapping_confidence_by_attempt(step_outputs: List[Dict[str, Any]]) -> 
     return out
 
 
+def _atom_map_check_passed(row: Mapping[str, Any]) -> Optional[bool]:
+    """Stored ``rdkit-agent atom-map check`` outcome for one mapping row (None if not run)."""
+    output = row.get("output")
+    if isinstance(output, str):
+        output = _parse_output(output)
+    candidates = [row.get("validation")]
+    if isinstance(output, Mapping):
+        candidates.append(output.get("atom_map_validation"))
+    for validation in candidates:
+        if isinstance(validation, str):
+            validation = _parse_output(validation)
+        if not isinstance(validation, Mapping):
+            continue
+        for check in validation.get("checks") or []:
+            if not isinstance(check, Mapping) or str(check.get("name") or "") != "atom_map_check":
+                continue
+            details = check.get("details") if isinstance(check.get("details"), Mapping) else {}
+            if details.get("skipped"):
+                continue
+            return bool(check.get("passed"))
+    return None
+
+
+def _atom_map_check_by_attempt(step_outputs: List[Dict[str, Any]]) -> Dict[int, bool]:
+    out: Dict[int, bool] = {}
+    for row in step_outputs:
+        if row.get("step_name") != "step_atom_mapping":
+            continue
+        passed = _atom_map_check_passed(row)
+        if passed is not None:
+            out[int(row.get("attempt") or 0)] = passed
+    return out
+
+
+def mapping_component_v2(
+    step_index: int,
+    *,
+    agreement_by_step: Mapping[int, Mapping[str, Any]],
+    atom_map_check_by_step: Mapping[int, bool],
+) -> tuple[float, str]:
+    """(value, source) of the v2 mapping component for one step."""
+    agreement = agreement_by_step.get(step_index) or {}
+    if agreement.get("status") == "scored" and isinstance(agreement.get("agreement"), (int, float)):
+        return max(0.0, min(float(agreement["agreement"]), 1.0)), MAPPING_SOURCE_BENCHMARK
+    if step_index in atom_map_check_by_step:
+        return (1.0 if atom_map_check_by_step[step_index] else 0.0), MAPPING_SOURCE_ATOM_MAP_CHECK
+    return _NEUTRAL_MAPPING_COMPONENT, MAPPING_SOURCE_NEUTRAL
+
+
 def extract_accepted_path(snapshot: Mapping[str, Any]) -> List[Dict[str, Any]]:
     """Extract accepted mechanism pathway from events; fallback to synthesis rows."""
     events = list(snapshot.get("events") or [])
@@ -286,20 +362,74 @@ def _known_targets(expected: Mapping[str, Any] | None) -> List[Dict[str, Any]]:
     return []
 
 
+def compute_mapping_agreement(
+    snapshot: Mapping[str, Any],
+    expected: Mapping[str, Any] | None,
+    accepted: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Benchmark mapping agreement for a run (recorded metric; never raises)."""
+    try:
+        from mechanistic_agent.core.mapping_metrics import compute_run_mapping_agreement
+
+        return compute_run_mapping_agreement(
+            snapshot,
+            expected,
+            accepted_steps=accepted if accepted is not None else extract_accepted_path(snapshot),
+        )
+    except Exception as exc:  # pragma: no cover - metric must not break scoring
+        return {"available": False, "reason": "error", "error": str(exc)}
+
+
 def score_snapshot_against_known(
     snapshot: Mapping[str, Any],
     expected: Mapping[str, Any] | None,
+    *,
+    scoring_version: str = DEFAULT_SCORING_VERSION,
 ) -> Dict[str, Any]:
-    """Return deterministic score + breakdown for leaderboard/eval use."""
+    """Return deterministic score + breakdown for leaderboard/eval use.
+
+    ``scoring_version`` selects how the mapping part of per-step validity is
+    computed (see ``SCORING_VERSIONS``); everything else is identical.
+    """
+    scoring_version = normalize_scoring_version(scoring_version)
     accepted = extract_accepted_path(snapshot)
+    mapping_agreement = compute_mapping_agreement(snapshot, expected, accepted)
+    agreement_by_step: Dict[int, Dict[str, Any]] = {
+        int(item.get("step_index") or 0): item
+        for item in (mapping_agreement.get("steps") or [])
+        if isinstance(item, Mapping)
+    }
     step_outputs = list(snapshot.get("step_outputs") or [])
     mapping_conf = _build_mapping_confidence_by_attempt(step_outputs)
+    atom_map_check_by_step = _atom_map_check_by_attempt(step_outputs)
+    mapping_source_counts: Dict[str, int] = {}
     known_steps = _known_targets(expected)
 
     final_known_product = known_steps[-1]["target_smiles"] if known_steps else None
     final_resulting = accepted[-1]["resulting_state"] if accepted else []
     final_reached = bool(final_known_product and final_known_product in final_resulting)
-    final_component = 1.0 if final_reached else 0.0
+
+    # Partial credit for byproduct completion: the primary (known final) product
+    # gates the component; the remaining expected products scale it. When the
+    # eval case declares no product list, this collapses to the old binary rule.
+    expected_products = _normalized_species((expected or {}).get("products")) if isinstance(expected, Mapping) else []
+    starting_pool = _normalized_species(
+        ((snapshot.get("input") or {}) if isinstance(snapshot.get("input"), Mapping) else {}).get("starting_materials")
+    )
+    expected_targets = [item for item in expected_products if item not in starting_pool] or (
+        [final_known_product] if final_known_product else []
+    )
+    if final_known_product and final_known_product not in expected_targets:
+        expected_targets.append(final_known_product)
+    targets_present = [item for item in expected_targets if item in final_resulting]
+    target_fraction = (len(targets_present) / len(expected_targets)) if expected_targets else (1.0 if final_reached else 0.0)
+    all_targets_reached = bool(expected_targets) and len(targets_present) == len(expected_targets)
+    final_component = target_fraction if final_reached else 0.0
+    unexpected_final_species = [
+        item
+        for item in final_resulting
+        if item not in expected_targets and item not in starting_pool and item not in expected_products
+    ] if accepted else []
 
     step_breakdown: List[Dict[str, Any]] = []
     validity_scores: List[float] = []
@@ -322,7 +452,17 @@ def score_snapshot_against_known(
         resulting_state = _normalized_species(step.get("resulting_state"))
         validation_score = _validation_check_score(step.get("validation"))
         map_conf = mapping_conf.get(step_index, 0.5 if step_index > 0 else 0.0)
-        validity = (0.8 * validation_score) + (0.2 * map_conf)
+        if scoring_version == SCORING_V1:
+            mapping_component = map_conf
+            mapping_source = MAPPING_SOURCE_SELF_REPORTED if step_index in mapping_conf else MAPPING_SOURCE_NEUTRAL
+        else:
+            mapping_component, mapping_source = mapping_component_v2(
+                step_index,
+                agreement_by_step=agreement_by_step,
+                atom_map_check_by_step=atom_map_check_by_step,
+            )
+        mapping_source_counts[mapping_source] = mapping_source_counts.get(mapping_source, 0) + 1
+        validity = (0.8 * validation_score) + (0.2 * mapping_component)
         validity_scores.append(validity)
 
         expected_target = expected_by_idx.get(step_index)
@@ -362,7 +502,14 @@ def score_snapshot_against_known(
                 "alignment_score": round(alignment, 4),
                 "alignment_label": alignment_label,
                 "mapping_confidence": round(map_conf, 4),
+                "mapping_component": round(mapping_component, 4),
+                "mapping_component_source": mapping_source,
                 "validation_score": round(validation_score, 4),
+                # Recorded only: benchmark mapping agreement does not enter the score.
+                "mapping_agreement": (agreement_by_step.get(step_index) or {}).get("agreement"),
+                "mapping_agreement_status": (agreement_by_step.get(step_index) or {}).get(
+                    "status", "no_benchmark_mapping"
+                ),
                 "resulting_state": resulting_state,
             }
         )
@@ -373,6 +520,20 @@ def score_snapshot_against_known(
         value = min(0.03 * extra, 0.2)
         penalty_total += value
         penalty_items.append({"type": "extra_steps", "count": extra, "value": round(value, 4)})
+
+    # "Nothing extra beyond declared spectators": species left in the final
+    # state that are neither expected products nor starting materials are
+    # leftover intermediates or phantom reagents.
+    if unexpected_final_species and final_reached:
+        value = min(0.05 * len(unexpected_final_species), 0.15)
+        penalty_total += value
+        penalty_items.append(
+            {
+                "type": "unexpected_final_species",
+                "species": list(unexpected_final_species),
+                "value": round(value, 4),
+            }
+        )
 
     validity_component = (sum(validity_scores) / len(validity_scores)) if validity_scores else 0.0
     alignment_component = (sum(alignment_scores) / len(alignment_scores)) if alignment_scores else 0.0
@@ -393,12 +554,21 @@ def score_snapshot_against_known(
         overall = min(overall, 0.55)
 
     balance_grade = str(balance_payload.get("grade") or "exact")
-    passed = final_reached and overall >= 0.70 and balance_grade in {"exact", "reconciled"}
+    passed = (
+        final_reached
+        and all_targets_reached
+        and overall >= 0.70
+        and balance_grade in {"exact", "reconciled"}
+    )
     return {
         "score": round(overall, 6),
         "passed": passed,
-        "final_product_component": final_component,
+        "final_product_component": round(final_component, 6),
         "final_product_reached": final_reached,
+        "all_target_products_reached": all_targets_reached,
+        "expected_target_products": expected_targets,
+        "missing_target_products": [item for item in expected_targets if item not in targets_present],
+        "unexpected_final_species": unexpected_final_species,
         "overall_balance_grade": balance_grade,
         "overall_balance_component": round(balance_component, 6),
         "final_known_product": final_known_product,
@@ -410,6 +580,9 @@ def score_snapshot_against_known(
         "accepted_path_step_count": len(accepted),
         "known_step_count": len(known_steps),
         "step_breakdown": step_breakdown,
+        "mapping_agreement": mapping_agreement,
+        "mapping_component_sources": dict(sorted(mapping_source_counts.items())),
+        "scoring_version": scoring_version,
     }
 
 
@@ -427,14 +600,24 @@ def _parse_output(raw: Any) -> Dict[str, Any]:
 
 def score_subagents_from_step_outputs(
     step_outputs: List[Dict[str, Any]],
+    *,
+    scoring_version: str = DEFAULT_SCORING_VERSION,
+    mapping_agreement: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Return per-subagent quality_score and pass_rate from a run's step_outputs.
+
+    ``step_atom_mapping`` depends on ``scoring_version``: v1 uses the mean
+    self-reported confidence; v2 uses the mean v2 mapping component per mapped
+    step (benchmark agreement from ``mapping_agreement`` — the
+    ``score_snapshot_against_known`` field — else atom-map check, else 0.5)
+    with ``pass_rate`` = fraction of components >= 0.5.
 
     Each subagent entry contains:
       - quality_score (0.0–1.0): composite quality signal
       - pass_rate (0.0–1.0): fraction of calls that passed their check
       - calls: total number of calls observed for this subagent
     """
+    scoring_version = normalize_scoring_version(scoring_version)
     known_ids = set(SUBAGENT_IDS)
     by_name: Dict[str, List[Dict[str, Any]]] = {}
     for row in step_outputs:
@@ -508,6 +691,34 @@ def score_subagents_from_step_outputs(
                 "pass_rate": round(pass_rate, 4),
                 "calls": n,
                 "retry_calls": retry_calls,
+            }
+
+        elif name == "step_atom_mapping" and scoring_version == SCORING_V2:
+            agreement_by_step = {
+                int(item.get("step_index") or 0): item
+                for item in ((mapping_agreement or {}).get("steps") or [])
+                if isinstance(item, Mapping)
+            }
+            check_by_step = _atom_map_check_by_attempt(rows)
+            components: List[float] = []
+            sources: Dict[str, int] = {}
+            for attempt in sorted({int(row.get("attempt") or 0) for row in rows}):
+                value, source = mapping_component_v2(
+                    attempt,
+                    agreement_by_step=agreement_by_step,
+                    atom_map_check_by_step=check_by_step,
+                )
+                components.append(value)
+                sources[source] = sources.get(source, 0) + 1
+            mean_component = sum(components) / len(components) if components else _NEUTRAL_MAPPING_COMPONENT
+            pass_rate = (
+                sum(1.0 for c in components if c >= 0.5) / len(components) if components else 0.0
+            )
+            result[name] = {
+                "quality_score": round(mean_component, 4),
+                "pass_rate": round(pass_rate, 4),
+                "calls": len(rows),
+                "mapping_component_sources": dict(sorted(sources.items())),
             }
 
         elif name == "step_atom_mapping":

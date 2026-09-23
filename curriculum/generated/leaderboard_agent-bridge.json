@@ -1,0 +1,96 @@
+{
+  "item": {
+    "aggregate_gate_cases": null,
+    "aggregate_weighting": null,
+    "avg_latency_ms": 10389.0,
+    "case_count": 4,
+    "created_at": 1780748556.400284,
+    "deterministic_pass_rate": 1.0,
+    "eligible_bucket_count": 0,
+    "eligible_weight_sum": 0.0,
+    "eval_run_id": "451d98ea6031435cad855015a10a2949",
+    "eval_set_id": "e501d4be15fc4a9aa5966a33c16f34fd",
+    "harness_bundle_hash": "803f0375bdb1d09e127138c32c3d24ec3042bd74b80b60bab9528caf32b34365",
+    "is_baseline": false,
+    "is_simulated": false,
+    "mean_quality_score": 0.9965,
+    "model": "agent-bridge",
+    "model_family": "agent",
+    "model_name": "agent-bridge",
+    "per_step_scores": {},
+    "per_subagent_scores": {
+      "atom_balance_validation": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "atom_mapping": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "balance_analysis": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "bond_electron_validation": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "functional_groups": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "initial_conditions": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "mechanism_step_proposal": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "missing_reagents": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "ph_recommendation": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "reaction_type_mapping": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "reflection": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "state_progress_validation": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 1.0
+      },
+      "step_atom_mapping": {
+        "case_count": 4,
+        "pass_rate": 1.0,
+        "quality_score": 0.95
+      }
+    },
+    "run_group_name": "cli_eval_opus48_medium",
+    "status": "completed",
+    "thinking_level": null,
+    "total_cost": 0.0,
+    "total_weight_sum": 0.0,
+    "weighted_pass_rate": 1.0,
+    "weighted_quality_score": 0.9965
+  }
+}

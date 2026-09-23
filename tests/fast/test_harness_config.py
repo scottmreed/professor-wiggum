@@ -242,6 +242,75 @@ class TestNoToolsBaselineHarness:
         assert no_tools_config.loop_module.get("kind") == "text_completion"
 
 
+class TestNoMappingAblationHarness:
+    """Mapping-only ablation: default minus atom_mapping and step_atom_mapping."""
+
+    DISABLED = {"atom_mapping", "step_atom_mapping"}
+
+    @pytest.fixture
+    def no_mapping_config(self, registry: HarnessRegistry) -> HarnessConfig:
+        return registry.load("no_mapping")
+
+    def test_loads_without_error(self, no_mapping_config: HarnessConfig) -> None:
+        assert no_mapping_config.name == "no_mapping"
+        assert no_mapping_config.metadata.get("changelog")
+
+    def test_only_mapping_modules_disabled(self, no_mapping_config: HarnessConfig) -> None:
+        disabled = {m.id for m in no_mapping_config.all_modules() if not m.enabled}
+        assert disabled == self.DISABLED
+
+    def test_module_graph_matches_default(
+        self, no_mapping_config: HarnessConfig, default_config: HarnessConfig
+    ) -> None:
+        def _shape(config: HarnessConfig) -> list:
+            return [
+                (m.id, m.phase, m.kind, m.enabled or m.id in self.DISABLED)
+                for m in config.all_modules()
+            ]
+
+        assert _shape(no_mapping_config) == _shape(default_config)
+        assert no_mapping_config.run_config_defaults == default_config.run_config_defaults
+        assert no_mapping_config.topology_profiles == default_config.topology_profiles
+        assert no_mapping_config.tool_calling_mode == default_config.tool_calling_mode
+
+    def test_mapping_modules_absent_from_enabled_lists(self, no_mapping_config: HarnessConfig) -> None:
+        assert "atom_mapping" not in {m.id for m in no_mapping_config.enabled_pre_loop()}
+        assert "step_atom_mapping" not in {m.id for m in no_mapping_config.enabled_post_step()}
+
+
+class TestJevReactionTypeHarness:
+    """M2 variant: default + decision_policy.reaction_type = "jev" (PRD §7.3)."""
+
+    @pytest.fixture
+    def jev_config(self, registry: HarnessRegistry) -> HarnessConfig:
+        return registry.load("jev_reaction_type")
+
+    def test_loads_without_error(self, jev_config: HarnessConfig) -> None:
+        assert jev_config.name == "jev_reaction_type"
+        assert jev_config.metadata.get("changelog")
+
+    def test_reaction_type_is_jev(self, jev_config: HarnessConfig) -> None:
+        assert jev_config.decision_policy.reaction_type == "jev"
+        assert jev_config.as_dict()["decision_policy"] == {"reaction_type": "jev"}
+        # Phase D calibration (docs/calibration/jev_reaction_type_2026-09-23.md, n=72,
+        # acc 0.917, ECE 0.056) set the reaction-type gates; the rest stay observational.
+        thresholds = jev_config.jev.thresholds
+        assert thresholds["reaction_type_active_probability"] == 0.65
+        assert thresholds["reaction_type_min_margin"] == 0.1
+        assert all(v is None for k, v in thresholds.items() if not k.startswith("reaction_type_"))
+
+    def test_only_decision_policy_differs_from_default(
+        self, jev_config: HarnessConfig, default_config: HarnessConfig
+    ) -> None:
+        mine, base = jev_config.as_dict(), default_config.as_dict()
+        for key in ("name", "description", "metadata", "decision_policy", "jev"):
+            mine.pop(key, None)
+            base.pop(key, None)
+        assert mine == base
+        assert default_config.decision_policy.reaction_type == "llm"
+        assert "jev" not in default_config.as_dict()  # default carries no Jev thresholds
+
+
 # ---------------------------------------------------------------------------
 # Phase 1: serialization round-trip
 # ---------------------------------------------------------------------------

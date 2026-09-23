@@ -10,13 +10,20 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from mechanistic_agent.model_registry import get_model_family, get_model_provider, resolve_model_key
 from mechanistic_agent.prompt_assets import resolve_call_name_from_step, traces_root
 from mechanistic_agent.smiles_utils import strip_atom_mapping_list
 
 SCHEMA_VERSION = "2026_03_single_model_selection_v1"
+# Additive migrations recorded in ``db_migrations`` alongside SCHEMA_VERSION.
+# Each entry's tables/columns are created idempotently in ``init_db``.
+ADDITIVE_MIGRATIONS = (
+    # run_resume_state: branch alternatives + mapped loop state per accepted
+    # step / branch point, restored on resume (PRD §9.4 blocker 3, §10.12-10.13).
+    "2026_09_run_resume_state_v1",
+)
 
 
 def _normalize_run_input_payload(input_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -49,6 +56,47 @@ def _normalize_run_input_payload(input_payload: Dict[str, Any]) -> Dict[str, Any
         payload["input_boundary"] = boundary
 
     return payload
+
+
+_DECISION_ENGINES = frozenset({"jev"})
+
+
+def _decision_calls_from_output(output: Any) -> Tuple[bool, List[Dict[str, Any]]]:
+    """Real decision-model requests recorded in ``output.decision_trace``.
+
+    Returns ``(has_trace, calls)``. Entries sharing a ``request_id`` (one
+    multi-question request) are one call; entries with ``called`` false (no
+    request sent, e.g. missing key) are not calls. Each call carries the
+    request's usage and cost breakdown.
+    """
+    if not isinstance(output, dict) or not isinstance(output.get("decision_trace"), list):
+        return False, []
+    calls: Dict[str, Dict[str, Any]] = {}
+    for index, entry in enumerate(output["decision_trace"]):
+        if not isinstance(entry, dict) or not entry.get("called"):
+            continue
+        engine = str(entry.get("decision_engine") or "")
+        if engine not in _DECISION_ENGINES:
+            continue
+        request_id = str(entry.get("request_id") or f"entry-{index}")
+        if request_id in calls:
+            continue
+        usage = entry.get("usage") if isinstance(entry.get("usage"), dict) else None
+        cost = entry.get("cost_breakdown") if isinstance(entry.get("cost_breakdown"), dict) else None
+        if cost is None and isinstance(entry.get("cost"), (int, float)):
+            cost = {"total_cost": float(entry["cost"])}
+        calls[request_id] = {"engine": engine, "usage": usage, "cost": cost}
+    return True, list(calls.values())
+
+
+def _subtract_totals(totals: Dict[str, Any], part: Any) -> None:
+    """In-place ``totals -= part`` for numeric keys, floored at zero."""
+    if not isinstance(part, dict):
+        return
+    for key, value in part.items():
+        if key in totals and isinstance(value, (int, float)) and isinstance(totals[key], (int, float)):
+            remaining = totals[key] - value
+            totals[key] = type(totals[key])(max(0, remaining)) if isinstance(totals[key], int) else max(0.0, remaining)
 
 
 class RunStore:
@@ -378,6 +426,19 @@ class RunStore:
                 CREATE INDEX IF NOT EXISTS idx_run_pauses_run
                     ON run_pauses(run_id, paused_at DESC);
 
+                CREATE TABLE IF NOT EXISTS run_resume_state (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    step_index INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_run_resume_state_run_seq
+                    ON run_resume_state(run_id, seq);
+
                 CREATE TABLE IF NOT EXISTS ralph_attempts (
                     id TEXT PRIMARY KEY,
                     parent_run_id TEXT NOT NULL,
@@ -617,10 +678,11 @@ class RunStore:
                 )
                 """
             )
-            conn.execute(
-                "INSERT OR IGNORE INTO db_migrations(version, applied_at) VALUES (?, ?)",
-                (SCHEMA_VERSION, time.time()),
-            )
+            for version in (SCHEMA_VERSION, *ADDITIVE_MIGRATIONS):
+                conn.execute(
+                    "INSERT OR IGNORE INTO db_migrations(version, applied_at) VALUES (?, ?)",
+                    (version, time.time()),
+                )
             conn.commit()
 
     @staticmethod
@@ -645,6 +707,19 @@ class RunStore:
         run_id = uuid.uuid4().hex
         now = time.time()
         normalized_payload = _normalize_run_input_payload(input_payload)
+        # Stamp keyless agent-bridge runs with origin provenance so the data's
+        # origin is auditable (PRD: keyless agent contributions). Additive and
+        # bridge-only: hosted-model runs are untouched, and provenance is
+        # best-effort metadata that must never block run creation.
+        try:
+            from ..agent_bridge import origin_for_config
+
+            if isinstance(config, dict) and "origin" not in config:
+                _origin = origin_for_config(config)
+                if _origin:
+                    config = {**config, "origin": _origin}
+        except Exception:  # pragma: no cover - provenance is non-critical
+            pass
         with self._lock, self._connect() as conn:
             conn.execute(
                 """
@@ -716,8 +791,9 @@ class RunStore:
             conn.commit()
 
         # Remove filesystem trace directory
-        base_root = self.db_path.parent.parent if self.db_path.parent.name == "data" else self.db_path.parent
-        run_dir = traces_root(base_root) / "runs" / run_id
+        from mechanistic_agent.data_paths import repo_root, traces_root_for_db
+
+        run_dir = traces_root_for_db(self.db_path) / "runs" / run_id
         if run_dir.exists():
             shutil.rmtree(run_dir, ignore_errors=True)
 
@@ -958,7 +1034,7 @@ class RunStore:
         return output
 
     def get_run_cost_summary(self, run_id: str) -> Dict[str, Any]:
-        """Aggregate token usage and cost across all step outputs for a run."""
+        """Aggregate token usage, cost, and a real-model-call tally for a run."""
         from mechanistic_agent.model_registry import update_cost_totals, update_usage_totals
 
         steps = self.list_step_outputs(run_id)
@@ -966,7 +1042,36 @@ class RunStore:
         cost_totals: Dict[str, float] = {}
         per_step: List[Dict[str, Any]] = []
 
+        # Engine label per recorded `source` value: `llm` is a chat-model call,
+        # `jev` a decision-model call (docs/PRD_jev_atom_identity_mechanistic.md
+        # §18). `deterministic` and `human` sources are excluded from the tally.
+        # Decision calls nested in a step (``output.decision_trace``, e.g. a
+        # failed Jev call that fell back to the LLM) are counted per request
+        # id under their own engine, and their usage/cost is carved out of the
+        # step's so each engine is billed once.
+        engine_by_source = {"llm": "llm", "jev": "jev"}
+        calls_by_step: Dict[str, Dict[str, Any]] = {}
+        calls_by_engine: Dict[str, Dict[str, Any]] = {}
+        total_calls = 0
+
+        def _tally(step_name: str, engine: str, calls: int, usage: Any, cost: Any) -> None:
+            nonlocal total_calls
+            step_entry = calls_by_step.setdefault(step_name, {"calls": 0, "usage": {}, "cost": {}})
+            engine_entry = calls_by_engine.setdefault(engine, {"calls": 0, "usage": {}, "cost": {}})
+            step_entry["calls"] += calls
+            engine_entry["calls"] += calls
+            if usage:
+                update_usage_totals(step_entry["usage"], usage)
+                update_usage_totals(engine_entry["usage"], usage)
+            if cost:
+                update_cost_totals(step_entry["cost"], cost)
+                update_cost_totals(engine_entry["cost"], cost)
+            total_calls += calls
+
         for step in steps:
+            step_name = str(step.get("step_name") or "unknown")
+            source_engine = engine_by_source.get(str(step.get("source") or ""))
+            has_trace, decision_calls = _decision_calls_from_output(step.get("output"))
             step_usage = step.get("usage")
             step_cost = step.get("cost")
             if step_usage:
@@ -982,12 +1087,46 @@ class RunStore:
                     "usage": step_usage,
                     "cost": step_cost,
                 })
+            if not has_trace:
+                if source_engine is not None:
+                    _tally(step_name, source_engine, 1, step_usage, step_cost)
+                continue
+            # The decision trace is authoritative for decision-engine calls
+            # (a Jev attempt that never sent a request counts zero).
+            residual_usage = dict(step_usage or {})
+            residual_cost = dict(step_cost or {})
+            for call in decision_calls:
+                _tally(step_name, call["engine"], 1, call["usage"], call["cost"])
+                _subtract_totals(residual_usage, call["usage"])
+                _subtract_totals(residual_cost, call["cost"])
+            if source_engine is not None and source_engine not in _DECISION_ENGINES:
+                # The step's own chat engine (e.g. the LLM fallback) made one more call.
+                _tally(step_name, source_engine, 1, residual_usage or None, residual_cost or None)
+
+        for entry in list(calls_by_step.values()) + list(calls_by_engine.values()):
+            entry["usage"] = entry["usage"] or None
+            entry["cost"] = entry["cost"] or None
+
+        llm_engine = calls_by_engine.get("llm") or {}
+        llm_usage = llm_engine.get("usage") or {}
+        jev_engine = calls_by_engine.get("jev") or {}
+        jev_usage = jev_engine.get("usage") or {}
+        call_summary = {
+            "total_calls": total_calls,
+            "by_step": calls_by_step,
+            "by_engine": calls_by_engine,
+            "llm_calls": int(llm_engine.get("calls") or 0),
+            "llm_tokens": int(llm_usage.get("total_tokens") or 0),
+            "jev_calls": int(jev_engine.get("calls") or 0),
+            "jev_tokens": int(jev_usage.get("total_tokens") or 0),
+        }
 
         return {
             "run_id": run_id,
             "total_usage": usage_totals or None,
             "total_cost": cost_totals or None,
             "step_costs": per_step,
+            "call_summary": call_summary,
         }
 
     def record_verification_decision(
@@ -1481,9 +1620,10 @@ class RunStore:
         approved: bool,
         trace: Dict[str, Any],
     ) -> None:
-        base_root = self.db_path.parent.parent if self.db_path.parent.name == "data" else self.db_path.parent
+        from mechanistic_agent.data_paths import traces_root_for_db
+
         run_key = str(run_id or "unassigned")
-        run_dir = traces_root(base_root) / "runs" / run_key
+        run_dir = traces_root_for_db(self.db_path) / "runs" / run_key
         run_dir.mkdir(parents=True, exist_ok=True)
         stamp = int(time.time() * 1000)
         file_name = f"{stamp}_{step_name}_{trace_id}.json"
@@ -1706,6 +1846,64 @@ class RunStore:
             )
             conn.commit()
             return bool(result.rowcount)
+
+    # -- resume state (branch alternatives + mapped loop state) -------------
+
+    def record_run_resume_state(
+        self,
+        run_id: str,
+        *,
+        kind: str,
+        step_index: int,
+        payload: Dict[str, Any],
+    ) -> int:
+        """Append a resume-state snapshot; the row with the highest ``seq`` wins."""
+        row_id = uuid.uuid4().hex
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM run_resume_state WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            seq = (int(row["max_seq"]) if row else 0) + 1
+            conn.execute(
+                """
+                INSERT INTO run_resume_state(id, run_id, seq, kind, step_index, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (row_id, run_id, seq, str(kind), int(step_index), self._json_dumps(payload or {}), time.time()),
+            )
+            conn.commit()
+        return seq
+
+    def get_latest_run_resume_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM run_resume_state
+                WHERE run_id = ?
+                ORDER BY seq DESC
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["payload"] = self._json_loads(item.pop("payload_json", None), {})
+        return item
+
+    def list_run_resume_states(self, run_id: str) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM run_resume_state WHERE run_id = ? ORDER BY seq ASC",
+                (run_id,),
+            ).fetchall()
+        output: List[Dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["payload"] = self._json_loads(item.pop("payload_json", None), {})
+            output.append(item)
+        return output
 
     def get_latest_run_pause(self, run_id: str) -> Optional[Dict[str, Any]]:
         with self._connect() as conn:
@@ -2571,6 +2769,34 @@ class RunStore:
             conn.commit()
         return row_id
 
+    def update_eval_run_result(
+        self,
+        result_id: str,
+        *,
+        score: Optional[float],
+        passed: Optional[bool],
+        summary: Dict[str, Any],
+    ) -> None:
+        """Rewrite the score, pass flag and summary of one stored eval result (rescoring)."""
+        pass_value = None if passed is None else int(bool(passed))
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE eval_run_results SET score = ?, pass_bool = ?, summary_json = ? WHERE id = ?",
+                (score, pass_value, self._json_dumps(summary), result_id),
+            )
+            conn.commit()
+
+    @staticmethod
+    def _results_scoring_version(results: List[Dict[str, Any]]) -> str:
+        """Scoring version shared by a run's results: v1 for legacy rows, ``mixed`` if they differ."""
+        versions = set()
+        for item in results:
+            summary = item.get("summary") if isinstance(item.get("summary"), dict) else {}
+            versions.add(str(summary.get("scoring_version") or "v1"))
+        if not versions:
+            return "v1"
+        return versions.pop() if len(versions) == 1 else "mixed"
+
     def list_eval_run_results(self, eval_run_id: str) -> List[Dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -2939,6 +3165,46 @@ class RunStore:
             "total_weight_sum": round(all_weights, 6),
         }
 
+    def _eval_run_saw_ground_truth(self, results: List[Dict[str, Any]]) -> bool:
+        """True when any case run in this eval run declares ground-truth exposure."""
+        for item in results:
+            run_id = str(item.get("run_id") or "")
+            if not run_id:
+                continue
+            try:
+                row = self.get_run_row(run_id)
+            except Exception:
+                continue
+            origin = ((row or {}).get("config") or {}).get("origin") if isinstance(row, dict) else None
+            if not isinstance(origin, dict):
+                continue
+            value = origin.get("responder_saw_ground_truth")
+            if value is True or str(value).strip().lower() in {"true", "1", "yes"}:
+                return True
+        return False
+
+    def _aggregate_llm_calls_for_results(self, results: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Sum real LLM-call counts and tokens across an eval run's case runs.
+
+        Derived from each case's underlying mechanistic run via
+        ``get_run_cost_summary``'s ``call_summary`` (itself derived from
+        ``step_outputs``), not from a separately-tracked counter, so it stays
+        consistent with the per-run cost/call instrumentation.
+        """
+        total_calls = 0
+        total_tokens = 0
+        for item in results:
+            run_id = str(item.get("run_id") or "").strip()
+            if not run_id:
+                continue
+            try:
+                call_summary = (self.get_run_cost_summary(run_id) or {}).get("call_summary") or {}
+            except Exception:
+                continue
+            total_calls += int(call_summary.get("llm_calls") or 0)
+            total_tokens += int(call_summary.get("llm_tokens") or 0)
+        return {"llm_calls": total_calls, "llm_tokens": total_tokens}
+
     def leaderboard(self, eval_set_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
         eval_set = self.get_eval_set(eval_set_id)
         is_holdout = str((eval_set or {}).get("purpose") or "general") == "leaderboard_holdout"
@@ -2957,6 +3223,10 @@ class RunStore:
             results = results_by_run.get(eval_run_id, [])
             if not results:
                 continue
+            # Rows whose responder declared it saw the verified mechanism are
+            # ground-truth replays, not capability measurements: never rank them.
+            if self._eval_run_saw_ground_truth(results):
+                continue
             scores = [float(item["score"]) for item in results if isinstance(item.get("score"), (int, float))]
             if not scores:
                 continue
@@ -2969,6 +3239,8 @@ class RunStore:
                     value = cost.get("total_cost")
                     if isinstance(value, (int, float)):
                         total_cost += float(value)
+
+            llm_call_totals = self._aggregate_llm_calls_for_results(results)
 
             latencies = [
                 float(item["latency_ms"])
@@ -3020,9 +3292,12 @@ class RunStore:
                     "mean_quality_score": sum(scores) / len(scores),
                     "deterministic_pass_rate": pass_rate,
                     "total_cost": total_cost,
+                    "llm_calls": llm_call_totals["llm_calls"],
+                    "llm_tokens": llm_call_totals["llm_tokens"],
                     "avg_latency_ms": avg_latency_ms,
                     "case_count": len(results),
                     "per_subagent_scores": per_subagent_agg,
+                    "scoring_version": self._results_scoring_version(results),
                     "is_baseline": is_baseline,
                     "is_simulated": is_simulated,
                     "weighted_quality_score": sum(scores) / len(scores),
@@ -3722,3 +3997,29 @@ class RunStore:
             item["result"] = self._json_loads(item.pop("result_json", None), None)
             output.append(item)
         return output
+
+
+class ReadOnlyRunStore(RunStore):
+    """RunStore over an existing database opened with SQLite ``mode=ro``.
+
+    Skips schema initialisation and migrations, so it never creates or alters
+    the file. Any write attempted through it raises ``sqlite3.OperationalError``.
+    Used by audit/backfill tooling that must not touch the maintainer's DB.
+    """
+
+    def __init__(self, db_path: Path) -> None:  # noqa: D107 - see class docstring
+        path = Path(db_path)
+        if not path.is_file():
+            raise FileNotFoundError(str(path))
+        self.db_path = path
+        self._lock = threading.Lock()
+
+    @contextmanager
+    def _connect(self):
+        uri = f"file:{self.db_path.resolve()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()

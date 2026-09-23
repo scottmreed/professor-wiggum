@@ -6,14 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- **Retired the five-track public contribution model.** `CONTRIBUTING.md` now offers three doors (report a chemistry failure, report a bug or idea, submit code with fast tests only). The per-track PR templates under `templates/contributions/` were deleted (still in git history); the internal evidence and eval-tier merge policy moved to `docs/change_evidence_policy.md`, keyed by change type, and the agent quick-start prompts to `docs/agent_playbooks.md`. Added a `Chemistry failure` issue template and simplified the PR template. Evidence gating is unchanged as a repository invariant; it is no longer a contributor obligation.
+
 ### Added
-- (None)
+- **Claude Opus 4.8 model catalog entry** (`anthropic/claude-opus-4.8`, OpenRouter, tool-calling + reasoning), mirroring the 4.6 entry. It is the current active trainee.
+- **First `attempt_atom_mapping` few-shot lane** for `anthropic/claude-opus-4.8` (`skills/mechanistic/attempt_atom_mapping/models/anthropic__claude-opus-4.8/few_shot.jsonl`), seeded from approved, RDKit-validated atom-mapping traces produced **keyless** through the agent bridge. Targets the universally weakest subagent (`step_atom_mapping`).
+- **Keyless Opus-4.8 evidence**: 4 completed FlowER easy-tier runs (SN2 / Menshutkin), mean quality 0.997, 100% deterministic pass, `step_atom_mapping` 0.96; recorded in `LEADERBOARD.md`, `curriculum/generated/leaderboard_agent-bridge.json`, and `local_contributions/opus48_agent_bridge_evidence.md`. Origin provenance declares Opus 4.8 (`budget_observability: opaque`; not Track 3 cost-class eligible).
+- **Test**: `tests/fast/test_opus48_atom_mapping_lane.py` covering the catalog entry and the new lane's schema validity.
+- **Medium tier (3-step) for Opus 4.8** — first `propose_mechanism_step` lane for `anthropic/claude-opus-4.8` (`skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.8/few_shot.jsonl`, 12 multi-step exemplars) plus additional `attempt_atom_mapping` exemplars, seeded from 4 completed keyless medium-tier runs (carbonate formation, carbamate aminolysis, sulfonylation): mean quality 0.997, 100% deterministic pass, `mechanism_step_proposal` 1.00 / `step_atom_mapping` 0.95. Evidence in `local_contributions/opus48_medium_evidence.md`; medium row added to `LEADERBOARD.md`.
+- **Test**: `tests/fast/test_opus48_atom_mapping_lane.py` extended to cover the new `propose_mechanism_step` lane.
 
 ### Changed
-- (None)
+- **README** updated from Opus 4.6 to **Opus 4.8** (active model, trainee link, progress snapshot); progress snapshot now reflects the **medium** tier (3-step mechanisms).
 
 ### Fixed
-- (None)
+- **Evolution loops carry kept variants forward.** Island mode now uses the parent's assets as the base for each child. It records them in the archive entry (`harness_config_json["asset_state"]`), and the child's mutation is proposed and evaluated on top of them. Overnight Ralph folds each kept prompt, few-shot, topology or harness variant into its parent, so later experiments run under the same base assets as the baseline they are compared against. Prompt and few-shot variants are now derived from the asset resolved for the run's model (a `models/<slug>/` override when one exists), and they replace only that asset. Dry island runs mutate the workspace copy and leave `harness_versions/` in the checkout untouched. Tests: `tests/fast/test_evolve_island_mutation_applied.py`.
+- **Branch alternatives and persistent atom identity survive pause/resume.** The coordinator writes a `run_resume_state` row (new table, migration `2026_09_run_resume_state_v1`) on every applied candidate, branch point and backtrack. Each row holds the branch points with their full validated alternatives, the loop cursor, `mapped_loop_state`, `mapped_state_history` and an allocator high-water mark. Resume restores it, so backtracking after resume explores the same alternatives with the same atom ids. Previously the alternatives were dropped and identity was re-seeded. Runs without rows fall back to the old event replay. Tests: `tests/fast/test_resume_branch_identity_persistence.py` (PRD §9.4 blocker 3, §10.12, §10.13 at run level).
+- **Keyless dispatch override** — `MECHANISTIC_ACTIVE_MODEL` is now a global force at the dispatch seam (`_resolve_step_model`) instead of a bottom-of-chain fallback. Previously the coordinator's thread-local run model shadowed it, so a hosted model id + `MECHANISTIC_ACTIVE_MODEL=agent-bridge` raised `<provider> API key not configured` at the proposal step instead of dispatching keyless. Dispatch now agrees with `origin_for_config` (which already treats the env var as authoritative): a run can be attributed to a hosted model id while being answered keyless via the bridge, with the bridge `config.origin` block always stamped. Adds `tests/fast/test_agent_bridge_contribution.py::test_active_model_env_forces_bridge_dispatch_over_run_model`. Docs: `docs/agent_bridge.md`.
 
 ---
 

@@ -57,20 +57,28 @@ class ToolExecutor:
         starting: List[str],
         products: List[str],
         ph: Optional[float],
+        functional_groups_enabled: Optional[bool] = None,
     ) -> Dict[str, Any]:
         return self._parse(
             assess_initial_conditions(
                 self._sanitize_species_list(starting),
                 self._sanitize_species_list(products),
                 ph,
+                functional_groups_enabled=functional_groups_enabled,
             )
         )
 
-    def run_mapping(self, starting: List[str], products: List[str]) -> Dict[str, Any]:
+    def run_mapping(
+        self,
+        starting: List[str],
+        products: List[str],
+        functional_groups_enabled: Optional[bool] = None,
+    ) -> Dict[str, Any]:
         return self._parse(
             attempt_atom_mapping(
                 self._sanitize_species_list(starting),
                 self._sanitize_species_list(products),
+                functional_groups_enabled=functional_groups_enabled,
             )
         )
 
@@ -83,6 +91,7 @@ class ToolExecutor:
         starting: List[str],
         products: List[str],
         conditions_guidance: Optional[Dict[str, Any]] = None,
+        functional_groups_enabled: Optional[bool] = None,
     ) -> Dict[str, Any]:
         guidance = json.dumps(conditions_guidance) if conditions_guidance else None
         return self._parse(
@@ -90,6 +99,7 @@ class ToolExecutor:
                 starting_materials=self._sanitize_species_list(starting),
                 products=self._sanitize_species_list(products),
                 conditions_guidance=guidance,
+                functional_groups_enabled=functional_groups_enabled,
             )
         )
 
@@ -105,21 +115,36 @@ class ToolExecutor:
         step_index: int,
         step_mapping_context: Optional[Dict[str, Any]] = None,
         template_guidance: Optional[Dict[str, Any]] = None,
+        mapped_loop_current_state: Optional[List[str]] = None,
+        mapped_starting_materials: Optional[List[str]] = None,
+        mapped_products: Optional[List[str]] = None,
+        mapped_current_state: Optional[List[str]] = None,
+        functional_groups_enabled: Optional[bool] = None,
     ) -> Dict[str, Any]:
+        # loop_state_mapping="mapped" (opt-in): the loop's mapped copy replaces
+        # the stripped current_state; pre-loop inputs stay stripped.
+        loop_current_state = (
+            [str(s) for s in mapped_loop_current_state]
+            if mapped_loop_current_state
+            else self._sanitize_species_list(current_state)
+        )
+        # mapped_* carry atom maps on purpose (rendered from the global
+        # atom_mapping output) and are therefore not sanitized.
         return self._parse(
             propose_intermediates(
                 starting_materials=self._sanitize_species_list(starting),
                 products=self._sanitize_species_list(products),
-                current_state=self._sanitize_species_list(current_state),
+                current_state=loop_current_state,
                 previous_intermediates=self._sanitize_species_list(previous_intermediates),
-                mapped_starting_materials=[],
-                mapped_products=[],
-                mapped_current_state=[],
+                mapped_starting_materials=list(mapped_starting_materials or []),
+                mapped_products=list(mapped_products or []),
+                mapped_current_state=list(mapped_current_state or []),
                 ph=ph,
                 temperature=temperature,
                 step_index=step_index,
                 step_mapping_context=step_mapping_context,
                 template_guidance=template_guidance,
+                functional_groups_enabled=functional_groups_enabled,
             )
         )
 
@@ -146,6 +171,46 @@ class ToolExecutor:
                 missing_reagents=missing_reagents,
                 atom_mapping=atom_mapping,
             )
+        )
+
+    def run_reaction_type_mapping_jev(
+        self,
+        *,
+        starting: List[str],
+        products: List[str],
+        balance_analysis: Optional[Dict[str, Any]] = None,
+        functional_groups: Optional[Dict[str, Any]] = None,
+        ph_recommendation: Optional[Dict[str, Any]] = None,
+        initial_conditions: Optional[Dict[str, Any]] = None,
+        missing_reagents: Optional[Dict[str, Any]] = None,
+        atom_mapping: Optional[Dict[str, Any]] = None,
+        jev_config: Any = None,
+        client: Any = None,
+    ) -> Dict[str, Any]:
+        """Reaction-type Choice via Jev (decision_policy.reaction_type == "jev").
+
+        Species are map-stripped like every other model input. On a Jev
+        failure the configured fallback may call the LLM selector above.
+        """
+        from .reaction_type_jev import select_reaction_type_jev
+
+        context = dict(
+            balance_analysis=balance_analysis,
+            functional_groups=functional_groups,
+            ph_recommendation=ph_recommendation,
+            initial_conditions=initial_conditions,
+            missing_reagents=missing_reagents,
+            atom_mapping=atom_mapping,
+        )
+        return select_reaction_type_jev(
+            starting_materials=self._sanitize_species_list(starting),
+            products=self._sanitize_species_list(products),
+            jev_config=jev_config,
+            client=client,
+            llm_fallback=lambda: self.run_reaction_type_mapping(
+                starting=starting, products=products, **context
+            ),
+            **context,
         )
 
     def run_candidate_rescue(
@@ -191,6 +256,7 @@ class ToolExecutor:
         previous_intermediates: List[str],
         starting_materials: List[str],
         note: Optional[str],
+        allowed_extra_species: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         # Keep a deterministic fallback only when proposal output is incomplete.
         pushes = electron_pushes or [{"kind": "lone_pair", "source_atom": "0", "target_atom": "1", "electrons": 2}]
@@ -206,5 +272,6 @@ class ToolExecutor:
                 previous_intermediates=previous_intermediates,
                 note=note,
                 starting_materials=starting_materials,
+                allowed_extra_species=allowed_extra_species,
             )
         )

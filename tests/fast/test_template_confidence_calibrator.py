@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
-from pathlib import Path
 import sys
+
+from _optional_assets import require_repo_asset
 
 
 def _load_calibrator_module():
-    path = Path("training_data/template_confidence_calibrator.py")
+    path = require_repo_asset("training_data/template_confidence_calibrator.py")
     spec = importlib.util.spec_from_file_location("template_confidence_calibrator", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

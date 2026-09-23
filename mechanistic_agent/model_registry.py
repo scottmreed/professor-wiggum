@@ -21,9 +21,16 @@ def get_model_catalog() -> Dict[str, Dict[str, Any]]:
     return _MODEL_CATALOG
 
 
-def get_model_options() -> Iterable[Dict[str, Any]]:
-    """Provide model options with metadata suitable for UI rendering."""
+def get_model_options(*, include_decision: bool = False) -> Iterable[Dict[str, Any]]:
+    """Provide model options with metadata suitable for UI rendering.
+
+    Decision models (``model_kind: "decision"``) cannot answer chat/tool calls,
+    so they are left out of the run-model picker unless ``include_decision``.
+    """
     for model_id, spec in _MODEL_CATALOG.items():
+        model_kind = str(spec.get("model_kind") or "chat")
+        if model_kind == "decision" and not include_decision:
+            continue
         reasoning = spec.get("reasoning") or {}
         levels: List[str] = []
         if isinstance(reasoning, dict):
@@ -39,6 +46,7 @@ def get_model_options() -> Iterable[Dict[str, Any]]:
             "family": spec.get("family", "openai"),
             "provider": spec.get("provider", "openai"),
             "supports_tools": spec.get("supports_tools", True),
+            "model_kind": model_kind,
             "best_in_class": spec.get("best_in_class", False),
             "pricing_per_million": spec.get("pricing_per_million", {}),
             "reasoning_levels": [
@@ -83,6 +91,47 @@ def get_model_provider(model_id: str) -> str:
     resolved = _resolve_catalog_key(model_id)
     spec = _MODEL_CATALOG.get(resolved or "", {})
     return str(spec.get("provider", "openai"))
+
+
+MODEL_KINDS = ("chat", "decision")
+
+
+def get_model_kind(model_id: str) -> str:
+    """Return the catalog ``model_kind`` (``"chat"`` unless the entry says otherwise).
+
+    ``"decision"`` marks a typed decision model (e.g. Jev via OpenRouter's
+    Decisions API). It is not a chat model: ``llm.get_chat_model`` refuses it
+    and ``llm.get_decision_model`` returns its client.
+    """
+    resolved = _resolve_catalog_key(model_id)
+    spec = _MODEL_CATALOG.get(resolved or "", {})
+    kind = str(spec.get("model_kind") or "chat")
+    return kind if kind in MODEL_KINDS else "chat"
+
+
+def is_decision_model(model_id: Optional[str]) -> bool:
+    """True when the catalog marks ``model_id`` as a decision model."""
+    if not model_id:
+        return False
+    return get_model_kind(model_id) == "decision"
+
+
+def get_decision_models() -> List[str]:
+    """Catalog ids of all decision models, in catalog order."""
+    return [
+        model_id
+        for model_id, spec in _MODEL_CATALOG.items()
+        if str(spec.get("model_kind") or "chat") == "decision"
+    ]
+
+
+def get_default_decision_model() -> Optional[str]:
+    """Default decision model: the first ``best_in_class`` one, else the first listed."""
+    models = get_decision_models()
+    for model_id in models:
+        if _MODEL_CATALOG[model_id].get("best_in_class"):
+            return model_id
+    return models[0] if models else None
 
 
 def model_supports_tools(model_id: str) -> bool:
@@ -457,6 +506,10 @@ __all__ = [
     # Family utilities
     "get_model_family",
     "get_model_provider",
+    "get_model_kind",
+    "is_decision_model",
+    "get_decision_models",
+    "get_default_decision_model",
     "model_supports_tools",
     "get_family_models",
     "get_cheapest_family_model",

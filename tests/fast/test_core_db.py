@@ -94,7 +94,7 @@ def test_eval_and_few_shot_storage(tmp_path: Path) -> None:
                 "call_name": "assess_initial_conditions",
                 "step": "initial_conditions",
                 "version": "bundle-1",
-                "path": "prompt_versions/calls/assess_initial_conditions/base.md",
+                "path": "skills/mechanistic/assess_initial_conditions/SKILL.md",
                 "sha256": "bundle-1",
                 "prompt_bundle_sha256": "bundle-1",
                 "shared_base_sha256": "shared",

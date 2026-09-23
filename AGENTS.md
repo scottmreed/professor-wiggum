@@ -5,12 +5,21 @@ This repository now runs on a local-first architecture:
 - Runtime orchestration: explicit coordinator/state machine in `mechanistic_agent/core/`
 - API service boundary: FastAPI app in `mechanistic_agent/api/`
 - UI: static HTML/JS/CSS in `mechanistic_agent/ui/`
-- Persistence: SQLite database at `data/mechanistic.db`
+- Persistence: SQLite database at `data/mechanistic.db` (default: sibling **wiggum-data** checkout — see [docs/DATA_SETUP.md](docs/DATA_SETUP.md))
 - Curated assets:
   - `skills/mechanistic/` (LLM prompts, few-shot files, and deterministic validators — formerly `prompt_versions/`)
   - `skills/project/` (project-level skills used outside mechanism prediction)
   - `traces/` (run traces + PR evidence traces, including per-run scratchpad files)
   - `harness_versions/` (per-harness subdirectories with `harness.json`)
+
+## Local data checkout (forkers)
+
+Bulk/runtime data defaults to sibling **`../wiggum-data`** when that directory exists.
+Forks and CI without a separate checkout keep the legacy in-repo layout (`data/`,
+`traces/runs/`, etc.) automatically.
+
+Set `MECHANISTIC_DATA_DIR` to point anywhere you prefer. Details:
+[docs/DATA_SETUP.md](docs/DATA_SETUP.md).
 
 ## Verified vs Unverified
 
@@ -49,6 +58,13 @@ This repository now runs on a local-first architecture:
 - When the `rdkit-agent` backend reports `rdkit_cli_error_code=atom_balance_invalid_species` but the Python atom-balance validator still passes, treat that condition as a **known soft pass**.
 - Known soft passes must emit warning-level telemetry/events and may recommend a retry or re-proposal, but they must **not** fail the step by themselves.
 - The Python validator remains authoritative for atom-balance pass/fail; `rdkit_cli` invalid-species reports are advisory unless the Python validator also fails.
+
+## Atom-Map Validation
+
+- `MappingAgent` validates LLM `mapped_atoms` pairs deterministically after every `atom_mapping` / `step_atom_mapping` call (`validate_atom_mapping_via_rdkit` in `mechanistic_agent/tools.py`).
+- Pairs are rendered to a mapped SMIRKS with `render_global_mapping` (`core/global_mapping_context.py`); a pair that names a missing atom, mismatched element, or reuses an atom fails `atom_map_pairs_resolved`.
+- The rendered SMIRKS is then checked with `rdkit-agent atom-map check --json '{"smirks": ...}'` (`atom_map_check`: `valid` and `balanced` must both be true).
+- Any failed check clamps the mapping `confidence` to 0.3 before it reaches prompts and scoring. A CLI that runs but rejects the invocation (exit 2/3, non-JSON, unexpected shape) is a **failed** check with an `error_code`; only a CLI that cannot execute at all (missing, timeout) skips validation, and the step output records `atom_map_validation.skipped = true`.
 
 ## Skill and Prompt Architecture
 
@@ -113,7 +129,7 @@ Post-step validators (`bond_electron_validation`, `atom_balance_validation`, `st
 
 LLM-backed subagents use **forced tool calling** to get structured responses. Key conventions:
 
-- **Tool schemas** live in `mechanistic_agent/tool_schemas.py` — one OpenAI-format schema per LLM-backed subagent. Current schemas: `ASSESS_CONDITIONS_TOOL`, `MISSING_REAGENTS_TOOL`, `ATOM_MAPPING_TOOL`, `INTERMEDIATES_TOOL`, `MECHANISM_STEP_PROPOSAL_TOOL`, `REACTION_TYPE_SELECTION_TOOL`, `PREDICT_FULL_MECHANISM_TOOL`.
+- **Tool schemas** live in `mechanistic_agent/tool_schemas.py` — one OpenAI-format schema per LLM-backed subagent. Current schemas: `ASSESS_CONDITIONS_TOOL`, `MISSING_REAGENTS_TOOL`, `ATOM_MAPPING_TOOL`, `INTERMEDIATES_TOOL`, `MECHANISM_STEP_PROPOSAL_TOOL`, `REACTION_TYPE_SELECTION_TOOL`, `PREDICT_FULL_MECHANISM_TOOL`, and `HARNESS_MUTATION_TOOL` (used by the opt-in LLM harness-mutation proposer in `scripts/evolve_harness.py`, not by a runtime subagent).
 - **Routing**: Use `adapter_supports_forced_tools(model_name)` from `llm.py` to check if the adapter supports forced tools at runtime. Only OLMo falls back to text-based JSON parsing.
 - **`text` field**: Every tool schema includes a `text` property (not required) so verbose models can provide reasoning without disrupting structured output. Extract and log it separately from the structured fields.
 - **Gemini**: Uses `_GeminiChatAdapter` which converts OpenAI-format schemas via `_openai_tools_to_gemini()` and calls `generate_content()` with `ToolConfig(function_calling_config=FunctionCallingConfig(mode=FunctionCallingConfigMode.ANY, ...))` from the `google-genai` SDK.
@@ -187,17 +203,9 @@ The UI consists of static HTML/JS/CSS files served from `mechanistic_agent/ui/`.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow. There are five contribution tracks, each with its own template, test requirements, and acceptance gate:
+See [CONTRIBUTING.md](CONTRIBUTING.md). Three doors: report a chemistry failure (issue), report a software bug or idea (issue), or submit code (PR with fast tests only).
 
-| Track | What you're contributing | Key gate | Eval tier required |
-|-------|--------------------------|----------|--------------------|
-| **Few-Shot Examples** | New lines in `skills/mechanistic/<call_name>/few_shot.jsonl` | Approved evidence trace + medium-tier improvement | **medium** |
-| **New Subagents** | New deterministic subagent, validator, or LLM-backed subagent | Fast tests + medium-tier improvement | **medium** + **hard** preferred |
-| **New Models** | New entry in `model_pricing.json` or new adapter in `llm.py` | Catalog tests + easy-tier cost-class improvement | **easy** |
-| **Harness Changes** | New or modified `harness_versions/<name>/harness.json` | Harness config tests + medium-tier improvement | **medium** |
-| **Single Reaction Submission** | One success or failure case for local review | Not mergeable; reviewed for future changes | none |
-
-Tracks 1-4 require `make test` before merge. PR approval is based on eval tier improvement, not the result of a single reaction. Track 5 submissions stay local and are evaluated as evidence for later tracked changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for full details.
+Behavior-changing changes (prompts, few-shots, models, validators, harness) are evidence-gated internally before merge: each change type has a required eval tier and, for prompt changes, approved linked evidence traces. The policy is in [docs/change_evidence_policy.md](docs/change_evidence_policy.md); ready-made agent prompts for common maintainer scenarios are in [docs/agent_playbooks.md](docs/agent_playbooks.md). PR approval is based on eval tier improvement, not the result of a single reaction.
 
 ## Project Soul and Evolution Philosophy
 
@@ -574,7 +582,7 @@ pip install rdkit-pypi
 - **`model_registry.py`**: Model selection and pricing information
 
 ### Versioned Assets (Repository Root)
-- **`prompt_versions/`**: Versioned prompt assets editable via PRs
+- **`skills/mechanistic/`**: Versioned prompt and few-shot assets (formerly `prompt_versions/`), changed via evidence-gated PRs
 - **`skills/`**: Versioned skill definitions for capabilities
 - **`traces/runs/<run_id>/scratchpad.md`**: Run-scoped scratchpad for mechanism history (ephemeral, created per run)
 - **`data/`**: Hybrid storage with SQLite + baseline evaluation artifacts

@@ -83,7 +83,9 @@ from mechanistic_agent.prompt_assets import (
     resolve_call_name_from_step,
     traces_root,
     unified_prompt_diff,
+    write_call_few_shot_examples,
 )
+from mechanistic_agent.data_paths import db_path as resolve_db_path, evidence_root
 from mechanistic_agent.prompt_trace_validator import validate_evidence_for_calls
 from mechanistic_agent.smiles_utils import (
     normalize_species_for_matching,
@@ -1287,11 +1289,11 @@ def _prepare_example_record(item: Dict[str, Any], source_label: str) -> Optional
 def create_app(base_dir: Path | None = None) -> FastAPI:
     base = (base_dir or Path.cwd()).resolve()
     ui_dir = base / "mechanistic_agent" / "ui"
-    db_path = base / "data" / "mechanistic.db"
+    db_path = resolve_db_path(base)
 
     registry = RegistrySet(base)
     store: RunStateStore = SQLiteRunStore(db_path)
-    artifact_store = LocalArtifactStore(base)
+    artifact_store = LocalArtifactStore(base, db_path=db_path)
     store.record_assets(
         [
             {
@@ -1730,10 +1732,15 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 else:
                     known_answer_comparison = {"available": False}
 
-                from mechanistic_agent.scoring import score_subagents_from_step_outputs
+                from mechanistic_agent.scoring import (
+                    DEFAULT_SCORING_VERSION,
+                    score_subagents_from_step_outputs,
+                )
 
                 subagent_scores = score_subagents_from_step_outputs(
-                    list(snapshot.get("step_outputs") or [])
+                    list(snapshot.get("step_outputs") or []),
+                    scoring_version=DEFAULT_SCORING_VERSION,
+                    mapping_agreement=(graded.get("scoring_breakdown") or {}).get("mapping_agreement"),
                 )
                 store.record_eval_run_result(
                     eval_run_id=eval_run_id,
@@ -1749,6 +1756,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                         "selected_step_models": step_models,
                         "known_answer_comparison": known_answer_comparison,
                         "scoring_breakdown": graded.get("scoring_breakdown", {}),
+                        "scoring_version": DEFAULT_SCORING_VERSION,
                         "run_metadata": {
                             "eval_set_id": resolved_eval_set.eval_set_id,
                             "eval_set_purpose": resolved_eval_set.purpose,
@@ -2117,6 +2125,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         snapshot["latest_step_mapping"] = _latest_step_mapping_summary(display_snapshot)
         snapshot["reaction_type_selection"] = _latest_reaction_type_selection(display_snapshot)
         snapshot["template_guidance_state"] = _latest_template_guidance_state(display_snapshot)
+        snapshot["cost_summary"] = store.get_run_cost_summary(str(display_snapshot.get("id") or run_id))
 
         if verbose:
             return snapshot
@@ -2171,6 +2180,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "latest_step_mapping": snapshot.get("latest_step_mapping"),
             "reaction_type_selection": snapshot.get("reaction_type_selection"),
             "template_guidance_state": snapshot.get("template_guidance_state"),
+            "cost_summary": snapshot.get("cost_summary"),
             "overall_balance": snapshot.get("overall_balance"),
             "pending_verification": snapshot.get("pending_verification", []),
             "latest_pause": snapshot.get("latest_pause"),
@@ -2827,7 +2837,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         if not prompt_bundle_sha:
             raise HTTPException(status_code=400, detail=f"Trace {trace_id} prompt bundle hash missing")
 
-        evidence_dir = traces_root(base) / "evidence" / call_name / prompt_bundle_sha
+        evidence_dir = evidence_root(base) / call_name / prompt_bundle_sha
         evidence_dir.mkdir(parents=True, exist_ok=True)
         evidence_path = evidence_dir / f"{trace_id}.json"
         payload = {
@@ -2862,6 +2872,20 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "exported_at": time.time(),
             "exported_by": created_by,
         }
+        # Ground-truth exposure: hosted-model runs never see the verified
+        # mechanism (it lives only in the eval-set expected block). Bridge runs
+        # carry the responder's declaration in config.origin; undeclared stays
+        # undeclared so the evidence gate rejects it until someone states it.
+        run_origin = None
+        run_row = store.get_run_row(str(trace_row.get("run_id") or "")) if trace_row.get("run_id") else None
+        if isinstance(run_row, dict):
+            run_origin = (run_row.get("config") or {}).get("origin")
+        if isinstance(run_origin, dict):
+            payload["origin"] = dict(run_origin)
+            exposure = run_origin.get("responder_saw_ground_truth")
+            payload["responder_saw_ground_truth"] = exposure if exposure is not None else "undeclared"
+        else:
+            payload["responder_saw_ground_truth"] = False
         evidence_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         return {
             "trace_id": trace_id,
@@ -2953,24 +2977,19 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             examples_dir.mkdir(parents=True, exist_ok=True)
             for call_name, rows in grouped.items():
                 path = examples_dir / call_name / "few_shot.jsonl"
-                repo_path = base / "prompt_versions" / "calls" / call_name / "few_shot.jsonl"
                 path.parent.mkdir(parents=True, exist_ok=True)
-                repo_path.parent.mkdir(parents=True, exist_ok=True)
-                lines = []
-                for row in rows:
-                    lines.append(
-                        json.dumps(
-                            {
-                                "input": row.get("input_text"),
-                                "output": row.get("output_text"),
-                            },
-                            sort_keys=True,
-                        )
-                    )
-                content = "\n".join(lines) + ("\n" if lines else "")
+                examples = [
+                    {"input": row.get("input_text"), "output": row.get("output_text")}
+                    for row in rows
+                ]
+                content = "\n".join(json.dumps(example, sort_keys=True) for example in examples)
+                content += "\n" if examples else ""
                 path.write_text(content, encoding="utf-8")
-                repo_path.write_text(content, encoding="utf-8")
                 _add_file(path)
+                # Merge into the live skill asset (skills/mechanistic/<call>/few_shot.jsonl);
+                # the former prompt_versions/ target no longer exists. Merge semantics keep
+                # existing score / example_key metadata instead of overwriting the file.
+                repo_path = write_call_few_shot_examples(call_name, examples, base_dir=base)
                 _add_file(repo_path)
 
         if payload.include_baselines:
@@ -3495,6 +3514,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                     "scoring_breakdown": graded.get("scoring_breakdown", {}),
                     "error": graded.get("error"),
                     "eval_mode": "baseline",
+                    "scoring_version": graded.get("scoring_version"),
                     "run_metadata": {
                         "eval_set_id": resolved_eval_set.eval_set_id,
                         "eval_set_purpose": resolved_eval_set.purpose,
@@ -3721,10 +3741,15 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             total_score += score
             count += 1
 
-            from mechanistic_agent.scoring import score_subagents_from_step_outputs
+            from mechanistic_agent.scoring import (
+                DEFAULT_SCORING_VERSION,
+                score_subagents_from_step_outputs,
+            )
 
             subagent_scores = score_subagents_from_step_outputs(
-                list(snapshot.get("step_outputs") or [])
+                list(snapshot.get("step_outputs") or []),
+                scoring_version=DEFAULT_SCORING_VERSION,
+                mapping_agreement=(graded.get("scoring_breakdown") or {}).get("mapping_agreement"),
             )
             store.record_eval_run_result(
                 eval_run_id=eval_run_id,
@@ -3739,6 +3764,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                     "selected_step_models": step_models,
                     "scoring_breakdown": graded.get("scoring_breakdown", {}),
                     "subagent_scores": subagent_scores,
+                    "scoring_version": DEFAULT_SCORING_VERSION,
                 },
             )
 
@@ -4431,4 +4457,19 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+class _LazyASGI:
+    """Defer ``create_app()`` until the first HTTP request (avoids DB init on import)."""
+
+    def __init__(self) -> None:
+        self._app: FastAPI | None = None
+
+    def _get_app(self) -> FastAPI:
+        if self._app is None:
+            self._app = create_app()
+        return self._app
+
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        await self._get_app()(scope, receive, send)
+
+
+app = _LazyASGI()

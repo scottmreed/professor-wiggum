@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 
 RunMode = Literal["verified", "unverified"]
@@ -77,7 +77,8 @@ class StepResult:
     reasoning_level: Optional[str] = None
     attempt: int = 1
     retry_index: int = 0
-    source: Literal["llm", "human", "deterministic"] = "llm"
+    # "jev" = answered by a decision model (counted separately in call_summary).
+    source: Literal["llm", "human", "deterministic", "jev"] = "llm"
     validation: Optional[StepValidationResult] = None
     token_usage: Optional[Dict[str, int]] = None
     cost: Optional[Dict[str, float]] = None
@@ -125,6 +126,29 @@ class BranchCandidate:
             "resulting_state": self.resulting_state,
         }
 
+    def to_persisted_dict(self) -> Dict[str, Any]:
+        """Full JSON-safe form (everything ``_backtrack`` needs to re-apply it)."""
+        return {
+            "rank": self.rank,
+            "intermediate_smiles": self.intermediate_smiles,
+            "intermediate_output": dict(self.intermediate_output or {}),
+            "mechanism_output": dict(self.mechanism_output or {}),
+            "resulting_state": list(self.resulting_state or []),
+            "validation_summary": dict(self.validation_summary or {}),
+        }
+
+    @classmethod
+    def from_persisted_dict(cls, data: Dict[str, Any]) -> "BranchCandidate":
+        payload = dict(data or {})
+        return cls(
+            rank=int(payload.get("rank") or 0),
+            intermediate_smiles=str(payload.get("intermediate_smiles") or ""),
+            intermediate_output=dict(payload.get("intermediate_output") or {}),
+            mechanism_output=dict(payload.get("mechanism_output") or {}),
+            resulting_state=[str(s) for s in (payload.get("resulting_state") or [])],
+            validation_summary=dict(payload.get("validation_summary") or {}),
+        )
+
 
 @dataclass(slots=True)
 class BranchPoint:
@@ -147,6 +171,43 @@ class BranchPoint:
             "has_template_guidance_snapshot": bool(self.template_guidance_snapshot),
             "exhausted": self.exhausted,
         }
+
+    def to_persisted_dict(self) -> Dict[str, Any]:
+        """Full JSON-safe form including the untried alternatives (resume)."""
+        return {
+            "step_index": self.step_index,
+            "current_state": list(self.current_state),
+            "previous_intermediates": list(self.previous_intermediates),
+            "template_guidance_snapshot": (
+                dict(self.template_guidance_snapshot)
+                if isinstance(self.template_guidance_snapshot, dict)
+                else None
+            ),
+            "chosen_candidate": (
+                self.chosen_candidate.to_persisted_dict() if self.chosen_candidate is not None else None
+            ),
+            "alternatives": [alt.to_persisted_dict() for alt in self.alternatives],
+            "exhausted": self.exhausted,
+        }
+
+    @classmethod
+    def from_persisted_dict(cls, data: Dict[str, Any]) -> "BranchPoint":
+        payload = dict(data or {})
+        chosen = payload.get("chosen_candidate")
+        guidance = payload.get("template_guidance_snapshot")
+        return cls(
+            step_index=int(payload.get("step_index") or 0),
+            current_state=[str(s) for s in (payload.get("current_state") or [])],
+            previous_intermediates=[str(s) for s in (payload.get("previous_intermediates") or [])],
+            template_guidance_snapshot=dict(guidance) if isinstance(guidance, dict) else None,
+            chosen_candidate=BranchCandidate.from_persisted_dict(chosen) if isinstance(chosen, dict) else None,
+            alternatives=[
+                BranchCandidate.from_persisted_dict(alt)
+                for alt in (payload.get("alternatives") or [])
+                if isinstance(alt, dict)
+            ],
+            exhausted=bool(payload.get("exhausted")),
+        )
 
 
 @dataclass(slots=True)
@@ -361,6 +422,206 @@ class ModuleSpec:
         )
 
 
+LOOP_STATE_MAPPING_MODES = ("stripped", "mapped")
+
+
+def normalize_loop_state_mapping(value: Any) -> str:
+    """Return a valid ``loop_state_mapping`` mode; unknown values fall back to stripped."""
+    text = str(value or "").strip().lower()
+    return text if text in LOOP_STATE_MAPPING_MODES else "stripped"
+
+
+def _coerce_flag(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+# ---------------------------------------------------------------------------
+# Decision policy (PRD §17). Only ``reaction_type`` is wired today; the other
+# keys are accepted, validated and round-tripped so harness files can carry
+# them, but the runtime ignores them until their milestone lands.
+# ---------------------------------------------------------------------------
+DECISION_POLICY_ENUMS: Dict[str, Tuple[str, ...]] = {
+    "conditions": ("llm", "jev"),
+    "global_mapping": ("llm", "rdkit_jev_llm_fallback", "disabled"),
+    "step_mapping": ("llm", "identity_rdkit_jev_llm_fallback", "disabled"),
+    "reaction_type": ("llm", "jev"),
+    "missing_reagents_gate": ("balance_only", "balance_plus_noul"),
+    "candidate_ranker": ("generator", "consensus", "jev", "llm_judge"),
+}
+DECISION_POLICY_WIRED_KEYS: Tuple[str, ...] = ("reaction_type",)
+SHADOW_RANKERS = ("generator", "consensus", "jev", "llm_judge")
+JEV_THRESHOLD_KEYS: Tuple[str, ...] = (
+    "mapping_accept_probability",
+    "mapping_min_margin",
+    "reaction_type_active_probability",
+    "reaction_type_min_margin",
+    "missing_chemistry_noul",
+)
+JEV_FALLBACK_MODES: Tuple[str, ...] = ("llm", "no_match")
+
+
+def _coerce_enum(value: Any, allowed: Tuple[str, ...], default: str) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in allowed else default
+
+
+@dataclass(slots=True)
+class DecisionPolicy:
+    """Which engine answers each bounded decision (PRD §17).
+
+    Defaults reproduce today's production behaviour. ``loop_state_mapping``
+    stays a top-level harness field (it predates this block).
+    """
+
+    conditions: str = "llm"
+    global_mapping: str = "llm"
+    step_mapping: str = "llm"
+    reaction_type: str = "llm"
+    missing_reagents_gate: str = "balance_only"
+    candidate_ranker: str = "generator"
+    shadow_rankers: List[str] = field(default_factory=list)
+    # When True (today's behaviour) a run whose example_id has a curated
+    # reaction-type label skips the model and uses the label. Comparison runs
+    # (Jev vs LLM) must set it False; a run config key
+    # ``example_reaction_type_bypass`` or the env var
+    # MECHANISTIC_EXAMPLE_REACTION_TYPE_BYPASS overrides it per run.
+    example_reaction_type_bypass: bool = True
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Non-default keys only, so default harness files save unchanged."""
+        default = DecisionPolicy()
+        out: Dict[str, Any] = {}
+        for key in DECISION_POLICY_ENUMS:
+            value = getattr(self, key)
+            if value != getattr(default, key):
+                out[key] = value
+        if self.shadow_rankers:
+            out["shadow_rankers"] = list(self.shadow_rankers)
+        if self.example_reaction_type_bypass is not True:
+            out["example_reaction_type_bypass"] = False
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "DecisionPolicy":
+        data = data if isinstance(data, dict) else {}
+        kwargs: Dict[str, Any] = {}
+        defaults = cls()
+        for key, allowed in DECISION_POLICY_ENUMS.items():
+            kwargs[key] = _coerce_enum(data.get(key), allowed, getattr(defaults, key))
+        raw_shadow = data.get("shadow_rankers")
+        shadow: List[str] = []
+        if isinstance(raw_shadow, list):
+            for item in raw_shadow:
+                text = str(item or "").strip().lower()
+                if text in SHADOW_RANKERS and text not in shadow:
+                    shadow.append(text)
+        kwargs["shadow_rankers"] = shadow
+        kwargs["example_reaction_type_bypass"] = _coerce_flag(
+            data.get("example_reaction_type_bypass"), True
+        )
+        return cls(**kwargs)
+
+
+def _coerce_threshold(value: Any) -> Optional[float]:
+    """Threshold in [0, 1], or None (observational / unset)."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number < 0.0 or number > 1.0:  # NaN or out of range
+        return None
+    return number
+
+
+@dataclass(slots=True)
+class JevConfig:
+    """Jev decision-model settings (PRD §17). All thresholds default to None.
+
+    ``None`` means observational: the decision is recorded and the existing
+    RunConfig gates apply. Thresholds are per question and per Jev version and
+    must come from Phase D calibration, never be copied across questions.
+    """
+
+    model: Optional[str] = None  # catalog id; None = catalog default decision model
+    reaction_type_top_n: int = 5
+    mapping_max_options: int = 6
+    mapping_hard_max_options: int = 12
+    timeout_seconds: float = 30.0
+    # What reaction-type selection does when the Jev call fails: "llm" calls
+    # the existing LLM selector, "no_match" disables template guidance.
+    fallback: str = "llm"
+    thresholds: Dict[str, Optional[float]] = field(
+        default_factory=lambda: {key: None for key in JEV_THRESHOLD_KEYS}
+    )
+
+    def as_dict(self) -> Dict[str, Any]:
+        default = JevConfig()
+        out: Dict[str, Any] = {}
+        for key in (
+            "model",
+            "reaction_type_top_n",
+            "mapping_max_options",
+            "mapping_hard_max_options",
+            "timeout_seconds",
+            "fallback",
+        ):
+            value = getattr(self, key)
+            if value != getattr(default, key):
+                out[key] = value
+        if any(value is not None for value in self.thresholds.values()) or set(
+            self.thresholds
+        ) != set(JEV_THRESHOLD_KEYS):
+            out["thresholds"] = dict(self.thresholds)
+        return out
+
+    def is_default(self) -> bool:
+        return not self.as_dict()
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "JevConfig":
+        data = data if isinstance(data, dict) else {}
+        defaults = cls()
+
+        def _pos_int(key: str) -> int:
+            try:
+                return max(1, int(data.get(key, getattr(defaults, key))))
+            except (TypeError, ValueError):
+                return getattr(defaults, key)
+
+        try:
+            timeout = float(data.get("timeout_seconds", defaults.timeout_seconds))
+            if timeout <= 0:
+                timeout = defaults.timeout_seconds
+        except (TypeError, ValueError):
+            timeout = defaults.timeout_seconds
+        thresholds: Dict[str, Optional[float]] = {key: None for key in JEV_THRESHOLD_KEYS}
+        raw_thresholds = data.get("thresholds")
+        if isinstance(raw_thresholds, dict):
+            for key, value in raw_thresholds.items():
+                thresholds[str(key)] = _coerce_threshold(value)
+        model = data.get("model")
+        return cls(
+            model=str(model).strip() if isinstance(model, str) and model.strip() else None,
+            reaction_type_top_n=_pos_int("reaction_type_top_n"),
+            mapping_max_options=_pos_int("mapping_max_options"),
+            mapping_hard_max_options=_pos_int("mapping_hard_max_options"),
+            timeout_seconds=timeout,
+            fallback=_coerce_enum(data.get("fallback"), JEV_FALLBACK_MODES, defaults.fallback),
+            thresholds=thresholds,
+        )
+
+
 @dataclass(slots=True)
 class HarnessConfig:
     """Complete harness pipeline definition.
@@ -381,7 +642,23 @@ class HarnessConfig:
     post_loop_modules: List[ModuleSpec] = field(default_factory=list)
     few_shot_defaults: FewShotSelectionConfig = field(default_factory=FewShotSelectionConfig)
     topology_profiles: Dict[str, TopologyProfile] = field(default_factory=dict)
+    # Harness-level RunConfig defaults (e.g. proceed_on_validation_failure).
+    # Applied by the coordinator only for keys the run's own config leaves unset.
+    run_config_defaults: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Loop-state atom mapping (PRD §9.2). "stripped" (default, production
+    # behaviour): the proposal LLM sees map-stripped current_state. "mapped":
+    # the coordinator keeps a persistently mapped copy and the proposal LLM
+    # receives mapped SMILES (pre-loop inputs stay stripped). Enabling
+    # "mapped" is a prompt-input change and needs eval-tier evidence.
+    loop_state_mapping: str = "stripped"
+    # Record (never enforce) whether executing the chosen candidate's SMIRKS on
+    # the mapped loop state reproduces its stated resulting_state (§16.8).
+    record_smirks_state_agreement: bool = True
+    # Which engine answers each bounded decision, and Jev settings (PRD §17).
+    # Both are written only when non-default.
+    decision_policy: DecisionPolicy = field(default_factory=DecisionPolicy)
+    jev: JevConfig = field(default_factory=JevConfig)
 
     def as_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -400,6 +677,20 @@ class HarnessConfig:
             d["post_loop_modules"] = [m.as_dict() for m in self.post_loop_modules]
         if self.topology_profiles:
             d["topology_profiles"] = {k: v.as_dict() for k, v in self.topology_profiles.items()}
+        if self.run_config_defaults:
+            d["run_config_defaults"] = dict(self.run_config_defaults)
+        # Emitted only when non-default so existing harness.json files are
+        # saved unchanged; from_dict reads them either way.
+        if self.loop_state_mapping != "stripped":
+            d["loop_state_mapping"] = self.loop_state_mapping
+        if not self.record_smirks_state_agreement:
+            d["record_smirks_state_agreement"] = False
+        decision_policy = self.decision_policy.as_dict()
+        if decision_policy:
+            d["decision_policy"] = decision_policy
+        jev = self.jev.as_dict()
+        if jev:
+            d["jev"] = jev
         return d
 
     @classmethod
@@ -429,7 +720,16 @@ class HarnessConfig:
             ],
             few_shot_defaults=FewShotSelectionConfig.from_dict(data.get("few_shot_defaults")),
             topology_profiles=profiles,
+            run_config_defaults=(
+                dict(data.get("run_config_defaults"))
+                if isinstance(data.get("run_config_defaults"), dict)
+                else {}
+            ),
             metadata=dict(data.get("metadata") or {}),
+            loop_state_mapping=normalize_loop_state_mapping(data.get("loop_state_mapping")),
+            record_smirks_state_agreement=_coerce_flag(data.get("record_smirks_state_agreement"), True),
+            decision_policy=DecisionPolicy.from_dict(data.get("decision_policy")),
+            jev=JevConfig.from_dict(data.get("jev")),
         )
 
     def get_topology_profile(self, topology: str) -> TopologyProfile:
@@ -536,10 +836,15 @@ class RunConfig:
     allow_validator_mutation: bool = False
     mutation_lane: Optional[RalphLane] = None
     ralph_parent_run_id: Optional[str] = None
-    proceed_on_validation_failure: bool = True
+    # Deterministic validation is the arbiter (SOUL Guardrail 1): a step that
+    # fails validation is not accepted unless the run or harness opts in.
+    proceed_on_validation_failure: bool = False
     proceed_only_on_arrow_push_failure: bool = False
     runtime_trace_enabled: bool = False
     runtime_trace_label: Optional[str] = None
+    # Per-run override of the harness decision_policy.example_reaction_type_bypass
+    # (None = use env MECHANISTIC_EXAMPLE_REACTION_TYPE_BYPASS, then the harness).
+    example_reaction_type_bypass: Optional[bool] = None
 
 
 @dataclass(slots=True)
@@ -570,6 +875,10 @@ class OvernightRalphConfig:
     acceptance_threshold_pct: float = 0.02
     allowed_lanes: List[RalphLane] = field(default_factory=lambda: ["topology", "harness"])
     program_path: str = "ralph_program.md"
+    # "random" keeps the blind lane mutators; "llm" asks mutation_model (default:
+    # the run model) to propose one trace-conditioned edit per experiment.
+    mutation_proposer: str = "random"
+    mutation_model: Optional[str] = None
     mutation_budget_per_night: Dict[str, Any] = field(default_factory=dict)
     frozen_surfaces: List[str] = field(default_factory=list)
     anti_overfitting_rules: Dict[str, Any] = field(default_factory=dict)
@@ -681,6 +990,11 @@ class IslandEvolutionConfig:
     parent_perf_weight: float = 1.0
     parent_novelty_weight: float = 1.0
     seed: int = 42
+    # "random" = blind lane mutators; "llm" = trace-conditioned proposals from mutation_model.
+    mutation_proposer: str = "random"
+    mutation_model: Optional[str] = None
+    # 0 = run until interrupted; N = stop after N generations.
+    max_generations: int = 0
 
 
 @dataclass(slots=True)
@@ -809,6 +1123,27 @@ class RunState:
     selected_reaction_template: Optional[Dict[str, Any]] = None
     step_start_times: Dict[str, float] = field(default_factory=dict)
     adaptive_runtime_state: Dict[str, Any] = field(default_factory=dict)
+    # Declared spectators / condition additives that may remain in the final
+    # state without blocking the "all targets reached, nothing extra" check.
+    allowed_extra_species: List[str] = field(default_factory=list)
+    # Persistent atom identity (PRD §9, mapped_state.py). Set from the harness
+    # at loop start. ``mapped_loop_state`` is a MappedState snapshot matching
+    # ``current_state``; ``mapped_state_history`` keeps the pre-step snapshot per
+    # step_index so backtracking restores exact ids. Both are persisted with
+    # the branch points in ``run_resume_state`` (coordinator
+    # ``_persist_resume_state``) and restored on resume.
+    loop_state_mapping: str = "stripped"
+    record_smirks_state_agreement: bool = False
+    mapped_seed_species: List[str] = field(default_factory=list)
+    mapped_loop_state: Optional[Dict[str, Any]] = None
+    mapped_state_history: Dict[int, Dict[str, Any]] = field(default_factory=dict)
+    # Highest persistent-atom-id high-water mark (allocator ``next_id``) seen
+    # on this run, persisted so a resumed allocator never reissues an id.
+    mapped_id_high_water: int = 0
+    # Decision policy and Jev settings, copied from the harness at run start
+    # (PRD §17). Defaults reproduce today's behaviour.
+    decision_policy: DecisionPolicy = field(default_factory=DecisionPolicy)
+    jev_config: JevConfig = field(default_factory=JevConfig)
 
     def initialise(self) -> None:
         if not self.current_state:

@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from .db import RunStore
 from .types import ExperimentRecord
+from mechanistic_agent.prompt_assets import traces_root
 
 
 class ExperimentLedger:
@@ -17,7 +18,7 @@ class ExperimentLedger:
     def __init__(self, *, base_dir: Path, store: RunStore) -> None:
         self.base_dir = base_dir
         self.store = store
-        self._dir = base_dir / "traces" / "overnight_ralph"
+        self._dir = traces_root(base_dir) / "overnight_ralph"
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def append(self, record: ExperimentRecord) -> str:

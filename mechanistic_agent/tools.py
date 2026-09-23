@@ -25,9 +25,11 @@ except ImportError:  # pragma: no cover - handled at runtime
     rdmolfiles = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - optional import
-    from dimorphite_dl import DimorphiteDL
+    # dimorphite_dl 2.x dropped the DimorphiteDL class in favor of a
+    # functional API; protonate_smiles is the 2.0+ equivalent used here.
+    from dimorphite_dl import protonate_smiles as _dimorphite_protonate_smiles
 except ImportError:  # pragma: no cover - handled at runtime
-    DimorphiteDL = None  # type: ignore[assignment]
+    _dimorphite_protonate_smiles = None  # type: ignore[assignment]
 
 from .llm import adapter_supports_forced_tools, extract_text_content, get_chat_model, get_model_api_key, get_provider_label, is_gemini_model, is_openrouter_model
 from .model_registry import (
@@ -36,6 +38,7 @@ from .model_registry import (
     get_fallback_model,
     get_model_catalog,
     get_model_family,
+    update_usage_totals,
 )
 from .prompt_assets import compose_system_prompt, format_few_shot_block
 from .smiles_utils import (
@@ -186,14 +189,27 @@ def _apply_smiles_correction(smiles: str) -> Tuple[str, bool]:
 def _resolve_step_model(step_name: str, env_var: str) -> str:
     """Resolve the model to use for a step.
 
-    Priority: thread-local step model → thread-local active model → env var → default.
+    Priority: ``MECHANISTIC_ACTIVE_MODEL`` (global force override) → thread-local step
+    model → thread-local active model → per-step env var → default.
+
+    ``MECHANISTIC_ACTIVE_MODEL`` is a *force* knob: when set it routes every LLM-backed
+    step through that model (e.g. the keyless ``agent-bridge``), regardless of the
+    per-run model. Previously it sat at the bottom of the chain, so a per-run model
+    (set as the thread-local active model by the coordinator) shadowed it — a hosted
+    model id plus ``MECHANISTIC_ACTIVE_MODEL=agent-bridge`` then raised
+    ``<provider> API key not configured`` at the proposal step instead of dispatching
+    keyless. Forcing it to the front aligns dispatch with origin provenance
+    (``agent_bridge.origin_for_config`` already treats the same env var as
+    authoritative), so a run can be *attributed* to a hosted model id while being
+    *answered* keyless through the bridge.
     """
+    forced = os.getenv("MECHANISTIC_ACTIVE_MODEL")
     try:
         from mechanistic_agent.core.model_context import get_active_model, get_step_model
         model = get_step_model(step_name) or get_active_model()
     except Exception:
         model = None
-    resolved = model or os.getenv(env_var) or os.getenv("MECHANISTIC_ACTIVE_MODEL") or get_default_model()
+    resolved = forced or model or os.getenv(env_var) or get_default_model()
     replacement = _DEPRECATED_MODEL_ALIASES.get(str(resolved))
     if replacement and replacement in get_model_catalog():
         logger.warning(
@@ -364,21 +380,37 @@ def _build_species_registry_and_constraints(
         if source not in entry["sources"]:
             entry["sources"].append(source)
 
+    def _is_unchanged_overall(species: str) -> bool:
+        """True only when the species appears unchanged on BOTH sides of the
+        overall reaction. Only such species may be carried forward as
+        persistent (catalyst / spectator / counterion). A stoichiometric
+        reagent that happens to be listed by the conditions step as an acid or
+        base (SOCl2, HCl, Et3N, ...) is consumed and must NOT be re-appended to
+        later resulting states."""
+        return species in canonical_starting and species in canonical_products
+
     for idx, species in enumerate(canonical_starting):
         entry = _ensure_entry(species)
         _add_source(entry, "starting_materials")
-        if species in acid_supports:
-            _add_role(entry, "acid")
-            _add_role(entry, "catalyst")
-            _add_tag(entry, "persistent")
-            _add_tag(entry, "eligible_now")
-        elif species in base_supports:
-            _add_role(entry, "base")
-            _add_role(entry, "catalyst")
-            _add_tag(entry, "persistent")
+        unchanged = _is_unchanged_overall(species)
+        if species in acid_supports or species in base_supports:
+            _add_role(entry, "acid" if species in acid_supports else "base")
+            if unchanged:
+                _add_role(entry, "catalyst")
+                _add_tag(entry, "persistent")
+            else:
+                _add_role(entry, "reagent")
+                _add_tag(entry, "consumed_on_use")
             _add_tag(entry, "eligible_now")
         elif _is_counterion_like_species(species):
             _add_role(entry, "counterion")
+            if unchanged:
+                _add_role(entry, "spectator")
+                _add_tag(entry, "persistent")
+            else:
+                _add_tag(entry, "consumed_on_use")
+            _add_tag(entry, "eligible_now")
+        elif unchanged:
             _add_role(entry, "spectator")
             _add_tag(entry, "persistent")
             _add_tag(entry, "eligible_now")
@@ -389,20 +421,23 @@ def _build_species_registry_and_constraints(
             _add_role(entry, "coreactant")
             _add_tag(entry, "eligible_now")
 
+    # Condition-derived additives (not present in the declared starting
+    # materials) are eligible reactants but never persistent: if a step
+    # consumes them (e.g. Et3N -> Et3NH+) they must not be re-added.
     for species in acid_supports:
         entry = _ensure_entry(species)
         _add_source(entry, "conditions")
         _add_role(entry, "acid")
-        _add_role(entry, "catalyst")
-        _add_tag(entry, "persistent")
+        if "starting_materials" not in entry["sources"]:
+            _add_tag(entry, "condition_additive")
         _add_tag(entry, "eligible_now")
 
     for species in base_supports:
         entry = _ensure_entry(species)
         _add_source(entry, "conditions")
         _add_role(entry, "base")
-        _add_role(entry, "catalyst")
-        _add_tag(entry, "persistent")
+        if "starting_materials" not in entry["sources"]:
+            _add_tag(entry, "condition_additive")
         _add_tag(entry, "eligible_now")
 
     for species in canonical_missing_reactants:
@@ -410,18 +445,16 @@ def _build_species_registry_and_constraints(
         _add_source(entry, "missing_reactants")
         if species in acid_supports:
             _add_role(entry, "acid")
-            _add_role(entry, "catalyst")
-            _add_tag(entry, "persistent")
         elif species in base_supports:
             _add_role(entry, "base")
-            _add_role(entry, "catalyst")
-            _add_tag(entry, "persistent")
         elif _is_counterion_like_species(species):
             _add_role(entry, "counterion")
+        else:
+            _add_role(entry, "coreactant")
+        if species in canonical_products:
             _add_role(entry, "spectator")
             _add_tag(entry, "persistent")
         else:
-            _add_role(entry, "coreactant")
             _add_tag(entry, "consumed_on_use")
         _add_tag(entry, "eligible_now")
 
@@ -495,11 +528,24 @@ class ToolDescriptor:
     func: Any
 
 
-def _functional_group_analysis_enabled() -> bool:
-    """Return True when functional group analysis is enabled via environment flag."""
+def _functional_group_analysis_enabled(harness_enabled: Optional[bool] = None) -> bool:
+    """Return True when functional-group context should be injected into LLM prompts.
 
-    value = os.getenv("MECHANISTIC_FUNCTIONAL_GROUPS_ENABLED", "")
-    return value.lower() in {"1", "true", "yes", "on"}
+    Source of truth is the harness ``functional_groups`` module's ``enabled``
+    state, threaded through by callers as ``harness_enabled`` (wired from
+    ``RunConfig.functional_groups_enabled`` via the harness module's
+    ``config_gate: functional_groups_enabled``). ``MECHANISTIC_FUNCTIONAL_GROUPS_ENABLED``
+    remains available as an explicit override in either direction (e.g. for
+    standalone tool use or tests) but is no longer required to enable this
+    behavior.
+    """
+
+    raw = os.getenv("MECHANISTIC_FUNCTIONAL_GROUPS_ENABLED")
+    if raw is not None and raw.strip() != "":
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    if harness_enabled is not None:
+        return bool(harness_enabled)
+    return True
 
 
 class ToolRuntimeError(RuntimeError):
@@ -995,7 +1041,12 @@ def analyse_balance(starting_materials: List[str], products: List[str]) -> str:
     return _serialise(payload)
 
 
-def attempt_atom_mapping(starting_materials: List[str], products: List[str]) -> str:
+def attempt_atom_mapping(
+    starting_materials: List[str],
+    products: List[str],
+    *,
+    functional_groups_enabled: Optional[bool] = None,
+) -> str:
     """Use an LLM to propose atom-to-atom mappings between reactants and products."""
 
     start_counts = _atom_counter(starting_materials)
@@ -1021,7 +1072,7 @@ def attempt_atom_mapping(starting_materials: List[str], products: List[str]) -> 
             return "none"
         return ", ".join(f"{element}: {amount}" for element, amount in sorted(counter.items()))
 
-    fg_enabled = _functional_group_analysis_enabled()
+    fg_enabled = _functional_group_analysis_enabled(functional_groups_enabled)
     functional_groups_start: Dict[str, Dict[str, int]] = {}
     functional_groups_products: Dict[str, Dict[str, int]] = {}
     start_source = "functional group analysis disabled"
@@ -1240,6 +1291,26 @@ def attempt_atom_mapping(starting_materials: List[str], products: List[str]) -> 
 # Deterministic atom-mapping validation via rdkit-agent atom-map check
 # ---------------------------------------------------------------------------
 
+def _classify_rdkit_cli_failure(trace: Dict[str, Any]) -> Optional[str]:
+    """Map a failed ``_run_rdkit_cli_command`` trace to an error code.
+
+    Returns ``None`` when the tool never executed (not installed, subprocess
+    could not start, or timed out). Any other failure means the tool ran and
+    rejected or could not process our input, which must be reported, not
+    treated as "unavailable".
+    """
+    if "returncode" not in trace:
+        return None
+    returncode = trace.get("returncode")
+    if returncode == 2:
+        return "rdkit_cli_rejected_input"
+    if returncode == 3:
+        return "rdkit_cli_error"
+    if "output" not in trace:
+        return "rdkit_cli_unparseable_output"
+    return "rdkit_cli_error"
+
+
 def validate_atom_mapping_via_rdkit(
     *,
     starting_materials: List[str],
@@ -1247,11 +1318,26 @@ def validate_atom_mapping_via_rdkit(
     mapped_atoms: Optional[List[Dict[str, Any]]],
     backend_config: Any = None,
 ) -> Optional["StepValidationResult"]:
-    """Validate LLM-produced atom mappings using ``rdkit-agent atom-map check``.
+    """Validate LLM-produced atom-map pairs deterministically.
 
-    Returns a :class:`StepValidationResult` when validation was executed, or
-    ``None`` when rdkit-agent is unavailable (graceful skip).
+    Two checks are produced:
+
+    * ``atom_map_pairs_resolved`` (Python/RDKit): every ``mapped_atoms`` pair
+      must name a real atom on both sides with matching element and no atom
+      used twice. :func:`render_global_mapping` applies fresh map numbers to
+      the pairs that resolve and drops the rest; any dropped pair fails.
+    * ``atom_map_check`` (``rdkit-agent atom-map check``): the rendered mapped
+      SMIRKS must parse (``valid``) and carry the same map numbers on both
+      sides (``balanced``).
+
+    Returns ``None`` only when rdkit-agent could not be executed at all (not
+    installed, not resolvable, or timed out); that case is logged at WARNING.
+    A CLI that runs but rejects the invocation (exit 2/3, non-JSON output, or
+    an unexpected response shape) is reported as a *failed* check with an
+    ``error_code`` and logged at ERROR, so a malformed call can never pass as
+    "validated".
     """
+    from .core.global_mapping_context import render_global_mapping
     from .core.types import StepValidationCheck, StepValidationResult
 
     if not mapped_atoms:
@@ -1263,44 +1349,99 @@ def validate_atom_mapping_via_rdkit(
             )
         ])
 
+    rendered = render_global_mapping(starting_materials, products, mapped_atoms)
+    pairs_total = len(mapped_atoms)
+    pairs_used = int(rendered.get("pairs_used") or 0)
+    pairs_dropped = int(rendered.get("pairs_dropped") or 0)
+    pairs_details: Dict[str, Any] = {
+        "pairs_total": pairs_total,
+        "pairs_used": pairs_used,
+        "pairs_dropped": pairs_dropped,
+    }
+    pairs_ok = pairs_dropped == 0 and pairs_used > 0
+    if not pairs_ok:
+        pairs_details["error_code"] = "unresolvable_mapping_pairs"
+        pairs_details["message"] = (
+            f"{pairs_dropped} of {pairs_total} mapped_atoms pairs could not be resolved "
+            "(unknown species, out-of-range index, element mismatch, or atom used twice)"
+        )
+    checks: List[StepValidationCheck] = [
+        StepValidationCheck(name="atom_map_pairs_resolved", passed=pairs_ok, details=pairs_details),
+    ]
+    if pairs_used == 0:
+        return StepValidationResult(checks=checks)
+
+    mapped_smirks = (
+        ".".join(rendered["mapped_starting_materials"])
+        + ">>"
+        + ".".join(rendered["mapped_products"])
+    )
     trace = _run_rdkit_cli_command(
         command="atom-map",
-        args={
-            "action": "check",
-            "reactants": list(starting_materials),
-            "products": list(products),
-            "atom_map": list(mapped_atoms),
-        },
+        subcommand="check",
+        args={"smirks": mapped_smirks},
         backend_config=backend_config,
     )
 
     if trace.get("status") != "ok":
-        # rdkit-agent unavailable or errored — skip silently
-        return None
+        error_code = _classify_rdkit_cli_failure(trace)
+        if error_code is None:
+            logger.warning(
+                "rdkit-agent atom-map check unavailable; atom-map validation skipped (%s)",
+                trace.get("error") or trace.get("resolution_reason") or "unknown reason",
+            )
+            return None
+        logger.error(
+            "rdkit-agent atom-map check rejected invocation (%s, returncode=%s): %s",
+            error_code,
+            trace.get("returncode"),
+            trace.get("error"),
+        )
+        checks.append(StepValidationCheck(
+            name="atom_map_check",
+            passed=False,
+            details={
+                "error_code": error_code,
+                "returncode": trace.get("returncode"),
+                "error": str(trace.get("error") or ""),
+                "invocation": trace.get("invocation"),
+                "mapped_smirks": mapped_smirks,
+            },
+        ))
+        return StepValidationResult(checks=checks)
 
     output = trace.get("output") or {}
     valid = output.get("valid")
-    errors = output.get("errors") or []
-    warnings = output.get("warnings") or []
-
-    checks: List[StepValidationCheck] = []
-    if isinstance(valid, bool):
+    balanced = output.get("balanced")
+    if not isinstance(valid, bool) or not isinstance(balanced, bool):
+        logger.error(
+            "rdkit-agent atom-map check returned an unexpected response shape: %s",
+            sorted(output.keys()) if isinstance(output, dict) else type(output).__name__,
+        )
         checks.append(StepValidationCheck(
             name="atom_map_check",
-            passed=valid,
+            passed=False,
             details={
-                "errors": errors[:10],
-                "warnings": warnings[:10],
+                "error_code": "rdkit_cli_unexpected_response",
+                "response_keys": sorted(output.keys()) if isinstance(output, dict) else [],
+                "mapped_smirks": mapped_smirks,
             },
         ))
-    else:
-        # Unexpected response shape — treat as skip
-        checks.append(StepValidationCheck(
-            name="atom_map_check",
-            passed=True,
-            details={"skipped": True, "reason": "unexpected_response_shape"},
-        ))
+        return StepValidationResult(checks=checks)
 
+    checks.append(StepValidationCheck(
+        name="atom_map_check",
+        passed=valid and balanced,
+        details={
+            "valid": valid,
+            "balanced": balanced,
+            "mapped_smirks": mapped_smirks,
+            "mapped_atoms": output.get("mapped_atoms"),
+            "unmapped_atoms": output.get("unmapped_atoms"),
+            "map_numbers_only_in_reactants": list(output.get("map_numbers_only_in_reactants") or [])[:20],
+            "map_numbers_only_in_products": list(output.get("map_numbers_only_in_products") or [])[:20],
+        },
+    ))
     return StepValidationResult(checks=checks)
 
 
@@ -2294,12 +2435,21 @@ def _run_rdkit_cli_command(
     args: Dict[str, Any],
     backend_config: Any = None,
     timeout_seconds: Optional[float] = None,
+    subcommand: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """Invoke ``rdkit-agent <command> [<subcommand>] --json <args>``.
+
+    ``subcommand`` is required by multi-verb commands such as ``atom-map``
+    (``add | remove | check | list``); passing the verb inside the JSON payload
+    is rejected by the CLI with exit code 2.
+    """
     trace: Dict[str, Any] = {
         "command": command,
         "args": dict(args or {}),
         "status": "failed",
     }
+    if subcommand:
+        trace["subcommand"] = subcommand
     cfg = ChemistryBackendConfig.from_config(
         {
             "chemistry_backend": "rdkit_cli",
@@ -2329,7 +2479,10 @@ def _run_rdkit_cli_command(
         if timeout_seconds is not None
         else max(0.5, float(cfg.rdkit_cli_timeout_seconds))
     )
-    cmd = list(resolution.command_parts) + [command, "--json", json.dumps(args)]
+    cmd = list(resolution.command_parts) + [command]
+    if subcommand:
+        cmd.append(subcommand)
+    cmd += ["--json", json.dumps(args)]
     trace["invocation"] = cmd
     trace["timeout_seconds"] = timeout
     try:
@@ -2815,6 +2968,8 @@ def assess_initial_conditions(
     starting_materials: List[str],
     products: List[str],
     observed_ph: Optional[float] = None,
+    *,
+    functional_groups_enabled: Optional[bool] = None,
 ) -> str:
     """Assess likely reaction conditions and compatible acids/bases via LLM."""
 
@@ -2830,7 +2985,7 @@ def assess_initial_conditions(
     if observed_ph is not None:
         report["observed_ph"] = observed_ph
 
-    fg_enabled = _functional_group_analysis_enabled()
+    fg_enabled = _functional_group_analysis_enabled(functional_groups_enabled)
     functional_groups_start: Dict[str, Dict[str, int]] = {}
     functional_groups_products: Dict[str, Dict[str, int]] = {}
     start_source = "functional group analysis disabled"
@@ -3121,6 +3276,8 @@ def predict_missing_reagents(
     starting_materials: List[str],
     products: List[str],
     conditions_guidance: Optional[str] = None,
+    *,
+    functional_groups_enabled: Optional[bool] = None,
 ) -> str:
     """Use an LLM to suggest reagents that resolve any stoichiometric imbalance."""
 
@@ -3138,7 +3295,7 @@ def predict_missing_reagents(
     deficit_atoms = {k: v for k, v in deficit.items() if v > 0}
     surplus_atoms = {k: v for k, v in surplus.items() if v > 0}
 
-    fg_enabled = _functional_group_analysis_enabled()
+    fg_enabled = _functional_group_analysis_enabled(functional_groups_enabled)
 
     functional_groups_start: Dict[str, Dict[str, int]] = {}
     functional_groups_products: Dict[str, Dict[str, int]] = {}
@@ -3795,6 +3952,14 @@ def predict_missing_reagents(
                     tools=[MISSING_REAGENTS_TOOL],
                     tool_choice=build_tool_choice("missing_reagents_result"),
                 )
+                # The retry is a second real model call; merge its token usage
+                # into the step's usage total rather than discarding it, so the
+                # LLM-call/token counter (and downstream cost) sees both calls.
+                retry_usage = getattr(retry_response, "usage", None)
+                if retry_usage:
+                    merged_usage: Dict[str, Any] = dict(report.get("_llm_usage") or {})
+                    update_usage_totals(merged_usage, retry_usage)
+                    report["_llm_usage"] = merged_usage
                 # Re-parse the retry response.
                 retry_data: Any = None
                 if hasattr(retry_response, "tool_calls") and retry_response.tool_calls:
@@ -4218,6 +4383,7 @@ def select_reaction_type(
     model_used = reaction_type_model
     error_messages: List[str] = []
     response: Any = None
+    usage: Optional[Dict[str, Any]] = None
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": human_prompt},
@@ -4433,21 +4599,25 @@ def select_reaction_type(
             result["note"] = "; ".join(error_messages)
         return _serialise(result)
     except Exception as exc:
-        return _serialise(
-            {
-                "status": "fallback",
-                "selected_label_exact": "no_match",
-                "selected_type_id": None,
-                "confidence": 0.0,
-                "rationale": f"Reaction type mapping fallback due to error: {exc}",
-                "top_candidates": [],
-                "selected_template": None,
-                "available_reaction_type_count": len(templates),
-                "model_used": model_used,
-                "tool_calling_used": use_forced_tools,
-                "error_details": error_messages,
-            }
-        )
+        fallback_result: Dict[str, Any] = {
+            "status": "fallback",
+            "selected_label_exact": "no_match",
+            "selected_type_id": None,
+            "confidence": 0.0,
+            "rationale": f"Reaction type mapping fallback due to error: {exc}",
+            "top_candidates": [],
+            "selected_template": None,
+            "available_reaction_type_count": len(templates),
+            "model_used": model_used,
+            "tool_calling_used": use_forced_tools,
+            "error_details": error_messages,
+        }
+        # A real model call (primary or fallback-model) may have already
+        # returned usage before a downstream parsing error was raised; do
+        # not drop those tokens from the call/usage counter.
+        if usage:
+            fallback_result["_llm_usage"] = usage
+        return _serialise(fallback_result)
 
 
 def _score_protonation(smiles: str) -> Tuple[int, int]:
@@ -4518,32 +4688,26 @@ def recommend_ph(starting_materials: List[str], products: List[str], fallback_ph
             "source": "user",
         })
 
-    if DimorphiteDL is not None:  # pragma: no cover - depends on optional package
-        runner = None
-        for kwargs in (
-            {"min_ph": 0.0, "max_ph": 14.0, "step": 0.5},
-            {"min_ph": 0.0, "max_ph": 14.0, "step_size": 0.5},
-            {"min_ph": 0.0, "max_ph": 14.0, "ph_increment": 0.5},
-        ):
-            try:
-                runner = DimorphiteDL(**kwargs)
-                break
-            except TypeError:
-                continue
-
-        if runner is not None:
-            protonation_profiles: Dict[str, List[Dict[str, str]]] = {}
-            for smiles_list in (starting_materials, products):
-                for smiles in smiles_list:
-                    try:
-                        protonation_profiles[smiles] = runner.protonate(smiles)
-                    except Exception as exc:  # pragma: no cover - defensive
-                        protonation_profiles[smiles] = [{"error": str(exc)}]
-            return _serialise({
-                "recommended": "see_profiles",
-                "source": "dimorphite_dl",
-                "profiles": protonation_profiles,
-            })
+    if _dimorphite_protonate_smiles is not None:  # pragma: no cover - depends on optional package
+        # dimorphite_dl 2.0+ exposes protonate_smiles(smiles, ph_min, ph_max, ...)
+        # -> list[str] of protonation-state SMILES variants observed across the
+        # requested pH window, in place of the removed DimorphiteDL().protonate()
+        # class API.
+        protonation_profiles: Dict[str, List[str]] = {}
+        for smiles_list in (starting_materials, products):
+            for smiles in smiles_list:
+                if smiles in protonation_profiles:
+                    continue
+                try:
+                    variants = _dimorphite_protonate_smiles(smiles, ph_min=0.0, ph_max=14.0)
+                    protonation_profiles[smiles] = list(variants)
+                except Exception as exc:  # pragma: no cover - defensive
+                    protonation_profiles[smiles] = [f"error: {exc}"]
+        return _serialise({
+            "recommended": "see_profiles",
+            "source": "dimorphite_dl",
+            "profiles": protonation_profiles,
+        })
 
     # Fallback heuristic when Dimorphite-DL is unavailable.
     acid_score = 0
@@ -5275,6 +5439,7 @@ def propose_intermediates(
     step_index: Optional[int] = None,
     step_mapping_context: Optional[Dict[str, Any]] = None,
     template_guidance: Optional[Dict[str, Any]] = None,
+    functional_groups_enabled: Optional[bool] = None,
 ) -> str:
     """Use LLM to propose intermediates for the next mechanistic step.
     
@@ -5344,7 +5509,7 @@ def propose_intermediates(
             return rendered[: max(256, max_chars - 32)] + "...(truncated)"
         return rendered
     
-    fg_enabled = _functional_group_analysis_enabled()
+    fg_enabled = _functional_group_analysis_enabled(functional_groups_enabled)
 
     if fg_enabled:
         functional_groups_start, start_source = _retrieve_functional_group_context(starting_materials)
@@ -6549,6 +6714,7 @@ def predict_mechanistic_step(
     previous_intermediates: Optional[List[str]] = None,
     note: Optional[str] = None,
     starting_materials: Optional[List[str]] = None,
+    allowed_extra_species: Optional[List[str]] = None,
 ) -> str:
     """Validate and record a single mechanistic electron-pushing step.
 
@@ -6674,6 +6840,7 @@ def predict_mechanistic_step(
         resulting_state=resulting_state,
         target_products=target_products,
         starting_materials=starting_materials,
+        allowed_extra_species=allowed_extra_species,
     )
     contains_products = bool(target_state["contains_target_product"])
 

@@ -1,12 +1,5 @@
 ## Summary
 
-## Track
-- [ ] Track 1: Few-shot examples
-- [ ] Track 2: New subagents
-- [ ] Track 3: New models
-- [ ] Track 4: Harness changes
-- [ ] Track 5: Single reaction submission
-
 ## Changes
 - 
 
@@ -14,8 +7,9 @@
 - [ ] Ran `python -m pytest tests/fast/ -q`
 - [ ] Ran additional tests as needed
 
-## Evidence
-- [ ] Linked required trace evidence (if applicable)
+## Behavior-changing?
+- [ ] No (bug fix, infra, docs)
+- [ ] Yes — touches prompts, few-shots, models, validators, or harness. Maintainers attach evidence and the required eval-tier delta before merge (see `docs/change_evidence_policy.md`). Contributors do not need to run evals.
 
 ## Checklist
 - [ ] Updated docs if behavior changed
