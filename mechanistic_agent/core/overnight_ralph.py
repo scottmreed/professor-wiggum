@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import json
 import random
-import shutil
 import threading
 import time
 from dataclasses import dataclass
@@ -15,12 +14,14 @@ from .coordinator import RunCoordinator
 from .db import RunStore
 from .experiment_ledger import ExperimentLedger
 from .lane_mutator import (
+    AssetState,
     FewShotLaneMutator,
     HarnessLaneMutator,
     MutatedAsset,
     PromptLaneMutator,
     TopologyLaneMutator,
-    applied_mutation,
+    applied_assets,
+    snapshot_mutated_asset,
 )
 from .micro_eval_runner import MicroEvalRunner
 from .types import ExperimentRecord, MicroEvalResult, OvernightRalphConfig, RalphLane
@@ -82,6 +83,9 @@ class OvernightRalphOrchestrator:
         self._chat_model_factory = chat_model_factory
         self._latest_failure_digest: List[Dict[str, Any]] = []
         self._allowed_lanes: List[str] = []
+        # Model the evaluated runs use; prompt / few-shot variants are derived
+        # from (and scoped to) the asset a run for this model resolves.
+        self._target_model_name: Optional[str] = None
 
     def request_stop(self) -> None:
         self.stop_event.set()
@@ -110,6 +114,12 @@ class OvernightRalphOrchestrator:
             self.status.baseline = baseline_payload
 
             parent_asset = self._resolve_parent_harness_asset(run_config)
+            base_harness_asset = parent_asset
+            # Assets the current parent (and so ``baseline_result``) is evaluated
+            # under. Starts as the run's own harness and committed skills; every
+            # kept variant is folded in, so later experiments are proposed from
+            # and evaluated on top of it, like the baseline they are compared to.
+            parent_state = AssetState()
             parent_sha = _sha256_text(parent_asset.read_text(encoding="utf-8"))
             spent_cost = 0.0
             keep_count = 0
@@ -120,6 +130,7 @@ class OvernightRalphOrchestrator:
                 allowed_lanes = ["topology"]
             self._mutation_proposer = str(getattr(config, "mutation_proposer", "random") or "random")
             self._mutation_model = getattr(config, "mutation_model", None) or str(run_config.get("model_name") or run_config.get("model") or "")
+            self._target_model_name = str(run_config.get("model_name") or run_config.get("model") or "").strip() or None
             self._allowed_lanes = list(allowed_lanes)
             self._refresh_failure_digest()
 
@@ -137,22 +148,23 @@ class OvernightRalphOrchestrator:
                 lane: RalphLane = allowed_lanes[(idx - 1) % len(allowed_lanes)]  # type: ignore[assignment]
                 self.status.current_experiment = idx
 
-                mutated = self._propose_mutation(lane=lane, parent_asset=parent_asset)
+                with applied_assets(parent_state):
+                    mutated = self._propose_mutation(lane=lane, parent_asset=parent_asset)
                 # An LLM proposer may pick a different (allowed) lane than the
                 # scheduled one; record and apply the lane it actually mutated.
                 effective_lane = getattr(mutated, "lane", None) or lane
                 if effective_lane in {"topology", "harness", "prompt", "few_shot"}:
                     lane = effective_lane  # type: ignore[assignment]
-                # Evaluate the variant: harness/topology variants become the
-                # run's harness_config_path; prompt/few-shot variants are
-                # installed as call-asset overrides for the slice.
+                # Evaluate the variant on top of the parent: harness/topology
+                # variants become the run's harness_config_path; prompt/few-shot
+                # variants are installed as call-asset overrides for the slice.
                 applied = MutatedAsset(
                     lane=str(lane),
                     asset_path=Path(mutated.asset_path),
                     summary=str(getattr(mutated, "summary", "") or ""),
                     metadata=dict(getattr(mutated, "metadata", None) or {}),
                 )
-                with applied_mutation(applied) as harness_override:
+                with applied_assets(parent_state.with_mutation(applied)) as harness_override:
                     result = self.micro_eval.run_slice(
                         eval_slice_id=config.eval_slice_id,
                         cases=slice_cases,
@@ -169,12 +181,19 @@ class OvernightRalphOrchestrator:
                 )
                 if keep:
                     keep_count += 1
+                    # ``result`` was evaluated under parent_state + this variant,
+                    # which is exactly the new parent_state: the next experiment's
+                    # baseline and its own evaluation share the same base assets.
                     baseline_result = result
-                    parent_asset = mutated.asset_path if lane in {"topology", "harness"} else parent_asset
-                    parent_sha = _sha256_text(parent_asset.read_text(encoding="utf-8"))
-                    candidate_path = candidates_dir / f"exp_{idx:03d}_{lane}_{mutated.asset_path.name}"
-                    shutil.copyfile(mutated.asset_path, candidate_path)
-                    mutated_path = str(candidate_path)
+                    # Carry the kept variant forward from its candidate snapshot:
+                    # the scratch sibling file can be overwritten by a later
+                    # mutation that reuses its name.
+                    kept = snapshot_mutated_asset(applied, candidates_dir, prefix=f"exp_{idx:03d}_{lane}_")
+                    parent_state = parent_state.with_mutation(kept)
+                    if lane in {"topology", "harness"}:
+                        parent_asset = kept.asset_path
+                    parent_sha = parent_state.fingerprint(base_harness_asset)
+                    mutated_path = str(kept.asset_path)
                 else:
                     discard_count += 1
                     mutated_path = str(mutated.asset_path)
@@ -208,6 +227,7 @@ class OvernightRalphOrchestrator:
                 "max_cost_usd": config.max_cost_usd,
                 "baseline": baseline_payload,
                 "final_parent_sha": parent_sha,
+                "final_parent_assets": parent_state.to_dict(),
             }
             self.status.summary = summary
             self.status.running = False
@@ -253,6 +273,7 @@ class OvernightRalphOrchestrator:
                 base_dir=self.base_dir,
                 model_name=str(self._mutation_model or "agent-bridge"),
                 chat_model_factory=self._chat_model_factory,
+                target_model_name=self._target_model_name,
             )
             return mutator.propose(
                 parent_asset,
@@ -265,9 +286,9 @@ class OvernightRalphOrchestrator:
         if lane == "harness":
             return HarnessLaneMutator().propose(parent_asset)
         if lane == "prompt":
-            return PromptLaneMutator(base_dir=self.base_dir).propose(parent_asset)
+            return PromptLaneMutator(base_dir=self.base_dir, model_name=self._target_model_name).propose(parent_asset)
         if lane == "few_shot":
-            return FewShotLaneMutator(base_dir=self.base_dir).propose(parent_asset)
+            return FewShotLaneMutator(base_dir=self.base_dir, model_name=self._target_model_name).propose(parent_asset)
         raise ValueError(f"Unsupported overnight lane: {lane}")
 
     @staticmethod

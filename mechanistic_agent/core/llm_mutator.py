@@ -27,6 +27,7 @@ from .lane_mutator import (
     MutatedAsset,
     PromptLaneMutator,
     TopologyLaneMutator,
+    resolve_call_source,
 )
 
 LANES = ("topology", "harness", "prompt", "few_shot")
@@ -226,9 +227,13 @@ class LLMLaneMutator:
         model_name: str,
         chat_model_factory: Optional[Callable[..., Any]] = None,
         call_names: Optional[List[str]] = None,
+        target_model_name: Optional[str] = None,
     ) -> None:
         self.base_dir = Path(base_dir)
         self.model_name = str(model_name)
+        # The model the evaluated runs use: prompt / few-shot edits are derived
+        # from (and scoped to) the asset a run for this model resolves.
+        self.target_model_name = str(target_model_name or "").strip() or None
         self._factory = chat_model_factory
         self.call_names = list(call_names or ["propose_mechanism_step", "attempt_atom_mapping", "assess_initial_conditions", "predict_missing_reagents", "select_reaction_type"])
         self.last_proposal: Optional[MutationProposal] = None
@@ -262,13 +267,13 @@ class LLMLaneMutator:
         prompts: Dict[str, str] = {}
         few_shot_counts: Dict[str, int] = {}
         for call_name in self.call_names:
-            skill = self.base_dir / "skills" / "mechanistic" / call_name / "SKILL.md"
+            skill, _scope = resolve_call_source(self.base_dir, call_name, "prompt", self.target_model_name)
             if skill.exists():
                 text = skill.read_text(encoding="utf-8")
                 if _PROMPT_START in text and _PROMPT_END in text:
                     body = text.split(_PROMPT_START, 1)[1].split(_PROMPT_END, 1)[0]
                     prompts[call_name] = _short(body.strip(), 1800)
-            few = self.base_dir / "skills" / "mechanistic" / call_name / "few_shot.jsonl"
+            few, _scope = resolve_call_source(self.base_dir, call_name, "few_shot", self.target_model_name)
             if few.exists():
                 few_shot_counts[call_name] = sum(1 for line in few.read_text(encoding="utf-8").splitlines() if line.strip())
         summary["prompts"] = prompts
@@ -414,9 +419,8 @@ class LLMLaneMutator:
         call_name = proposal.target
         if not call_name or "/" in call_name or ".." in call_name:
             raise ProposalRejected(f"invalid call name {call_name!r}")
-        skill_dir = self.base_dir / "skills" / "mechanistic" / call_name
         if lane == "prompt":
-            src = skill_dir / "SKILL.md"
+            src, scope_model = resolve_call_source(self.base_dir, call_name, "prompt", self.target_model_name)
             if not src.exists():
                 raise ProposalRejected(f"prompt source not found: {src}")
             text = src.read_text(encoding="utf-8")
@@ -439,10 +443,10 @@ class LLMLaneMutator:
                 raise ProposalRejected(f"unsupported prompt operation {proposal.operation!r}")
             out_path = parent_asset_path.with_name(f"prompt_variant_{call_name}_{stamp}.SKILL.md")
             out_path.write_text(mutated, encoding="utf-8")
-            return MutatedAsset(lane=lane, asset_path=out_path, summary=summary, metadata={"proposal": proposal.as_dict(), "call_name": call_name, "source": str(src), "proposer": self.model_name})
+            return MutatedAsset(lane=lane, asset_path=out_path, summary=summary, metadata={"proposal": proposal.as_dict(), "call_name": call_name, "source": str(src), "scope_model": scope_model, "proposer": self.model_name})
 
         # few_shot
-        src = skill_dir / "few_shot.jsonl"
+        src, scope_model = resolve_call_source(self.base_dir, call_name, "few_shot", self.target_model_name)
         lines = [line for line in src.read_text(encoding="utf-8").splitlines() if line.strip()] if src.exists() else []
         if proposal.operation == "remove_few_shot":
             try:
@@ -470,7 +474,7 @@ class LLMLaneMutator:
             raise ProposalRejected(f"unsupported few_shot operation {proposal.operation!r}")
         out_path = parent_asset_path.with_name(f"few_shot_variant_{call_name}_{stamp}.jsonl")
         out_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
-        return MutatedAsset(lane=lane, asset_path=out_path, summary=summary, metadata={"proposal": proposal.as_dict(), "call_name": call_name, "source": str(src), "proposer": self.model_name})
+        return MutatedAsset(lane=lane, asset_path=out_path, summary=summary, metadata={"proposal": proposal.as_dict(), "call_name": call_name, "source": str(src), "scope_model": scope_model, "proposer": self.model_name})
 
     # -- entry point --------------------------------------------------------
     def propose(
@@ -511,5 +515,5 @@ class LLMLaneMutator:
         if lane == "harness":
             return HarnessLaneMutator().propose(parent_asset_path)
         if lane == "prompt":
-            return PromptLaneMutator(base_dir=self.base_dir).propose(parent_asset_path)
-        return FewShotLaneMutator(base_dir=self.base_dir).propose(parent_asset_path)
+            return PromptLaneMutator(base_dir=self.base_dir, model_name=self.target_model_name).propose(parent_asset_path)
+        return FewShotLaneMutator(base_dir=self.base_dir, model_name=self.target_model_name).propose(parent_asset_path)
