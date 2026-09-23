@@ -15,7 +15,15 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List
 
-from mechanistic_agent.core.types import FEWSHOT_QUALITY_WEIGHT, FewShotSelectionConfig
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mechanistic_agent.core.types import FewShotSelectionConfig
+
+# NOTE: mechanistic_agent.core.types is imported lazily inside the functions that
+# need it. Importing it at module level pulls in mechanistic_agent.core.__init__
+# (RDKit, FastAPI, ...) and the CI evidence gate runs this module with the
+# standard library only.
 
 _PROMPT_START_MARKER = "<!-- PROMPT_START -->"
 _PROMPT_END_MARKER = "<!-- PROMPT_END -->"
@@ -80,6 +88,27 @@ def model_asset_slug(model_name: str) -> str:
     return value.replace("/", "__")
 
 
+def model_name_from_asset_slug(slug: str) -> str:
+    """Inverse of :func:`model_asset_slug` (``models/<slug>/`` directory name -> model name).
+
+    Exact as long as catalog model names never contain a literal ``__``.
+    """
+    value = str(slug or "").strip()
+    if not value:
+        raise ValueError("slug is required")
+    return value.replace("__", "/")
+
+
+def gated_call_names() -> List[str]:
+    """LLM call names whose prompt assets are gated by trace evidence.
+
+    Derived from ``CALL_TO_STEPS`` rather than the skills directory listing so
+    that calls with only a ``few_shot.jsonl`` (no ``SKILL.md``) are included and
+    prompts that can never produce evidence (``baseline_mechanism``) are not.
+    """
+    return sorted(CALL_TO_STEPS)
+
+
 def _active_model_name(default: str | None = None) -> str | None:
     try:
         from mechanistic_agent.core.model_context import get_active_model
@@ -104,6 +133,14 @@ def _normalise_text(text: str) -> str:
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _portable_asset_path(path: Path, root: Path) -> str:
+    """Return ``path`` relative to ``root`` in POSIX form (machine-independent)."""
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _read_text(path: Path, *, default: str = "") -> str:
@@ -539,6 +576,8 @@ def select_few_shot_examples(
     policy: FewShotSelectionConfig | Dict[str, Any] | None = None,
     model_name: str | None = None,
 ) -> List[Dict[str, Any]]:
+    from mechanistic_agent.core.types import FEWSHOT_QUALITY_WEIGHT, FewShotSelectionConfig  # lazy: keeps gate stdlib-only
+
     config = policy if isinstance(policy, FewShotSelectionConfig) else FewShotSelectionConfig.from_dict(policy)
     if not config.enabled or config.max_examples <= 0:
         return []
@@ -602,6 +641,8 @@ def format_few_shot_block(
     policy: FewShotSelectionConfig | Dict[str, Any] | None = None,
     model_name: str | None = None,
 ) -> str:
+    from mechanistic_agent.core.types import FEWSHOT_QUALITY_WEIGHT, FewShotSelectionConfig  # lazy: keeps gate stdlib-only
+
     resolved_policy = policy
     if resolved_policy is None:
         try:
@@ -704,17 +745,22 @@ def get_call_prompt_version(
     shared_norm = _normalise_text(shared_prompt)
     base_norm = _normalise_text(call_prompt)
     few_shot_norm = _normalise_text(few_shot_text)
+    # Seed v2: paths are recorded relative to skills/mechanistic so the bundle
+    # hash is identical for the same asset tree on any machine (evidence exported
+    # on a laptop must match the hash recomputed in CI).
+    skills_root = mechanistic_skills_root(base_dir)
     bundle_seed = "\n".join(
         [
+            "prompt_bundle_v2",
             f"model:{selected_model or 'shared'}",
             "shared_base",
-            str(shared_path),
+            _portable_asset_path(shared_path, skills_root),
             shared_norm,
             "call_base",
-            str(base_path),
+            _portable_asset_path(base_path, skills_root),
             base_norm,
             "few_shot",
-            str(few_shot_path),
+            _portable_asset_path(few_shot_path, skills_root),
             few_shot_norm,
         ]
     )

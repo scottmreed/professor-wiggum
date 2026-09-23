@@ -75,3 +75,22 @@ def test_prompt_frontmatter_parsed_for_step_and_version(tmp_path: Path) -> None:
     assert "initial_conditions" in prompt_map
     assert prompt_map["initial_conditions"]["call_name"] == "assess_initial_conditions"
     assert "Prompt body" in str(prompt_map["initial_conditions"]["template"])
+
+
+def test_prompt_bundle_hash_is_independent_of_checkout_location(tmp_path: Path) -> None:
+    def _seed(root: Path) -> None:
+        mech = root / "skills" / "mechanistic"
+        (mech / "base_system").mkdir(parents=True)
+        (mech / "assess_initial_conditions").mkdir(parents=True)
+        (mech / "base_system" / "SKILL.md").write_text(
+            "---\nskill_type: mechanistic\ncall_name: base_system\nkind: shared_base\n---\n<!-- PROMPT_START -->\nbase\n<!-- PROMPT_END -->\n",
+            encoding="utf-8",
+        )
+        (mech / "assess_initial_conditions" / "SKILL.md").write_text(_make_skill_md("same"), encoding="utf-8")
+        (mech / "assess_initial_conditions" / "few_shot.jsonl").write_text("", encoding="utf-8")
+
+    _seed(tmp_path / "one")
+    _seed(tmp_path / "two")
+    one = RegistrySet(tmp_path / "one").bundle_hashes()["prompt_bundle_hash"]
+    two = RegistrySet(tmp_path / "two").bundle_hashes()["prompt_bundle_hash"]
+    assert one and one == two

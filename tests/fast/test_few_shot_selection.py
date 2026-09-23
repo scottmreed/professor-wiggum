@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from mechanistic_agent.core.types import FewShotSelectionConfig
 from mechanistic_agent.prompt_assets import (
     append_call_few_shot_example,
@@ -160,3 +162,54 @@ def test_get_call_prompt_version_prefers_model_override_when_present(tmp_path: P
     assert opus["asset_scope"] == "exact_model"
     assert opus["resolved_call_base_path"].endswith("anthropic__claude-opus-4.6/SKILL.md")
     assert shared["prompt_bundle_sha256"] != opus["prompt_bundle_sha256"]
+
+
+def _seed_minimal_call_tree(base: Path, *, prompt: str = "call prompt") -> None:
+    base_system = base / "skills" / "mechanistic" / "base_system"
+    base_system.mkdir(parents=True, exist_ok=True)
+    (base_system / "SKILL.md").write_text(
+        "---\nkind: shared_base\ncall_name: base_system\n---\n<!-- PROMPT_START -->\nshared base\n<!-- PROMPT_END -->\n",
+        encoding="utf-8",
+    )
+    call_dir = base / "skills" / "mechanistic" / "assess_initial_conditions"
+    call_dir.mkdir(parents=True, exist_ok=True)
+    (call_dir / "SKILL.md").write_text(
+        "---\nkind: llm\ncall_name: assess_initial_conditions\nsteps: [initial_conditions]\n---\n"
+        f"<!-- PROMPT_START -->\n{prompt}\n<!-- PROMPT_END -->\n",
+        encoding="utf-8",
+    )
+    (call_dir / "few_shot.jsonl").write_text('{"input": "a", "output": "b"}\n', encoding="utf-8")
+
+
+def test_prompt_bundle_sha256_is_independent_of_checkout_location(tmp_path: Path) -> None:
+    """Evidence exported on one machine must match the hash recomputed in CI."""
+    _seed_minimal_call_tree(tmp_path / "checkout_a")
+    _seed_minimal_call_tree(tmp_path / "checkout_b")
+
+    for model in (None, "openai/gpt-5"):
+        a = get_call_prompt_version("assess_initial_conditions", tmp_path / "checkout_a", model_name=model)
+        b = get_call_prompt_version("assess_initial_conditions", tmp_path / "checkout_b", model_name=model)
+        assert a["template"] == "call prompt"
+        assert a["prompt_bundle_sha256"] == b["prompt_bundle_sha256"]
+
+    _seed_minimal_call_tree(tmp_path / "checkout_b", prompt="edited prompt")
+    a = get_call_prompt_version("assess_initial_conditions", tmp_path / "checkout_a")
+    b = get_call_prompt_version("assess_initial_conditions", tmp_path / "checkout_b")
+    assert a["prompt_bundle_sha256"] != b["prompt_bundle_sha256"]
+
+
+def test_model_asset_slug_round_trips() -> None:
+    from mechanistic_agent.prompt_assets import model_asset_slug, model_name_from_asset_slug
+
+    for name in ("anthropic/claude-opus-4.6", "openai/gpt-5-mini", "agent-bridge"):
+        assert model_name_from_asset_slug(model_asset_slug(name)) == name
+    with pytest.raises(ValueError):
+        model_name_from_asset_slug("")
+
+
+def test_gated_call_names_match_call_to_steps() -> None:
+    from mechanistic_agent.prompt_assets import CALL_TO_STEPS, gated_call_names
+
+    assert gated_call_names() == sorted(CALL_TO_STEPS)
+    assert "select_reaction_type" in gated_call_names()
+    assert "baseline_mechanism" not in gated_call_names()

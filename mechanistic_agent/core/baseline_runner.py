@@ -32,21 +32,26 @@ BASELINE_GROUP_PREFIX = "harness_free_baseline"
 SIMULATED_GROUP_PREFIX = "[SIMULATED]"
 
 
-def _load_baseline_system_prompt() -> str:
-    """Load and compose the system prompt for the baseline single-shot call."""
-    base_path = Path(__file__).resolve().parent.parent.parent / "prompt_versions" / "shared" / "base_system.md"
-    call_path = (
-        Path(__file__).resolve().parent.parent.parent
-        / "prompt_versions"
-        / "calls"
-        / "baseline_mechanism"
-        / "base.md"
-    )
+def _load_baseline_system_prompt(base_dir: Path | None = None) -> str:
+    """Compose the system prompt for the baseline single-shot call.
+
+    Reads the shared base prompt and the ``baseline_mechanism`` call prompt from
+    ``skills/mechanistic/`` (the same assets the harness uses), falling back to a
+    generic instruction only when neither exists.
+    """
+    # Lazy import: prompt_assets is also imported by core.db, and importing it at
+    # module level here would create a cycle through mechanistic_agent.core.
+    from mechanistic_agent.data_paths import repo_root
+    from mechanistic_agent.prompt_assets import load_call_base_prompt, load_shared_base_prompt
+
+    root = repo_root(base_dir) if base_dir is not None else Path(__file__).resolve().parent.parent.parent
     parts: List[str] = []
-    if base_path.exists():
-        parts.append(base_path.read_text(encoding="utf-8").strip())
-    if call_path.exists():
-        parts.append(call_path.read_text(encoding="utf-8").strip())
+    shared = load_shared_base_prompt(root).strip()
+    if shared:
+        parts.append(shared)
+    call = load_call_base_prompt("baseline_mechanism", root).strip()
+    if call:
+        parts.append(call)
     return "\n\n".join(parts) if parts else "You are an expert organic chemist."
 
 

@@ -47,7 +47,13 @@ Prompt or few-shot changes additionally run the evidence gate:
 PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py --call <call_name>
 ```
 
-> **Status (September 2026).** The evidence gate's change detector, prompt-bundle hashing, and `traces/evidence/` gitignore rules are being repaired in a follow-up PR; until that lands the CI gate passes vacuously and the maintainer runs the tier evals as the effective gate.
+For a change to a model lane (`skills/mechanistic/<call>/models/<slug>/`), scope the check to that model:
+
+```bash
+PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py --call <call_name> --model <model_name>
+```
+
+In CI the changed calls and lanes are discovered from the PR diff. Evidence is matched in the scope it was produced in: runtime records prompt versions per model, so evidence from model X is checked against the bundle hash computed for model X. The bundle hash is path-independent (seed `prompt_bundle_v2`), so evidence exported on any machine validates anywhere.
 
 ## Evidence flow
 

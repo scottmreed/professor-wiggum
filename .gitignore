@@ -172,7 +172,9 @@ training_data/practice_eval/*.png
 
 # Legacy — stays gitignored
 training_data/local_legacy/
-traces/
+# traces/* (not traces/) so the re-include of traces/evidence/ below is effective:
+# git cannot re-include files under an excluded directory.
+traces/*
 !traces/evidence/
 !traces/evidence/**
 plans/
