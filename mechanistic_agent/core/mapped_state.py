@@ -80,6 +80,7 @@ from rdkit.Chem import rdChemReactions, rdqueries
 from mechanistic_agent.core.mechanism_moves import (
     MechanismMove,
     extract_mechanism_moves,
+    mapped_smiles_parser_params,
     normalize_electron_pushes,
     split_cxsmiles_metadata,
 )
@@ -167,10 +168,7 @@ class AtomRecord:
 
 
 def _parser_params(sanitize: bool = False) -> Chem.SmilesParserParams:
-    params = Chem.SmilesParserParams()
-    params.removeHs = False
-    params.sanitize = sanitize
-    return params
+    return mapped_smiles_parser_params(sanitize=sanitize)
 
 
 def _parse_raw(smiles: str) -> Chem.Mol:
