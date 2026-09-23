@@ -802,6 +802,7 @@ def run_curriculum_batch(
                     "error": graded.get("error") or run_error,
                     "eval_mode": "harness",
                     "subagent_scores": subagent_scores,
+                    "mapping_agreement": graded.get("mapping_agreement"),
                     "run_status": run_status,
                     "current_state": current_state,
                 },
