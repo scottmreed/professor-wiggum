@@ -39,8 +39,10 @@ from mechanistic_agent.core.archive import (
 from mechanistic_agent.core.lane_mutator import (
     FewShotLaneMutator,
     HarnessLaneMutator,
+    MutatedAsset,
     PromptLaneMutator,
     TopologyLaneMutator,
+    applied_mutation,
 )
 from mechanistic_agent.core.types import ArchiveEntry, IslandConfig, IslandEvolutionConfig
 from mechanistic_agent.flower_curriculum import (
@@ -672,7 +674,14 @@ def run_curriculum_batch(
     selection_meta: Optional[Dict[str, Any]] = None,
     progress: Optional[Dict[str, Any]] = None,
     accumulated_examples_mined: Optional[Dict[str, int]] = None,
+    harness_config_path: Optional[str] = None,
 ) -> Tuple[str, List[Dict[str, Any]]]:
+    """Run one batch of cases and record them under a new eval run.
+
+    ``harness_config_path`` points every run at a specific harness JSON file
+    (e.g. an island-mode topology/harness variant) instead of
+    ``harness_versions/<config.harness>/harness.json``.
+    """
     registry = RegistrySet(base_dir)
     model_family = get_model_family(config.model_name) or "unknown"
     internal_reasoning = to_internal_reasoning_level(config.thinking_level)
@@ -765,6 +774,7 @@ def run_curriculum_batch(
                     "repeat_failure_signature_limit": max(2, int(config.repeat_failure_signature_limit)),
                     "max_reproposals_per_step": max(1, int(config.max_reproposals_per_step)),
                     "harness_name": config.harness,
+                    **({"harness_config_path": str(harness_config_path)} if harness_config_path else {}),
                     "coordination_topology": config.coordination_topology,
                 },
                 prompt_bundle_hash=hashes.get("prompt_bundle_hash", ""),
@@ -1193,7 +1203,7 @@ def apply_island_mutation(
     mutation_proposer: str = "random",
     mutation_model: Optional[str] = None,
     failure_digest: Optional[List[Dict[str, Any]]] = None,
-) -> Tuple[str, str, Path]:
+) -> Tuple[str, str, MutatedAsset]:
     """Dispatch to the appropriate lane mutator for this island.
 
     ``mutation_proposer="llm"`` asks ``mutation_model`` to read the failure
@@ -1201,7 +1211,8 @@ def apply_island_mutation(
     island's allowed lanes (falls back to the blind mutator when the proposal
     is not applicable). The acceptance rule downstream is unchanged.
 
-    Returns (mutation_type, mutation_summary, mutated_asset_path).
+    Returns (mutation_type, mutation_summary, mutated_asset). The asset is a
+    sibling variant file; evaluate it under ``applied_mutation(mutated_asset)``.
     """
     lane = rng.choice(island.allowed_lanes)
     call_names = ISLAND_CALL_NAMES.get(island.mutation_target, [])
@@ -1220,35 +1231,35 @@ def apply_island_mutation(
             allowed_lanes=list(island.allowed_lanes),
             preferred_lane=lane,
         )
-        return f"llm_{result.lane}", result.summary, result.asset_path
+        return f"llm_{result.lane}", result.summary, result
 
     if lane in ("prompt",) and call_names:
         call_name = rng.choice(call_names)
         mutator = PromptLaneMutator(base_dir=base_dir, call_name=call_name)
         result = mutator.propose(harness_path)
-        return "prompt_edit", result.summary, result.asset_path
+        return "prompt_edit", result.summary, result
 
     if lane in ("few_shot",) and call_names:
         call_name = rng.choice(call_names)
         mutator_fs = FewShotLaneMutator(base_dir=base_dir, call_name=call_name)
         result = mutator_fs.propose(harness_path)
-        return "few_shot_mine", result.summary, result.asset_path
+        return "few_shot_mine", result.summary, result
 
     if lane == "topology":
         mutator_topo = TopologyLaneMutator(rng=rng)
         result = mutator_topo.propose(harness_path)
-        return "topology_mutate", result.summary, result.asset_path
+        return "topology_mutate", result.summary, result
 
     if lane == "harness":
         mutator_harness = HarnessLaneMutator()
         result = mutator_harness.propose(harness_path)
-        return "harness_toggle", result.summary, result.asset_path
+        return "harness_toggle", result.summary, result
 
     # Fallback: few-shot on default call_name
     fallback_cn = call_names[0] if call_names else "propose_mechanism_step"
     mutator_fb = FewShotLaneMutator(base_dir=base_dir, call_name=fallback_cn)
     result = mutator_fb.propose(harness_path)
-    return "few_shot_mine", result.summary, result.asset_path
+    return "few_shot_mine", result.summary, result
 
 
 def _eval_case_step_count(case: Dict[str, Any]) -> int:
@@ -1513,7 +1524,7 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
 
             # 2. Apply mutation
             try:
-                mutation_type, mutation_summary, mutated_path = apply_island_mutation(
+                mutation_type, mutation_summary, mutated_asset = apply_island_mutation(
                     island, parent, runtime_base, harness_path, rng,
                     mutation_proposer=str(getattr(island_config, "mutation_proposer", "random") or "random"),
                     mutation_model=getattr(island_config, "mutation_model", None) or config.model_name,
@@ -1577,16 +1588,24 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                 print(f"  No runnable cases for island {island.id}")
                 continue
 
-            registry = RegistrySet(runtime_base)
-            hashes = registry.bundle_hashes()
+            # Evaluate the mutated variant, not the parent: harness/topology
+            # variants go in as the run's harness_config_path, prompt/few-shot
+            # variants are installed as call-asset overrides for the batch.
+            with applied_mutation(mutated_asset) as harness_override:
+                registry = RegistrySet(runtime_base)
+                hashes = registry.bundle_hashes()
+                hashes["mutated_asset_path"] = str(mutated_asset.asset_path)
+                if harness_override:
+                    hashes["harness_config_path"] = harness_override
 
-            eval_run_id, case_results = run_curriculum_batch(
-                config,
-                prepared_batch=prepared_batch,
-                store=runtime_store,
-                base_dir=runtime_base,
-                workspace=workspace,
-            )
+                eval_run_id, case_results = run_curriculum_batch(
+                    config,
+                    prepared_batch=prepared_batch,
+                    store=runtime_store,
+                    base_dir=runtime_base,
+                    workspace=workspace,
+                    harness_config_path=harness_override,
+                )
 
             # 4. Score and create archive entry
             scores = [r["score"] for r in case_results if "score" in r]
