@@ -105,12 +105,20 @@ class ToolExecutor:
         step_index: int,
         step_mapping_context: Optional[Dict[str, Any]] = None,
         template_guidance: Optional[Dict[str, Any]] = None,
+        mapped_loop_current_state: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
+        # loop_state_mapping="mapped" (opt-in): the loop's mapped copy replaces
+        # the stripped current_state; pre-loop inputs stay stripped.
+        loop_current_state = (
+            [str(s) for s in mapped_loop_current_state]
+            if mapped_loop_current_state
+            else self._sanitize_species_list(current_state)
+        )
         return self._parse(
             propose_intermediates(
                 starting_materials=self._sanitize_species_list(starting),
                 products=self._sanitize_species_list(products),
-                current_state=self._sanitize_species_list(current_state),
+                current_state=loop_current_state,
                 previous_intermediates=self._sanitize_species_list(previous_intermediates),
                 mapped_starting_materials=[],
                 mapped_products=[],

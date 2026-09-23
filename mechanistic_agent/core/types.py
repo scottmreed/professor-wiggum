@@ -361,6 +361,28 @@ class ModuleSpec:
         )
 
 
+LOOP_STATE_MAPPING_MODES = ("stripped", "mapped")
+
+
+def normalize_loop_state_mapping(value: Any) -> str:
+    """Return a valid ``loop_state_mapping`` mode; unknown values fall back to stripped."""
+    text = str(value or "").strip().lower()
+    return text if text in LOOP_STATE_MAPPING_MODES else "stripped"
+
+
+def _coerce_flag(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 @dataclass(slots=True)
 class HarnessConfig:
     """Complete harness pipeline definition.
@@ -385,6 +407,15 @@ class HarnessConfig:
     # Applied by the coordinator only for keys the run's own config leaves unset.
     run_config_defaults: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Loop-state atom mapping (PRD §9.2). "stripped" (default, production
+    # behaviour): the proposal LLM sees map-stripped current_state. "mapped":
+    # the coordinator keeps a persistently mapped copy and the proposal LLM
+    # receives mapped SMILES (pre-loop inputs stay stripped). Enabling
+    # "mapped" is a prompt-input change and needs eval-tier evidence.
+    loop_state_mapping: str = "stripped"
+    # Record (never enforce) whether executing the chosen candidate's SMIRKS on
+    # the mapped loop state reproduces its stated resulting_state (§16.8).
+    record_smirks_state_agreement: bool = True
 
     def as_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -405,6 +436,12 @@ class HarnessConfig:
             d["topology_profiles"] = {k: v.as_dict() for k, v in self.topology_profiles.items()}
         if self.run_config_defaults:
             d["run_config_defaults"] = dict(self.run_config_defaults)
+        # Emitted only when non-default so existing harness.json files are
+        # saved unchanged; from_dict reads them either way.
+        if self.loop_state_mapping != "stripped":
+            d["loop_state_mapping"] = self.loop_state_mapping
+        if not self.record_smirks_state_agreement:
+            d["record_smirks_state_agreement"] = False
         return d
 
     @classmethod
@@ -440,6 +477,8 @@ class HarnessConfig:
                 else {}
             ),
             metadata=dict(data.get("metadata") or {}),
+            loop_state_mapping=normalize_loop_state_mapping(data.get("loop_state_mapping")),
+            record_smirks_state_agreement=_coerce_flag(data.get("record_smirks_state_agreement"), True),
         )
 
     def get_topology_profile(self, topology: str) -> TopologyProfile:
@@ -833,6 +872,16 @@ class RunState:
     # Declared spectators / condition additives that may remain in the final
     # state without blocking the "all targets reached, nothing extra" check.
     allowed_extra_species: List[str] = field(default_factory=list)
+    # Persistent atom identity (PRD §9, mapped_state.py). Set from the harness
+    # at loop start. ``mapped_loop_state`` is a MappedState snapshot matching
+    # ``current_state``; ``mapped_state_history`` keeps the pre-step snapshot per
+    # step_index so backtracking restores exact ids. Not persisted across
+    # resume yet (resume re-seeds identity).
+    loop_state_mapping: str = "stripped"
+    record_smirks_state_agreement: bool = False
+    mapped_seed_species: List[str] = field(default_factory=list)
+    mapped_loop_state: Optional[Dict[str, Any]] = None
+    mapped_state_history: Dict[int, Dict[str, Any]] = field(default_factory=dict)
 
     def initialise(self) -> None:
         if not self.current_state:
