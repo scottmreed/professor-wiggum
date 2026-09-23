@@ -4,8 +4,9 @@ These JSONL lines are **candidate** few-shot examples produced by running the ha
 through the **keyless agent-bridge** with **Claude Opus 4.8** standing in as the model
 (`MECHANISTIC_AGENT_BRIDGE_DECLARED_MODEL=opus-4.8`, `responder_kind=orchestrator_subagents`,
 `budget_observability=opaque`). They are staged here (gitignored) for review — they are
-**not** yet added to `skills/mechanistic/<call>/few_shot.jsonl` because Track 1 requires a
-medium-tier eval improvement before merge (see CONTRIBUTING.md).
+**not** yet added to `skills/mechanistic/<call>/few_shot.jsonl` because prompt/few-shot
+changes require a medium-tier eval improvement before merge (see
+`docs/change_evidence_policy.md`).
 
 Format matches the on-disk few-shot format: each line is `{"input": <str>, "output": <str>}`
 where `output` is a serialized JSON string (verified to parse). 
@@ -15,7 +16,7 @@ where `output` is a serialized JSON string (verified to parse).
   Diels-Alder lines: run `1dc20e26e74d4b2faf00fb558ec7183a` (**validated, completed**, 0 failed validations).
 - Hydrobromination lines: run `020cab5cdd094fc887621a940a178aa5` (step-1 chemistry is correct/balanced;
   the run itself was blocked by the persistent-reagent per-step balance double-count — see the
-  Track 5 failure submission). The per-step example content is still valid.
+  chemistry-failure issue). The per-step example content is still valid.
 
 ## Why these are useful
 - `propose_mechanism_step` currently ships only one example (an SN2). These add a **concerted
@@ -26,7 +27,7 @@ where `output` is a serialized JSON string (verified to parse).
 - `assess_initial_conditions` currently has **zero** examples; the hydrobromination acidic
   example would be the first.
 
-## Recommended promotion path (per CONTRIBUTING.md Track 1)
+## Recommended promotion path (few-shot / prompt changes)
 1. Add chosen lines to `skills/mechanistic/<call_name>/few_shot.jsonl`.
 2. `PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py --call <call_name>`
 3. `python -m pytest tests/fast/ -q`
