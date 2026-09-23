@@ -173,14 +173,20 @@ class MappingAgent:
             mapped_atoms=mapped_atoms,
             backend_config=backend_config,
         )
+        if validation is None:
+            # rdkit-agent could not be executed; record that explicitly so the
+            # trace never looks "validated" when nothing ran.
+            output["atom_map_validation"] = {
+                "passed": None,
+                "skipped": True,
+                "reason": "rdkit_cli_unavailable",
+            }
+            return None
         # When validation finds errors, clamp confidence so downstream
         # consumers know the mapping is unreliable.
-        if validation is not None and not validation.passed:
-            if isinstance(llm_response.get("confidence"), (int, float)):
-                llm_response["confidence"] = min(float(llm_response["confidence"]), 0.3)
-            output["atom_map_validation"] = validation.as_dict()
-        elif validation is not None:
-            output["atom_map_validation"] = validation.as_dict()
+        if not validation.passed and isinstance(llm_response.get("confidence"), (int, float)):
+            llm_response["confidence"] = min(float(llm_response["confidence"]), 0.3)
+        output["atom_map_validation"] = validation.as_dict()
         return validation
 
     def run(self, state: RunState) -> StepResult:

@@ -59,6 +59,13 @@ Set `MECHANISTIC_DATA_DIR` to point anywhere you prefer. Details:
 - Known soft passes must emit warning-level telemetry/events and may recommend a retry or re-proposal, but they must **not** fail the step by themselves.
 - The Python validator remains authoritative for atom-balance pass/fail; `rdkit_cli` invalid-species reports are advisory unless the Python validator also fails.
 
+## Atom-Map Validation
+
+- `MappingAgent` validates LLM `mapped_atoms` pairs deterministically after every `atom_mapping` / `step_atom_mapping` call (`validate_atom_mapping_via_rdkit` in `mechanistic_agent/tools.py`).
+- Pairs are rendered to a mapped SMIRKS with `render_global_mapping` (`core/global_mapping_context.py`); a pair that names a missing atom, mismatched element, or reuses an atom fails `atom_map_pairs_resolved`.
+- The rendered SMIRKS is then checked with `rdkit-agent atom-map check --json '{"smirks": ...}'` (`atom_map_check`: `valid` and `balanced` must both be true).
+- Any failed check clamps the mapping `confidence` to 0.3 before it reaches prompts and scoring. A CLI that runs but rejects the invocation (exit 2/3, non-JSON, unexpected shape) is a **failed** check with an `error_code`; only a CLI that cannot execute at all (missing, timeout) skips validation, and the step output records `atom_map_validation.skipped = true`.
+
 ## Skill and Prompt Architecture
 
 All mechanistic prediction assets live under `skills/mechanistic/`, split from project-level skills in `skills/project/`.
