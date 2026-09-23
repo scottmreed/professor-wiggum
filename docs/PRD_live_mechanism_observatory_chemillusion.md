@@ -1558,6 +1558,14 @@ runtime_assets/
 
 The runtime container should copy/import only production-required code and assets.
 
+## 21.1.1 As implemented (2026-09-23, first slice)
+
+- `mechanistic_agent/api/runtime_app.py::create_runtime_app(base_dir)` builds the research app and **re-mounts only the allow-listed routes** (`RUNTIME_ALLOWED_PATHS`: create/start/stop/resume/get run, `events` SSE, `flow`, `observatory`, verified `mechanism_steps` + `steps/{step}/verify`, `molecules/render`) onto a fresh FastAPI app with no docs/OpenAPI and no static UI. Handlers are therefore byte-identical to the ones Wiggum evaluates; evals, leaderboards, examples, traces, curation, memory, harness editing and RAlph are absent by construction (`RUNTIME_EXCLUDED_SURFACES`), and a renamed research route fails the build at import time rather than silently dropping out of the product surface.
+- **Auth (§25.1):** every request except `/healthz` requires `Authorization: Bearer $MECHANISTIC_RUNTIME_TOKEN` (constant-time compare); with no token configured the app answers 503 to everything but `/healthz` — fail closed.
+- **Manifest (§21.4):** `GET /v1/mechanism/version` → `runtime_manifest.v1` with `runtime_version`, `git_sha` (from `MECHANISTIC_RUNTIME_GIT_SHA`, set as a Docker build arg, else `git rev-parse`), `harness_name`, prompt/skill/harness bundle hashes, combined `harness_version`, `event_schema_version`, `observatory_schema_version`, `reaction_focus_version`, `be_convention`, the allow-list and the excluded surfaces.
+- **Image:** `Dockerfile.runtime` (python:3.11-slim, `uvicorn … --factory`, healthcheck on `/healthz`, `MECHANISTIC_DATA_DIR=/data`); `.dockerignore` excludes `.git`, `.env*`, `data/`, `traces/`, `local_contributions/`, `training_data/leaderboard_holdout/`, `training_data/local_legacy/`, tests, docs and scripts (§34 "runtime image contains no holdout/eval corpus").
+- **Still open for M3:** a durable `RunStateStore` adapter (Postgres) instead of SQLite in `/data`, the `runtime_assets/` manifest-driven bundle so the image does not need general `training_data/` access (today `create_app` still loads the FlowER example menu at startup), path prefixing under `/v1/mechanism` (left to the ChemIllusion facade), and a leaner factory that does not instantiate the research executors.
+
 ## 21.2 Include
 
 - run coordinator / mechanism loop;
@@ -2116,6 +2124,8 @@ Purpose:
 - immutable version manifest.
 
 **Exit criterion:** ChemIllusion backend can create a run, stream it, recover it after reconnect, and retrieve final accepted path without the Wiggum research app.
+
+**Status (2026-09-23):** runtime-only app, bearer auth, version manifest, `Dockerfile.runtime` and `.dockerignore` delivered (§21.1.1); durable store and `runtime_assets/` bundle open.
 
 ---
 
