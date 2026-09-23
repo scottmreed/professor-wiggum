@@ -969,3 +969,34 @@ button:hover:not(:disabled) {
 .engine-badge.deterministic { background: #e7f4ea; color: #1a4d22; }
 .engine-badge.human { background: #f3e8fb; color: #4d1a70; }
 .model-inventory { font-size: 0.78rem; }
+
+/* Observatory M2 prototype: chemical search tree */
+.observatory { border: 1px solid #e2e6ea; border-radius: 8px; padding: 10px 12px; margin: 8px 0; background: #fbfcfd; }
+.observatory-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.observatory-legend { font-size: 0.75rem; margin-top: 6px; }
+.observatory-spine { list-style: none; margin: 0; padding: 0; }
+.obs-state { padding: 4px 0; }
+.obs-state-label { display: inline-block; min-width: 5.5em; font-weight: 600; font-size: 0.85rem; }
+.obs-state code, .obs-smiles { font-size: 0.85rem; }
+.obs-state-target .obs-state-label { color: #1a4d22; }
+.obs-state-abandoned { opacity: 0.75; border-left: 3px solid #c9ced4; padding-left: 8px; margin-top: 6px; }
+.obs-edge { padding: 2px 0 2px 1.2em; font-size: 0.82rem; color: #3c4450; }
+.obs-edge-soft { color: #7a4200; }
+.obs-edge-arrow { display: inline-block; width: 1em; }
+.obs-candidates { list-style: none; margin: 2px 0 4px 6.5em; padding: 0; }
+.obs-candidate { font-size: 0.8rem; padding: 1px 0; }
+.obs-glyph { display: inline-block; width: 1.1em; text-align: center; }
+.obs-status-text { text-transform: none; }
+.obs-status-rejected, .obs-status-constraint_rejected { color: #8b1a1a; }
+.obs-status-rejected .obs-smiles, .obs-status-constraint_rejected .obs-smiles { opacity: 0.7; text-decoration: line-through; }
+.obs-status-abandoned { color: #6b7280; }
+.obs-status-accepted { font-weight: 600; }
+.obs-status-branch_alternative { color: #1a2e70; }
+.obs-checks { color: #8b1a1a; }
+.obs-focus, .obs-be { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.75rem; margin-left: 4px; color: #3c4450; }
+.obs-warn { color: #7a4200; font-weight: 600; }
+.obs-chip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 0.72rem; background: #eef0f3; color: #2b2f36; margin-left: 4px; }
+.obs-chip-llm { background: #fff2d8; color: #7a4200; }
+.obs-chip-jev { background: #e8eefb; color: #1a2e70; }
+.obs-chip-deterministic { background: #e7f4ea; color: #1a4d22; }
+.obs-chip-human { background: #f3e8fb; color: #4d1a70; }

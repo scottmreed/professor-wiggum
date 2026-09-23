@@ -2909,6 +2909,7 @@ async function refreshSnapshot() {
     appendTerminalLine("snapshot", "", JSON.stringify(data, null, 2).slice(0, 2000));
   }
   renderProgress(data);
+  refreshObservatory();
   renderRalphStatus(data);
   renderStepOutputsToTerminal(data);
   await renderReactionVisuals(data);
@@ -3733,7 +3734,149 @@ async function renderVerificationDiagram(container, stepModels) {
   } catch (_) { /* ignore */ }
 }
 
-bootstrap().catch((err) => {
+// Observatory PRD §17 (replay): `?run=<id>` re-attaches the page to an existing
+// run — snapshot, observatory projection and the live event stream — so a
+// reload or a shared link reproduces the same pathway, branches and provenance.
+async function attachRunFromUrl() {
+  const requested = new URLSearchParams(window.location.search).get("run");
+  if (!requested) return;
+  const response = await fetch(`/api/runs/${encodeURIComponent(requested)}`);
+  if (!response.ok) {
+    setStatus(`Run ${requested} not found.`);
+    return;
+  }
+  runId = requested;
+  setStatus(`Attached to run ${runId}`);
+  await refreshSnapshot();
+  const data = latestSnapshotData || {};
+  if (["running", "paused"].includes(data.status)) {
+    openEventStream();
+    if (snapshotTimer) clearInterval(snapshotTimer);
+    snapshotTimer = setInterval(refreshSnapshot, 1500);
+  }
+}
+
+bootstrap().then(attachRunFromUrl).catch((err) => {
   console.error("bootstrap failed", err);
   setStatus(`UI failed to initialize: ${err.message || err}`);
 });
+
+
+// ---------------------------------------------------------------------------
+// Observatory M2 prototype (PRD §8, §33 M2): chemical search tree rendered from
+// GET /api/runs/{id}/observatory — accepted spine, candidates per step with
+// deterministic status, focus core, ΣΔBE and proposal provenance. Status uses
+// glyphs + text, never colour alone; rejected chemistry is red/desaturated,
+// model identity is a neutral text chip (PRD §14.1, §30).
+// ---------------------------------------------------------------------------
+const OBS_STATUS_GLYPH = {
+  accepted: "◉", validated: "✓", branch_alternative: "○", rejected: "×",
+  abandoned: "⊘", incomplete: "…", constraint_rejected: "×", proposed: "·",
+};
+
+let _observatoryInflight = false;
+
+function _obsSpecies(list) {
+  return (Array.isArray(list) ? list : []).map((s) => escapeHtml(String(s))).join(" + ") || "—";
+}
+
+function _obsProvenanceChip(prov) {
+  if (!prov) return "";
+  const label = prov.engine === "deterministic" ? "deterministic" : `${prov.engine || "?"}${prov.resolved_model ? " · " + prov.resolved_model : ""}`;
+  return `<span class="obs-chip obs-chip-${escapeHtml(prov.engine || "unknown")}" title="proposal engine/model">Proposal: ${escapeHtml(label)}${prov.model_fallback ? " · fallback" : ""}</span>`;
+}
+
+function _obsCandidateLine(cand, acceptedId) {
+  const status = cand.candidate_id === acceptedId ? "accepted" : (cand.status || "proposed");
+  const glyph = OBS_STATUS_GLYPH[status] || "·";
+  const checks = cand.failed_checks && cand.failed_checks.length ? ` <span class="obs-checks">[${escapeHtml(cand.failed_checks.join(", "))}]</span>` : "";
+  const focus = cand.reaction_focus && Array.isArray(cand.reaction_focus.core_atom_ids) && cand.reaction_focus.core_atom_ids.length
+    ? ` <span class="obs-focus" title="reaction focus (core atoms)">focus {${escapeHtml(cand.reaction_focus.core_atom_ids.join(","))}}</span>` : "";
+  const be = cand.bond_electron_view && cand.bond_electron_view.electron_delta_sum !== undefined && cand.bond_electron_view.electron_delta_sum !== null
+    ? ` <span class="obs-be" title="Σ ΔBE over the focus projection">ΣΔBE=${escapeHtml(String(cand.bond_electron_view.electron_delta_sum))}${cand.bond_electron_view.conserved ? " ✓" : " ✗"}</span>` : "";
+  const attempts = cand.validation_attempts > 1 ? ` <span class="muted">(${cand.validation_attempts} attempts)</span>` : "";
+  return `<li class="obs-candidate obs-status-${escapeHtml(status)}">`
+    + `<span class="obs-glyph" aria-label="${escapeHtml(status)}">${glyph}</span> `
+    + `<span class="obs-status-text">${escapeHtml(status.replace(/_/g, " "))}</span> `
+    + `<span class="obs-rank muted">r${escapeHtml(String(cand.rank ?? "?"))}</span> `
+    + `<code class="obs-smiles">${_obsSpecies(cand.resulting_state && cand.resulting_state.length ? cand.resulting_state : [cand.intermediate_smiles])}</code>`
+    + `${checks}${focus}${be}${attempts}</li>`;
+}
+
+function renderObservatory(obs) {
+  const panel = document.getElementById("observatoryPanel");
+  const spine = document.getElementById("observatorySpine");
+  const meta = document.getElementById("observatoryMeta");
+  if (!panel || !spine || !obs) return;
+  panel.hidden = false;
+  const path = Array.isArray(obs.accepted_path) ? obs.accepted_path : [];
+  const sets = Array.isArray(obs.candidate_sets) ? obs.candidate_sets : [];
+  const states = obs.states || {};
+  const setsByFrom = {};
+  sets.forEach((set) => { (setsByFrom[set.current_state_id] = setsByFrom[set.current_state_id] || []).push(set); });
+
+  const bits = [];
+  if (obs.status) bits.push(escapeHtml(obs.status));
+  bits.push(`${path.length} accepted step${path.length === 1 ? "" : "s"}`);
+  if (obs.unvalidated_step_count) bits.push(`<span class="obs-warn">⚠ ${obs.unvalidated_step_count} accepted without validation</span>`);
+  if (obs.backtracks && obs.backtracks.length) bits.push(`${obs.backtracks.length} backtrack${obs.backtracks.length === 1 ? "" : "s"}`);
+  if (obs.active_step) bits.push(`running ${escapeHtml(obs.active_step.step_name)}${obs.active_step.planned_model ? " · " + escapeHtml(obs.active_step.planned_model) : ""}`);
+  if (obs.completed) bits.push("target reached");
+  meta.innerHTML = bits.join(" · ");
+
+  const rows = [];
+  const initial = states.s0 || { species: (obs.reaction || {}).starting_materials || [] };
+  let fromStateId = "s0";
+  const renderSets = (stateId) => (setsByFrom[stateId] || []).map((set) => {
+    const acceptedHere = path.find((p) => p.from_state_id === stateId);
+    const acceptedId = acceptedHere ? acceptedHere.candidate_id : null;
+    const items = (set.candidates || []).map((c) => _obsCandidateLine(c, acceptedId)).join("");
+    const round = set.proposal_round ? ` round ${set.proposal_round}` : "";
+    return `<ul class="obs-candidates" aria-label="candidates${round}">${items || '<li class="muted">no candidates</li>'}</ul>`;
+  }).join("");
+
+  rows.push(`<li class="obs-state obs-state-initial"><span class="obs-state-label">Reactants</span> <code>${_obsSpecies(initial.species)}</code>${renderSets("s0")}</li>`);
+  path.forEach((step) => {
+    const kindClass = step.acceptance_kind === "soft_advance" ? "obs-edge-soft" : "obs-edge-validated";
+    const kindText = step.acceptance_kind === "soft_advance" ? "⚠ accepted without validation"
+      : step.acceptance_kind === "backtrack_alternative" ? "◉ accepted (branch alternative)" : "◉ accepted · validated";
+    rows.push(`<li class="obs-edge ${kindClass}"><span class="obs-edge-arrow">↓</span> step ${escapeHtml(String(step.step_index))} · ${kindText} ${_obsProvenanceChip(step.proposal_provenance)}</li>`);
+    const st = states[step.to_state_id] || { species: step.resulting_state };
+    rows.push(`<li class="obs-state ${step.contains_target_product ? "obs-state-target" : ""}"><span class="obs-state-label">${step.contains_target_product ? "Product" : "I" + step.step_index}</span> <code>${_obsSpecies(st.species)}</code>${renderSets(step.to_state_id)}</li>`);
+    fromStateId = step.to_state_id;
+  });
+  // candidate sets hanging off abandoned states (explored, then backtracked)
+  sets.filter((set) => !states[set.current_state_id] || (states[set.current_state_id].kind === "abandoned")).forEach((set) => {
+    const st = states[set.current_state_id] || {};
+    rows.push(`<li class="obs-state obs-state-abandoned"><span class="obs-state-label">⊘ abandoned branch</span> <code>${_obsSpecies(st.species)}</code>`
+      + `<ul class="obs-candidates">${(set.candidates || []).map((c) => _obsCandidateLine(c, null)).join("")}</ul></li>`);
+  });
+  spine.innerHTML = rows.join("");
+}
+
+async function refreshObservatory() {
+  if (!runId || _observatoryInflight) return;
+  _observatoryInflight = true;
+  try {
+    const response = await fetch(`/api/runs/${runId}/observatory`);
+    if (!response.ok) return;
+    renderObservatory(await response.json());
+  } catch (_) {
+    // keep the last rendering
+  } finally {
+    _observatoryInflight = false;
+  }
+}
+
+(() => {
+  const btn = document.getElementById("toggleHarnessFlowBtn");
+  const flow = document.getElementById("flowWithDetail");
+  const legend = document.getElementById("flowLegend");
+  if (!btn || !flow) return;
+  btn.addEventListener("click", () => {
+    const hide = flow.style.display !== "none";
+    flow.style.display = hide ? "none" : "";
+    if (legend) legend.style.display = hide ? "none" : "";
+    btn.textContent = hide ? "Harness view (hidden)" : "Harness view";
+  });
+})();
