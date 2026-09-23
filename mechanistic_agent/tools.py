@@ -25,9 +25,11 @@ except ImportError:  # pragma: no cover - handled at runtime
     rdmolfiles = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - optional import
-    from dimorphite_dl import DimorphiteDL
+    # dimorphite_dl 2.x dropped the DimorphiteDL class in favor of a
+    # functional API; protonate_smiles is the 2.0+ equivalent used here.
+    from dimorphite_dl import protonate_smiles as _dimorphite_protonate_smiles
 except ImportError:  # pragma: no cover - handled at runtime
-    DimorphiteDL = None  # type: ignore[assignment]
+    _dimorphite_protonate_smiles = None  # type: ignore[assignment]
 
 from .llm import adapter_supports_forced_tools, extract_text_content, get_chat_model, get_model_api_key, get_provider_label, is_gemini_model, is_openrouter_model
 from .model_registry import (
@@ -526,11 +528,24 @@ class ToolDescriptor:
     func: Any
 
 
-def _functional_group_analysis_enabled() -> bool:
-    """Return True when functional group analysis is enabled via environment flag."""
+def _functional_group_analysis_enabled(harness_enabled: Optional[bool] = None) -> bool:
+    """Return True when functional-group context should be injected into LLM prompts.
 
-    value = os.getenv("MECHANISTIC_FUNCTIONAL_GROUPS_ENABLED", "")
-    return value.lower() in {"1", "true", "yes", "on"}
+    Source of truth is the harness ``functional_groups`` module's ``enabled``
+    state, threaded through by callers as ``harness_enabled`` (wired from
+    ``RunConfig.functional_groups_enabled`` via the harness module's
+    ``config_gate: functional_groups_enabled``). ``MECHANISTIC_FUNCTIONAL_GROUPS_ENABLED``
+    remains available as an explicit override in either direction (e.g. for
+    standalone tool use or tests) but is no longer required to enable this
+    behavior.
+    """
+
+    raw = os.getenv("MECHANISTIC_FUNCTIONAL_GROUPS_ENABLED")
+    if raw is not None and raw.strip() != "":
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    if harness_enabled is not None:
+        return bool(harness_enabled)
+    return True
 
 
 class ToolRuntimeError(RuntimeError):
@@ -1026,7 +1041,12 @@ def analyse_balance(starting_materials: List[str], products: List[str]) -> str:
     return _serialise(payload)
 
 
-def attempt_atom_mapping(starting_materials: List[str], products: List[str]) -> str:
+def attempt_atom_mapping(
+    starting_materials: List[str],
+    products: List[str],
+    *,
+    functional_groups_enabled: Optional[bool] = None,
+) -> str:
     """Use an LLM to propose atom-to-atom mappings between reactants and products."""
 
     start_counts = _atom_counter(starting_materials)
@@ -1052,7 +1072,7 @@ def attempt_atom_mapping(starting_materials: List[str], products: List[str]) -> 
             return "none"
         return ", ".join(f"{element}: {amount}" for element, amount in sorted(counter.items()))
 
-    fg_enabled = _functional_group_analysis_enabled()
+    fg_enabled = _functional_group_analysis_enabled(functional_groups_enabled)
     functional_groups_start: Dict[str, Dict[str, int]] = {}
     functional_groups_products: Dict[str, Dict[str, int]] = {}
     start_source = "functional group analysis disabled"
@@ -2948,6 +2968,8 @@ def assess_initial_conditions(
     starting_materials: List[str],
     products: List[str],
     observed_ph: Optional[float] = None,
+    *,
+    functional_groups_enabled: Optional[bool] = None,
 ) -> str:
     """Assess likely reaction conditions and compatible acids/bases via LLM."""
 
@@ -2963,7 +2985,7 @@ def assess_initial_conditions(
     if observed_ph is not None:
         report["observed_ph"] = observed_ph
 
-    fg_enabled = _functional_group_analysis_enabled()
+    fg_enabled = _functional_group_analysis_enabled(functional_groups_enabled)
     functional_groups_start: Dict[str, Dict[str, int]] = {}
     functional_groups_products: Dict[str, Dict[str, int]] = {}
     start_source = "functional group analysis disabled"
@@ -3254,6 +3276,8 @@ def predict_missing_reagents(
     starting_materials: List[str],
     products: List[str],
     conditions_guidance: Optional[str] = None,
+    *,
+    functional_groups_enabled: Optional[bool] = None,
 ) -> str:
     """Use an LLM to suggest reagents that resolve any stoichiometric imbalance."""
 
@@ -3271,7 +3295,7 @@ def predict_missing_reagents(
     deficit_atoms = {k: v for k, v in deficit.items() if v > 0}
     surplus_atoms = {k: v for k, v in surplus.items() if v > 0}
 
-    fg_enabled = _functional_group_analysis_enabled()
+    fg_enabled = _functional_group_analysis_enabled(functional_groups_enabled)
 
     functional_groups_start: Dict[str, Dict[str, int]] = {}
     functional_groups_products: Dict[str, Dict[str, int]] = {}
@@ -4664,32 +4688,26 @@ def recommend_ph(starting_materials: List[str], products: List[str], fallback_ph
             "source": "user",
         })
 
-    if DimorphiteDL is not None:  # pragma: no cover - depends on optional package
-        runner = None
-        for kwargs in (
-            {"min_ph": 0.0, "max_ph": 14.0, "step": 0.5},
-            {"min_ph": 0.0, "max_ph": 14.0, "step_size": 0.5},
-            {"min_ph": 0.0, "max_ph": 14.0, "ph_increment": 0.5},
-        ):
-            try:
-                runner = DimorphiteDL(**kwargs)
-                break
-            except TypeError:
-                continue
-
-        if runner is not None:
-            protonation_profiles: Dict[str, List[Dict[str, str]]] = {}
-            for smiles_list in (starting_materials, products):
-                for smiles in smiles_list:
-                    try:
-                        protonation_profiles[smiles] = runner.protonate(smiles)
-                    except Exception as exc:  # pragma: no cover - defensive
-                        protonation_profiles[smiles] = [{"error": str(exc)}]
-            return _serialise({
-                "recommended": "see_profiles",
-                "source": "dimorphite_dl",
-                "profiles": protonation_profiles,
-            })
+    if _dimorphite_protonate_smiles is not None:  # pragma: no cover - depends on optional package
+        # dimorphite_dl 2.0+ exposes protonate_smiles(smiles, ph_min, ph_max, ...)
+        # -> list[str] of protonation-state SMILES variants observed across the
+        # requested pH window, in place of the removed DimorphiteDL().protonate()
+        # class API.
+        protonation_profiles: Dict[str, List[str]] = {}
+        for smiles_list in (starting_materials, products):
+            for smiles in smiles_list:
+                if smiles in protonation_profiles:
+                    continue
+                try:
+                    variants = _dimorphite_protonate_smiles(smiles, ph_min=0.0, ph_max=14.0)
+                    protonation_profiles[smiles] = list(variants)
+                except Exception as exc:  # pragma: no cover - defensive
+                    protonation_profiles[smiles] = [f"error: {exc}"]
+        return _serialise({
+            "recommended": "see_profiles",
+            "source": "dimorphite_dl",
+            "profiles": protonation_profiles,
+        })
 
     # Fallback heuristic when Dimorphite-DL is unavailable.
     acid_score = 0
@@ -5421,6 +5439,7 @@ def propose_intermediates(
     step_index: Optional[int] = None,
     step_mapping_context: Optional[Dict[str, Any]] = None,
     template_guidance: Optional[Dict[str, Any]] = None,
+    functional_groups_enabled: Optional[bool] = None,
 ) -> str:
     """Use LLM to propose intermediates for the next mechanistic step.
     
@@ -5490,7 +5509,7 @@ def propose_intermediates(
             return rendered[: max(256, max_chars - 32)] + "...(truncated)"
         return rendered
     
-    fg_enabled = _functional_group_analysis_enabled()
+    fg_enabled = _functional_group_analysis_enabled(functional_groups_enabled)
 
     if fg_enabled:
         functional_groups_start, start_source = _retrieve_functional_group_context(starting_materials)

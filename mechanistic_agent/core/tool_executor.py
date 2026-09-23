@@ -57,20 +57,28 @@ class ToolExecutor:
         starting: List[str],
         products: List[str],
         ph: Optional[float],
+        functional_groups_enabled: Optional[bool] = None,
     ) -> Dict[str, Any]:
         return self._parse(
             assess_initial_conditions(
                 self._sanitize_species_list(starting),
                 self._sanitize_species_list(products),
                 ph,
+                functional_groups_enabled=functional_groups_enabled,
             )
         )
 
-    def run_mapping(self, starting: List[str], products: List[str]) -> Dict[str, Any]:
+    def run_mapping(
+        self,
+        starting: List[str],
+        products: List[str],
+        functional_groups_enabled: Optional[bool] = None,
+    ) -> Dict[str, Any]:
         return self._parse(
             attempt_atom_mapping(
                 self._sanitize_species_list(starting),
                 self._sanitize_species_list(products),
+                functional_groups_enabled=functional_groups_enabled,
             )
         )
 
@@ -83,6 +91,7 @@ class ToolExecutor:
         starting: List[str],
         products: List[str],
         conditions_guidance: Optional[Dict[str, Any]] = None,
+        functional_groups_enabled: Optional[bool] = None,
     ) -> Dict[str, Any]:
         guidance = json.dumps(conditions_guidance) if conditions_guidance else None
         return self._parse(
@@ -90,6 +99,7 @@ class ToolExecutor:
                 starting_materials=self._sanitize_species_list(starting),
                 products=self._sanitize_species_list(products),
                 conditions_guidance=guidance,
+                functional_groups_enabled=functional_groups_enabled,
             )
         )
 
@@ -109,6 +119,7 @@ class ToolExecutor:
         mapped_starting_materials: Optional[List[str]] = None,
         mapped_products: Optional[List[str]] = None,
         mapped_current_state: Optional[List[str]] = None,
+        functional_groups_enabled: Optional[bool] = None,
     ) -> Dict[str, Any]:
         # loop_state_mapping="mapped" (opt-in): the loop's mapped copy replaces
         # the stripped current_state; pre-loop inputs stay stripped.
@@ -133,6 +144,7 @@ class ToolExecutor:
                 step_index=step_index,
                 step_mapping_context=step_mapping_context,
                 template_guidance=template_guidance,
+                functional_groups_enabled=functional_groups_enabled,
             )
         )
 

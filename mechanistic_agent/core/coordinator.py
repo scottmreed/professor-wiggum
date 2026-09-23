@@ -200,8 +200,8 @@ class RunCoordinator:
             reasoning_level=config.get("reasoning_level"),
             optional_llm_tools=list(config.get("optional_llm_tools") or []),
             functional_groups_enabled=self._coerce_bool(
-                config.get("functional_groups_enabled", False),
-                False,
+                config.get("functional_groups_enabled", True),
+                True,
             ),
             intermediate_prediction_enabled=self._coerce_bool(
                 config.get("intermediate_prediction_enabled", True),

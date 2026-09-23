@@ -57,7 +57,7 @@
       "description": "SMARTS pattern matching identifies reactive functional groups and leaving groups.",
       "io_schema": {
         "inputs": ["starting_materials (SMILES[])", "products (SMILES[])"],
-        "outputs": ["functional_groups (object: group -> count)", "leaving_groups (string[])"]
+        "outputs": ["functional_groups (object: group -> count)"]
       }
     },
     {
