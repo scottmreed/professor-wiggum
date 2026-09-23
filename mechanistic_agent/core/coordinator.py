@@ -10,7 +10,7 @@ from dataclasses import asdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from mechanistic_agent.model_registry import get_default_model
-from mechanistic_agent.smiles_utils import canonicalize_if_valid
+from mechanistic_agent.smiles_utils import canonicalize_if_valid, strip_atom_mapping_list
 
 from . import model_context
 from .arrow_push import predict_arrow_push_annotation
@@ -24,6 +24,12 @@ from .scratchpad import (
 )
 from .baseline_runner import BaselineRunner
 from .db import RunStore
+from .global_mapping_context import (
+    MAPPED_SPECIES_CONTEXT_KEY,
+    mapped_current_state_for,
+    render_global_mapping,
+    summarize_global_mapping,
+)
 from .mechanism_moves import normalize_electron_pushes, repair_candidate_reaction_smirks
 from .reaction_type_templates import (
     compact_template_for_prompt,
@@ -1144,18 +1150,11 @@ class RunCoordinator:
                 canonical_byproducts,
             )
 
-        atom_mapping_output = self._latest_output_by_step(state.run_id, "atom_mapping") or {}
-        atom_mapping_summary = {}
-        if isinstance(atom_mapping_output, dict):
-            llm_response = atom_mapping_output.get("llm_response")
-            atom_mapping_summary = {
-                "confidence": atom_mapping_output.get("confidence"),
-                "unmapped_atoms": (
-                    list(llm_response.get("unmapped_atoms") or [])[:12]
-                    if isinstance(llm_response, dict)
-                    else []
-                ),
-            }
+        # attempt_atom_mapping nests confidence under llm_response; see
+        # global_mapping_context.summarize_global_mapping.
+        atom_mapping_summary = summarize_global_mapping(
+            self._latest_output_by_step(state.run_id, "atom_mapping")
+        )
 
         if not proposal_constraints and not species_registry and not participant_summary and not atom_mapping_summary:
             return None
@@ -1165,6 +1164,35 @@ class RunCoordinator:
             "species_registry": species_registry[:12],
             "participant_summary": participant_summary,
             "atom_mapping_summary": atom_mapping_summary,
+        }
+
+    def _build_global_mapping_species_context(self, state: RunState) -> Optional[Dict[str, List[str]]]:
+        """Atom-mapped SMILES rendered from the global ``atom_mapping`` output.
+
+        Returns the ``mapped_starting_materials`` / ``mapped_products`` /
+        ``mapped_current_state`` arguments for ``propose_intermediates``, or
+        ``None`` when the module did not run or no mapped pair is usable.
+        """
+        output = self._latest_output_by_step(state.run_id, "atom_mapping")
+        if not isinstance(output, dict):
+            return None
+        llm_response = output.get("llm_response")
+        if not isinstance(llm_response, dict):
+            return None
+        # Render on the same map-free canonical SMILES the mapping LLM saw.
+        starting = strip_atom_mapping_list(list(state.run_input.starting_materials))
+        products = strip_atom_mapping_list(list(state.run_input.products))
+        rendered = render_global_mapping(starting, products, llm_response.get("mapped_atoms"))
+        mapped_starting = list(rendered.get("mapped_starting_materials") or [])
+        mapped_products = list(rendered.get("mapped_products") or [])
+        if not mapped_starting and not mapped_products:
+            return None
+        return {
+            "mapped_starting_materials": mapped_starting,
+            "mapped_products": mapped_products,
+            "mapped_current_state": mapped_current_state_for(
+                list(state.current_state), starting, mapped_starting
+            ),
         }
 
     def _apply_candidate_constraint_repairs(
@@ -3642,6 +3670,13 @@ class RunCoordinator:
         if proposal_hints and isinstance(proposal_hints, dict):
             merged = dict(template_guidance or {})
             merged.update(proposal_hints)
+            template_guidance = merged
+        # Carried to IntermediateAgent, which pops it into the explicit
+        # mapped_* arguments of propose_intermediates (never JSON-rendered).
+        mapped_species_context = self._build_global_mapping_species_context(state)
+        if mapped_species_context:
+            merged = dict(template_guidance or {})
+            merged[MAPPED_SPECIES_CONTEXT_KEY] = mapped_species_context
             template_guidance = merged
 
         # Inject condensed scratchpad summary so the LLM can avoid

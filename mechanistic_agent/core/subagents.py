@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from .global_mapping_context import MAPPED_SPECIES_CONTEXT_KEY
 from .tool_executor import ToolExecutor
 from .types import RunState, StepResult, StepValidationResult
 
@@ -303,6 +304,12 @@ class IntermediateAgent:
         *,
         template_guidance: Optional[Dict[str, Any]] = None,
     ) -> StepResult:
+        mapped_context: Dict[str, Any] = {}
+        if isinstance(template_guidance, dict) and MAPPED_SPECIES_CONTEXT_KEY in template_guidance:
+            template_guidance = dict(template_guidance)
+            popped = template_guidance.pop(MAPPED_SPECIES_CONTEXT_KEY)
+            if isinstance(popped, dict):
+                mapped_context = popped
         output = self.executor.run_intermediates(
             starting=state.run_input.starting_materials,
             products=state.run_input.products,
@@ -314,6 +321,9 @@ class IntermediateAgent:
             step_mapping_context=state.latest_step_mapping,
             template_guidance=template_guidance,
             mapped_loop_current_state=_mapped_loop_current_state(state),
+            mapped_starting_materials=list(mapped_context.get("mapped_starting_materials") or []),
+            mapped_products=list(mapped_context.get("mapped_products") or []),
+            mapped_current_state=list(mapped_context.get("mapped_current_state") or []),
         )
         model = state.run_config.step_models.get("intermediates", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)
