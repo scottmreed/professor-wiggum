@@ -3710,6 +3710,49 @@ class RunCoordinator:
         summary["smirks_state_agreement"] = record
         candidate.validation_summary = summary
 
+    @staticmethod
+    def _atom_identity_payload(state: RunState, candidate: BranchCandidate) -> Optional[Dict[str, Any]]:
+        """``atom_identity.v1`` for an accepted step (Observatory PRD §11).
+
+        Built from the mapped loop state advanced by ``_record_smirks_state_agreement``
+        (persistent ids, map numbers, elements) plus that record's identity
+        counters. ``identity_source`` is ``persistent`` only when the loop itself
+        runs on the mapped state; in the default ``stripped`` mode the ids are
+        derived by re-executing the accepted candidate, so per-step candidate
+        map numbers (``a<map>`` in ReactionFocus) are not guaranteed to match.
+        Returns ``None`` when no mapped state is available (legacy / failure).
+        """
+        snapshot = getattr(state, "mapped_loop_state", None)
+        if not isinstance(snapshot, dict):
+            return None
+        record = (candidate.validation_summary or {}).get("smirks_state_agreement")
+        record = record if isinstance(record, dict) else {}
+        atoms: List[Dict[str, Any]] = []
+        for raw in snapshot.get("records") or []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                atoms.append({
+                    "pid": int(raw.get("pid")),
+                    "map_number": int(raw.get("map_number")),
+                    "element": str(raw.get("element") or ""),
+                    "component": int(raw.get("component", 0) or 0),
+                })
+            except (TypeError, ValueError):
+                continue
+        return {
+            "schema_version": "atom_identity.v1",
+            "identity_source": "persistent" if getattr(state, "loop_state_mapping", "stripped") == "mapped" else "derived",
+            "mapped_species": [str(x) for x in (snapshot.get("species") or [])],
+            "atoms": atoms,
+            "preserved_id_count": record.get("preserved_id_count"),
+            "new_ids": [int(x) for x in (record.get("new_ids") or []) if isinstance(x, (int, float, str)) and str(x).lstrip("-").isdigit()],
+            "lost_ids": [int(x) for x in (record.get("lost_ids") or []) if isinstance(x, (int, float, str)) and str(x).lstrip("-").isdigit()],
+            "identity_resynced": bool(record.get("identity_resynced")) if record else None,
+            "smirks_state_agreement": record.get("smirks_state_agreement"),
+            "executed": record.get("executed"),
+        }
+
     def _apply_candidate(
         self,
         state: RunState,
@@ -3782,6 +3825,7 @@ class RunCoordinator:
                 "candidate_rank": candidate.rank,
                 "candidate_id": candidate.candidate_id,
                 "acceptance_kind": acceptance_kind,
+                "atom_identity": self._atom_identity_payload(state, candidate),
                 "current_state": previous_state,
                 "resulting_state": list(state.current_state),
                 "predicted_intermediate": candidate.intermediate_smiles,

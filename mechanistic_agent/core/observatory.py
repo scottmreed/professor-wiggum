@@ -225,6 +225,10 @@ def build_observatory(
             state["species"] = list(entry["resulting_state"])
             state["kind"] = "soft_advance" if acceptance_kind == "soft_advance" else "accepted"
             state["step_index"] = step_number
+            identity = payload.get("atom_identity") if isinstance(payload.get("atom_identity"), dict) else None
+            if identity is not None:
+                state["mapped_species"] = _species(identity.get("mapped_species"))
+                state["atoms"] = [dict(a) for a in (identity.get("atoms") or []) if isinstance(a, dict)]
             # A re-acceptance at an earlier index (backtrack alternative) truncates the path.
             while accepted_path and accepted_path[-1]["step_index"] >= step_number:
                 dropped = accepted_path.pop()
@@ -244,6 +248,18 @@ def build_observatory(
                 "contains_target_product": bool(payload.get("contains_target_product")),
                 "validation_passed": passed,
                 "proposal_provenance": latest_proposal_provenance.get(step_number),
+                "identity": (
+                    {
+                        "identity_source": identity.get("identity_source"),
+                        "preserved_id_count": identity.get("preserved_id_count"),
+                        "new_ids": list(identity.get("new_ids") or []),
+                        "lost_ids": list(identity.get("lost_ids") or []),
+                        "identity_resynced": identity.get("identity_resynced"),
+                        "smirks_state_agreement": identity.get("smirks_state_agreement"),
+                    }
+                    if identity is not None
+                    else None
+                ),
             })
             current_state_id = entry["state_id"]
         elif kind == "failed_path_recorded":
@@ -289,9 +305,80 @@ def build_observatory(
         "unvalidated_step_count": sum(1 for s in accepted_path if not s["validation_passed"]),
         "completed": completed,
         "active_step": active_step,
+        "atom_lineage": _build_atom_lineage(accepted_path, states),
         "provenance": build_run_provenance(ordered),
         "event_count": len(ordered),
         "last_seq": last_seq,
+    }
+
+
+ATOM_LINEAGE_SCHEMA = "atom_lineage.v1"
+
+
+def _build_atom_lineage(accepted_path: List[Dict[str, Any]], states: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Per-atom lineage across the accepted path (PRD §11.4).
+
+    Rows are persistent ids; columns are the accepted states in order. An atom
+    is ``present`` in a state when its pid has a record there; ``new_at_step``
+    / ``lost_at_step`` come from the identity counters of the step that
+    introduced or dropped it (falling back to first/last presence).
+    """
+    steps_with_identity = [s for s in accepted_path if s.get("identity") is not None and "atoms" in states.get(s["to_state_id"], {})]
+    if not steps_with_identity:
+        return {"schema_version": ATOM_LINEAGE_SCHEMA, "state_ids": [], "atoms": [], "changed_pids": [], "identity_source": None}
+    state_ids = [s["to_state_id"] for s in steps_with_identity]
+    per_state: Dict[str, Dict[int, Dict[str, Any]]] = {}
+    elements: Dict[int, str] = {}
+    for sid in state_ids:
+        table: Dict[int, Dict[str, Any]] = {}
+        for atom in states[sid].get("atoms") or []:
+            try:
+                pid = int(atom.get("pid"))
+            except (TypeError, ValueError):
+                continue
+            table[pid] = atom
+            if atom.get("element") and pid not in elements:
+                elements[pid] = str(atom["element"])
+        per_state[sid] = table
+    new_at: Dict[int, int] = {}
+    lost_at: Dict[int, int] = {}
+    for step in steps_with_identity:
+        for pid in step["identity"].get("new_ids") or []:
+            new_at.setdefault(int(pid), int(step["step_index"]))
+        for pid in step["identity"].get("lost_ids") or []:
+            lost_at.setdefault(int(pid), int(step["step_index"]))
+    rows: List[Dict[str, Any]] = []
+    for pid in sorted(elements):
+        path: List[Dict[str, Any]] = []
+        seen = False
+        for step, sid in zip(steps_with_identity, state_ids):
+            atom = per_state[sid].get(pid)
+            present = atom is not None
+            if present and not seen and step is not steps_with_identity[0]:
+                new_at.setdefault(pid, int(step["step_index"]))
+            if seen and not present:
+                lost_at.setdefault(pid, int(step["step_index"]))
+            seen = seen or present
+            path.append({
+                "state_id": sid,
+                "step_index": int(step["step_index"]),
+                "map_number": int(atom["map_number"]) if present and atom.get("map_number") is not None else None,
+                "present": present,
+            })
+        rows.append({
+            "pid": pid,
+            "element": elements[pid],
+            "path": path,
+            "new_at_step": new_at.get(pid),
+            "lost_at_step": lost_at.get(pid),
+        })
+    changed = sorted({pid for pid in elements if pid in new_at or pid in lost_at})
+    return {
+        "schema_version": ATOM_LINEAGE_SCHEMA,
+        "state_ids": state_ids,
+        "atoms": rows,
+        "changed_pids": changed,
+        "identity_source": steps_with_identity[-1]["identity"].get("identity_source"),
     }
 
 
@@ -304,4 +391,4 @@ def _mark_abandoned(candidates: Dict[str, Dict[str, Any]], states: Dict[str, Dic
         states[entry["state_id"]]["kind"] = "abandoned"
 
 
-__all__ = ["INITIAL_STATE_ID", "OBSERVATORY_SCHEMA", "build_observatory", "state_id_for"]
+__all__ = ["ATOM_LINEAGE_SCHEMA", "INITIAL_STATE_ID", "OBSERVATORY_SCHEMA", "build_observatory", "state_id_for"]

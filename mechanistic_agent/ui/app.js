@@ -3936,6 +3936,7 @@ function renderObservatory(obs) {
       + `<ul class="obs-candidates">${(set.candidates || []).map((c) => _obsCandidateLine(c, null)).join("")}</ul></li>`);
   });
   spine.innerHTML = rows.join("");
+  renderAtomLineage(obs, states);
   spine.querySelectorAll("details[data-candidate-id]").forEach((el) => {
     el.addEventListener("toggle", () => {
       if (el.open) _obsOpenDetails.add(el.dataset.candidateId); else _obsOpenDetails.delete(el.dataset.candidateId);
@@ -3970,3 +3971,51 @@ async function refreshObservatory() {
     btn.textContent = hide ? "Harness view (hidden)" : "Harness view";
   });
 })();
+
+
+// ---------------------------------------------------------------------------
+// Atom lineage panel (PRD §11.4): rows = persistent atom ids, columns = accepted
+// states; cells show the atom's map number in that state ("—" when absent).
+// New/lost atoms are flagged in text; identity source is stated because in the
+// default stripped loop the ids are derived by re-executing the accepted step,
+// not carried by the LLM (PRD §11.5: identity ≠ mapping confidence).
+// ---------------------------------------------------------------------------
+let _obsLineageShowAll = false;
+
+function renderAtomLineage(obs, states) {
+  const panel = document.getElementById("observatoryLineage");
+  const body = document.getElementById("observatoryLineageBody");
+  const meta = document.getElementById("observatoryLineageMeta");
+  if (!panel || !body || !meta) return;
+  const lineage = obs.atom_lineage || {};
+  const atoms = Array.isArray(lineage.atoms) ? lineage.atoms : [];
+  if (!atoms.length) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const changed = new Set(lineage.changed_pids || []);
+  const shown = _obsLineageShowAll || !changed.size ? atoms : atoms.filter((a) => changed.has(a.pid));
+  const source = lineage.identity_source === "persistent" ? "persistent ids (mapped loop)" : "derived ids (re-executed accepted steps)";
+  meta.textContent = `${atoms.length} atoms · ${changed.size} changed · ${source}`;
+  const stateLabel = (sid) => {
+    const st = states[sid] || {};
+    const step = obs.accepted_path.find((p) => p.to_state_id === sid);
+    return step ? (step.contains_target_product ? "Product" : `I${step.step_index}`) : (st.state_id || sid);
+  };
+  const head = (lineage.state_ids || []).map((sid) => `<th scope="col" title="${escapeHtml(sid)}">${escapeHtml(stateLabel(sid))}</th>`).join("");
+  const rows = shown.map((atom) => {
+    const cells = atom.path.map((p) => `<td class="${p.present ? "obs-lin-present" : "obs-lin-absent"}">${p.present ? "a" + escapeHtml(String(p.map_number)) : "—"}</td>`).join("");
+    const flags = [
+      atom.new_at_step ? `new at step ${atom.new_at_step}` : "",
+      atom.lost_at_step ? `lost at step ${atom.lost_at_step}` : "",
+    ].filter(Boolean).join(", ");
+    return `<tr class="${changed.has(atom.pid) ? "obs-lin-changed" : ""}"><th scope="row">${escapeHtml(atom.element)}<sub>${escapeHtml(String(atom.pid))}</sub></th>${cells}<td class="obs-lin-flags">${escapeHtml(flags)}</td></tr>`;
+  }).join("");
+  const toggle = changed.size && atoms.length > changed.size
+    ? `<button type="button" class="btn-icon btn-sm" id="obsLineageToggle">${_obsLineageShowAll ? "Show changed atoms only" : `Show all ${atoms.length} atoms`}</button>`
+    : "";
+  body.innerHTML = `<table class="obs-lineage-table" aria-label="atom lineage across accepted states"><thead><tr><th scope="col">atom (pid)</th>${head}<th scope="col">changes</th></tr></thead><tbody>${rows}</tbody></table>${toggle}`;
+  const btn = document.getElementById("obsLineageToggle");
+  if (btn) btn.addEventListener("click", () => { _obsLineageShowAll = !_obsLineageShowAll; renderAtomLineage(obs, states); });
+}

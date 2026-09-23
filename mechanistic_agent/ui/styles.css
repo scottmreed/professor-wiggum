@@ -1023,3 +1023,14 @@ button:hover:not(:disabled) {
 .obs-be-table td.obs-be-pos { font-weight: 700; color: #1a4d22; background: #e7f4ea; }
 .obs-be-table td.obs-be-neg { font-weight: 700; color: #8b1a1a; background: #fbe9e9; }
 .obs-conservation { margin-top: 6px; color: #3c4450; }
+
+/* Observatory M2c: atom lineage */
+.observatory-lineage { margin-top: 8px; font-size: 0.8rem; }
+.observatory-lineage summary { cursor: pointer; }
+.obs-lineage-table { border-collapse: collapse; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.74rem; }
+.obs-lineage-table th, .obs-lineage-table td { border: 1px solid #e2e6ea; padding: 1px 6px; text-align: center; }
+.obs-lineage-table th { background: #f3f5f7; }
+.obs-lineage-table th[scope="row"] { text-align: left; }
+.obs-lineage-table td.obs-lin-absent { color: #b0b7bf; }
+.obs-lineage-table tr.obs-lin-changed th[scope="row"] { color: #7a4200; font-weight: 700; }
+.obs-lineage-table td.obs-lin-flags { text-align: left; color: #7a4200; }
