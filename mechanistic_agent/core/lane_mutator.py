@@ -1,13 +1,14 @@
 """Lane-scoped mutators for overnight Ralph experiments."""
 from __future__ import annotations
 
+import contextlib
 import json
 import random
 import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 
 @dataclass(slots=True)
@@ -18,6 +19,49 @@ class MutatedAsset:
     asset_path: Path
     summary: str
     metadata: Dict[str, Any]
+
+
+HARNESS_ASSET_LANES = frozenset({"topology", "harness"})
+CALL_ASSET_LANES = frozenset({"prompt", "few_shot"})
+
+
+def mutated_call_name(asset: MutatedAsset) -> Optional[str]:
+    """Return the skill call_name a prompt / few-shot variant was derived from."""
+    metadata = asset.metadata or {}
+    call_name = str(metadata.get("call_name") or "").strip()
+    if call_name:
+        return call_name
+    source = str(metadata.get("source") or "").strip()
+    return Path(source).parent.name if source else None
+
+
+@contextlib.contextmanager
+def applied_mutation(asset: MutatedAsset) -> Iterator[Optional[str]]:
+    """Make ``asset`` the variant that an in-process evaluation resolves.
+
+    Mutators write sibling files and leave the committed assets untouched, so
+    an evaluation only sees a mutation if it is pointed at the variant:
+
+    * ``topology`` / ``harness`` variants are harness JSON files: the context
+      yields their path, to be passed as the run's ``harness_config_path``.
+    * ``prompt`` / ``few_shot`` variants are installed for the duration of the
+      context via :func:`mechanistic_agent.prompt_assets.call_asset_overrides`
+      (yields ``None``: the run keeps its normal harness).
+    """
+    lane = str(asset.lane or "")
+    if lane in HARNESS_ASSET_LANES:
+        yield str(asset.asset_path)
+        return
+    if lane not in CALL_ASSET_LANES:
+        raise ValueError(f"Unsupported mutation lane: {lane!r}")
+    call_name = mutated_call_name(asset)
+    if not call_name:
+        raise ValueError(f"Cannot tell which call the {lane} variant {asset.asset_path} belongs to")
+    from mechanistic_agent.prompt_assets import call_asset_overrides
+
+    key = "prompts" if lane == "prompt" else "few_shots"
+    with call_asset_overrides(**{key: {call_name: Path(asset.asset_path)}}):
+        yield None
 
 
 class TopologyLaneMutator:

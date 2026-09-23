@@ -8,12 +8,14 @@ The shared base system prompt lives in skills/mechanistic/base_system/SKILL.md.
 """
 from __future__ import annotations
 
+import contextlib
 import difflib
 import hashlib
 import json
 import re
+import threading
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from typing import TYPE_CHECKING
 
@@ -222,6 +224,53 @@ def _parse_skill_md_frontmatter(text: str) -> Dict[str, str]:
     return metadata
 
 
+# Process-wide, evaluation-scoped replacements for one call's prompt or few-shot
+# file. Evolution loops (island mode, overnight Ralph) write mutated variants as
+# sibling files; ``call_asset_overrides`` makes an in-process evaluation resolve
+# those variants instead of the committed assets, without touching the files.
+# Keyed by (call_name, "prompt" | "few_shot"). Deliberately not thread-local so
+# multi-agent topologies that fan out to worker threads see the same variant.
+_CALL_ASSET_OVERRIDES: Dict[Tuple[str, str], Path] = {}
+_CALL_ASSET_OVERRIDES_LOCK = threading.Lock()
+
+
+def _call_asset_override(call_name: str, kind: str) -> Optional[Path]:
+    return _CALL_ASSET_OVERRIDES.get((call_name, kind))
+
+
+@contextlib.contextmanager
+def call_asset_overrides(
+    *,
+    prompts: Optional[Mapping[str, Path]] = None,
+    few_shots: Optional[Mapping[str, Path]] = None,
+) -> Iterator[None]:
+    """Temporarily resolve ``call_name`` prompt / few-shot assets from variant files.
+
+    ``prompts`` maps call_name -> a SKILL.md variant; it wins over both the call
+    base prompt and any per-model override. ``few_shots`` maps call_name -> a
+    few_shot.jsonl variant that replaces the call's base few-shot file (a
+    per-model few-shot override, if any, is still merged in front of it).
+    Previous values are restored on exit.
+    """
+    entries: Dict[Tuple[str, str], Path] = {}
+    for call_name, path in (prompts or {}).items():
+        entries[(normalize_call_name(call_name), "prompt")] = Path(path)
+    for call_name, path in (few_shots or {}).items():
+        entries[(normalize_call_name(call_name), "few_shot")] = Path(path)
+    with _CALL_ASSET_OVERRIDES_LOCK:
+        previous = {key: _CALL_ASSET_OVERRIDES.get(key) for key in entries}
+        _CALL_ASSET_OVERRIDES.update(entries)
+    try:
+        yield
+    finally:
+        with _CALL_ASSET_OVERRIDES_LOCK:
+            for key, old in previous.items():
+                if old is None:
+                    _CALL_ASSET_OVERRIDES.pop(key, None)
+                else:
+                    _CALL_ASSET_OVERRIDES[key] = old
+
+
 def shared_base_path(base_dir: Path | None = None) -> Path:
     return mechanistic_skills_root(base_dir) / "base_system" / "SKILL.md"
 
@@ -257,6 +306,9 @@ def resolved_shared_base_path(base_dir: Path | None = None, model_name: str | No
 
 def resolved_call_base_path(call_name: str, base_dir: Path | None = None, model_name: str | None = None) -> Path:
     normalized = normalize_call_name(call_name)
+    override = _call_asset_override(normalized, "prompt")
+    if override is not None:
+        return override
     selected_model = str(model_name or _active_model_name() or "").strip()
     if selected_model:
         candidate = _call_override_dir(normalized, selected_model, base_dir) / "SKILL.md"
@@ -272,7 +324,7 @@ def resolved_call_few_shot_path(call_name: str, base_dir: Path | None = None, mo
         candidate = _call_override_dir(normalized, selected_model, base_dir) / "few_shot.jsonl"
         if candidate.exists():
             return candidate
-    return call_few_shot_path(normalized, base_dir)
+    return _call_asset_override(normalized, "few_shot") or call_few_shot_path(normalized, base_dir)
 
 
 def load_shared_base_prompt(base_dir: Path | None = None, *, model_name: str | None = None) -> str:
@@ -292,10 +344,11 @@ def load_call_few_shot_examples(
     model_name: str | None = None,
 ) -> List[Dict[str, Any]]:
     selected_model = str(model_name or _active_model_name() or "").strip() or None
-    paths: List[Path] = [call_few_shot_path(call_name, base_dir)]
+    base_path = _call_asset_override(normalize_call_name(call_name), "few_shot") or call_few_shot_path(call_name, base_dir)
+    paths: List[Path] = [base_path]
     if selected_model:
         override_path = _call_override_dir(normalize_call_name(call_name), selected_model, base_dir) / "few_shot.jsonl"
-        paths = [override_path, call_few_shot_path(call_name, base_dir)]
+        paths = [override_path, base_path]
 
     rows: List[Dict[str, Any]] = []
     seen_keys: set[str] = set()

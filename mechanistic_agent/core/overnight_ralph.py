@@ -17,8 +17,10 @@ from .experiment_ledger import ExperimentLedger
 from .lane_mutator import (
     FewShotLaneMutator,
     HarnessLaneMutator,
+    MutatedAsset,
     PromptLaneMutator,
     TopologyLaneMutator,
+    applied_mutation,
 )
 from .micro_eval_runner import MicroEvalRunner
 from .types import ExperimentRecord, MicroEvalResult, OvernightRalphConfig, RalphLane
@@ -141,16 +143,22 @@ class OvernightRalphOrchestrator:
                 effective_lane = getattr(mutated, "lane", None) or lane
                 if effective_lane in {"topology", "harness", "prompt", "few_shot"}:
                     lane = effective_lane  # type: ignore[assignment]
-                harness_override: Optional[str] = None
-                if lane in {"topology", "harness"}:
-                    harness_override = str(mutated.asset_path)
-
-                result = self.micro_eval.run_slice(
-                    eval_slice_id=config.eval_slice_id,
-                    cases=slice_cases,
-                    base_config=run_config,
-                    harness_config_path=harness_override,
+                # Evaluate the variant: harness/topology variants become the
+                # run's harness_config_path; prompt/few-shot variants are
+                # installed as call-asset overrides for the slice.
+                applied = MutatedAsset(
+                    lane=str(lane),
+                    asset_path=Path(mutated.asset_path),
+                    summary=str(getattr(mutated, "summary", "") or ""),
+                    metadata=dict(getattr(mutated, "metadata", None) or {}),
                 )
+                with applied_mutation(applied) as harness_override:
+                    result = self.micro_eval.run_slice(
+                        eval_slice_id=config.eval_slice_id,
+                        cases=slice_cases,
+                        base_config=run_config,
+                        harness_config_path=harness_override,
+                    )
                 spent_cost += float(result.token_cost_usd)
                 self._refresh_failure_digest()
 
