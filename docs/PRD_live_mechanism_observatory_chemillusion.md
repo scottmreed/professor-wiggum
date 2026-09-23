@@ -1639,6 +1639,15 @@ GET  /v1/mechanism/runs/{id}/observatory
 
 `/observatory` is an aggregate replay/snapshot projection, not a replacement for SSE.
 
+**Delivered on Wiggum (2026-09-23):** `GET /api/runs/{id}/observatory` → `core/observatory.py::build_observatory(events)`, schema `mechanism_observatory.v1`, built from persisted events only:
+
+- `states` — `s0` (reactants) plus `st:<candidate_id>` for every candidate's resulting state, each with `kind` (`initial | candidate | validated | rejected | incomplete | constraint_rejected | branch_alternative | accepted | soft_advance | abandoned`);
+- `accepted_path` — ordered edges `from_state_id → to_state_id` with `candidate_id`, `acceptance_kind`, `validation_passed`, `contains_target_product` and the proposal step's `provenance` summary; a `backtrack` truncates the path and the dropped candidates/states become `abandoned`;
+- `candidate_sets` — one per `mechanism_candidates_proposed`, anchored on the state it was proposed from, each candidate carrying `status`, `failed_checks`, `validation_attempts`, the latest `reaction_focus` and `bond_electron_view`;
+- `branch_points`, `backtracks`, `failed_paths`, `abandoned_candidate_ids`, `unvalidated_step_count`, `completed`, `active_step`, `provenance` (§14.4 inventory), `event_count`, `last_seq`.
+
+Index conventions it relies on: `mechanism_step_accepted.step_index` and `mechanism_candidates_proposed.step_index` are the 1-based step number (`_apply_candidate` increments before emitting); `branch_point_created.step_index` and `backtrack.reverted_to_step` are the 0-based index of the step being decided. Legacy events without candidate ids get `legacy-<n>` / `soft-<n>` ids so old runs still project.
+
 ChemIllusion exposes its own authenticated facade, e.g.:
 
 ```text
@@ -2083,6 +2092,8 @@ Purpose:
 - not production styling.
 
 **Exit criterion:** easy/medium/hard test runs can be watched live without inspecting terminal JSON.
+
+**Status (2026-09-23, prototype delivered):** the Wiggum UI now shows a **Mechanism search** panel above the harness diagram, rendered from `/observatory` on every snapshot refresh: reactant → accepted intermediates → product spine, each step's candidates with glyph + text status (◉ accepted, ✓ validated, ○ alternative, × rejected with failed checks, ⊘ abandoned, ⚠ accepted without validation), focus core atoms, `ΣΔBE` with conservation mark, and a neutral proposal-provenance chip per accepted edge. The harness diagram stays available behind a "Harness view" toggle (§8.4). `?run=<id>` re-attaches the page to an existing run (snapshot + projection + live stream when running), which is the §17 reload/replay requirement. Not yet done for M2: molecule structure rendering in the spine (the cards below still render structures), BE matrix cells, and the atom-lineage panel.
 
 ---
 

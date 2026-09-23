@@ -31,6 +31,7 @@ Set `MECHANISTIC_DATA_DIR` to point anywhere you prefer. Details:
 - Runs: `POST /api/runs`, `POST /api/runs/{id}/start`, `POST /api/runs/{id}/stop`, `POST /api/runs/{id}/resume`
 - Verified step submission: `POST /api/runs/{id}/mechanism_steps`
 - Snapshot/flow/events: `GET /api/runs/{id}`, `GET /api/runs/{id}/flow`, `GET /api/runs/{id}/events`
+- Observatory replay projection: `GET /api/runs/{id}/observatory` (accepted path, candidate sets with statuses, validation results with focus/BE payloads, branch points, backtracks, provenance — derived from events only; `mechanism_observatory.v1`)
 - Examples/progress: `GET /api/examples`, `GET /api/examples/progress`
 - Memory: `GET /api/memory`, `POST /api/memory/query`, `POST /api/memory/items`
 - Traces/curation: `GET /api/traces`, `POST /api/traces/{trace_id}/approve`, `POST /api/curation/export`, `GET /api/curation/exports`
@@ -48,6 +49,7 @@ Every step's engine and model are recorded by the actual engine, not the run's c
 - Candidates get a `candidate_id` (`c<step>-r<rank>-<hex>`) at proposal time; `mechanism_candidates_proposed` lists them, and `mechanism_candidate_*`, `mechanism_retry_*`, `candidate_rescue_*`, `branch_point_created`, `backtrack`, `failed_path_recorded` carry it.
 - `mechanism_step_accepted` carries `acceptance_kind` (`validated` / `soft_advance` / `backtrack_alternative`). Accepted is not the same as validated: `proceed_on_validation_failure` produces `soft_advance` acceptances with `validation_summary.passed == false`.
 - `candidate_validation_result` is emitted after the validators for every candidate attempt (validated or rejected) with `candidate_id`, `accepted`, `failed_checks`, a `reaction_focus.v1` mask (`mechanistic_agent/core/reaction_focus.py`: core/context/unchanged atom ids as `a<map>`, changed bonds/charges/hydrogens/lone pairs) and a `bond_electron_view.v1` (`core/bond_electron.py`, convention `ugi_flower_kekule_v1`: off-diagonal = 2 × Kekulé bond order, diagonal = non-bonding electrons with H folded in, `electron_delta_sum`, `conserved`). Both are deterministic projections of the mapped reaction SMIRKS; failures land in `projection_error`, never in the step.
+- The UI's **Mechanism search** panel (`renderObservatory` in `ui/app.js`) is fed by `GET /api/runs/{id}/observatory`; `/?run=<id>` re-attaches the page to an existing run for replay.
 - `GET /api/runs/{id}` exposes `provenance` (`steps` per step name, `inventory.models_by_engine`), derived only from persisted events so a reload reproduces the live answer. All Observatory payloads carry `event_schema_version = mechanism_observatory_event.v1`.
 
 ## Leaderboard Holdout Isolation

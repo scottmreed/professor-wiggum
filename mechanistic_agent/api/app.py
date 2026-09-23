@@ -42,6 +42,7 @@ from mechanistic_agent.core import (
     select_step_models,
 )
 from mechanistic_agent.core.provenance import build_run_provenance, resolve_step_provenance
+from mechanistic_agent.core.observatory import build_observatory
 from mechanistic_agent.core.types import StepResult
 from mechanistic_agent.core.job_executor import ThreadJobExecutor
 from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
@@ -2236,6 +2237,17 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "step_prompts": snapshot.get("step_prompts", []),
             "provenance": snapshot.get("provenance"),
         }
+
+    @app.get("/api/runs/{run_id}/observatory")
+    def run_observatory(run_id: str) -> Dict[str, Any]:
+        """Aggregate replay projection (Observatory PRD §17, §22): the whole
+        mechanism search reconstructed from persisted events only."""
+        row = store.get_run_row(run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        events = store.list_events(run_id, after_seq=0, limit=20000)
+        run_input = row.get("input_payload") if isinstance(row.get("input_payload"), dict) else {}
+        return build_observatory(events, run_id=run_id, run_input=run_input, status=row.get("status"))
 
     @app.get("/api/runs/{run_id}/flow")
     def run_flow(run_id: str) -> Dict[str, Any]:
