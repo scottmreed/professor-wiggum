@@ -53,6 +53,10 @@ Every step's engine and model are recorded by the actual engine, not the run's c
 - The UI's **Mechanism search** panel (`renderObservatory` in `ui/app.js`) is fed by `GET /api/runs/{id}/observatory`; each candidate row expands to its focus summary and `BE(t) | ΔBE | BE(t+1)` tables, spine states show structure thumbnails via `POST /api/molecules/render`; `/?run=<id>` re-attaches the page to an existing run for replay.
 - `GET /api/runs/{id}` exposes `provenance` (`steps` per step name, `inventory.models_by_engine`), derived only from persisted events so a reload reproduces the live answer. All Observatory payloads carry `event_schema_version = mechanism_observatory_event.v1`.
 
+## Mechanism Runtime (product build)
+
+`mechanistic_agent/api/runtime_app.py::create_runtime_app` re-mounts only the product routes from `create_app` (`RUNTIME_ALLOWED_PATHS`: `/api/runs` create/start/stop/resume/get, `/events`, `/flow`, `/observatory`, `/mechanism_steps`, `/steps/{step_name}/verify`, `/api/molecules/render`) plus two runtime-only routes, `/healthz` (open) and `/v1/mechanism/version` (release manifest). Everything else — evals, leaderboard, examples, traces, curation, memory, harness editing, RAlph, the UI — is not mounted. All routes except `/healthz` require `Authorization: Bearer $MECHANISTIC_RUNTIME_TOKEN`; with the token unset the app returns 503 (fail closed). Build/run with `Dockerfile.runtime` (`uvicorn mechanistic_agent.api.runtime_app:create_runtime_app --factory`); `.dockerignore` keeps `training_data/leaderboard_holdout/`, local data, traces and `.env*` out of the image. Adding a product route means adding it to the allow-list; renaming a research route the allow-list references fails at import.
+
 ## Leaderboard Holdout Isolation
 
 - The train-derived eval/sample artifacts remain the user-facing development surface:

@@ -1,0 +1,15 @@
+# Runtime image (Dockerfile.runtime): exclude research/eval data, local state and secrets (PRD §21.3, §34).
+.git
+.venv
+.env*
+data/
+traces/
+local_contributions/
+training_data/leaderboard_holdout/
+training_data/local_legacy/
+tests/
+docs/
+scripts/
+LEADERBOARD.md
+**/__pycache__/
+*.db
