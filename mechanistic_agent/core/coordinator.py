@@ -51,6 +51,8 @@ from .subagents import (
 )
 from .tool_executor import ToolExecutor
 from .call_recorder import close_call_context, current_call_context, open_call_context
+from .bond_electron import build_bond_electron_view
+from .reaction_focus import build_reaction_focus
 from .provenance import (
     assign_candidate_ids,
     new_candidate_set_id,
@@ -3082,6 +3084,64 @@ class RunCoordinator:
         )
         self._emit_template_guidance_state(state)
 
+    def _emit_candidate_validation_result(
+        self,
+        state: RunState,
+        *,
+        candidate: Dict[str, Any],
+        mechanism_output: Dict[str, Any],
+        validation_payload: Dict[str, Any],
+        retry_index: int,
+    ) -> None:
+        """``candidate_validation_result`` (Observatory PRD §16.4): chemistry delta
+        projections for one validated or rejected candidate, keyed by candidate_id.
+        Projection failures are reported in the event, never raised into the loop."""
+        output = mechanism_output if isinstance(mechanism_output, dict) else {}
+        smirks = str(output.get("reaction_smirks") or candidate.get("reaction_smirks") or "")
+        checks = validation_payload.get("checks") if isinstance(validation_payload, dict) else None
+        failed_checks = [
+            str(c.get("name"))
+            for c in (checks or [])
+            if isinstance(c, dict) and c.get("passed") is False
+        ]
+        focus: Dict[str, Any] = {}
+        view: Dict[str, Any] = {}
+        projection_error: Optional[str] = None
+        try:
+            focus = build_reaction_focus(
+                smirks,
+                electron_pushes=output.get("electron_pushes") or candidate.get("electron_pushes"),
+                bond_electron_deltas=output.get("bond_electron_deltas"),
+                source_state_id=f"s{state.step_index}",
+                target_state_id=f"s{state.step_index + 1}",
+            )
+            view = build_bond_electron_view(smirks, atom_ids=focus.get("matrix_atom_ids") or None)
+        except Exception as exc:  # pragma: no cover - defensive
+            projection_error = f"{type(exc).__name__}: {exc}"
+        payload = {
+            "event_schema_version": "mechanism_observatory_event.v1",
+            "step_index": state.step_index + 1,
+            "attempt": state.step_index + 1,
+            "retry_index": retry_index,
+            "candidate_id": candidate.get("candidate_id"),
+            "candidate_rank": candidate.get("rank"),
+            "accepted": bool(validation_payload.get("passed")) if isinstance(validation_payload, dict) else False,
+            "validation": validation_payload,
+            "failed_checks": failed_checks,
+            "reaction_smirks": smirks or None,
+            "current_state": [str(s) for s in (output.get("current_state") or state.current_state or [])],
+            "resulting_state": [str(s) for s in (output.get("resulting_state") or [])],
+            "predicted_intermediate": candidate.get("intermediate_smiles"),
+            "reaction_focus": focus,
+            "bond_electron_view": view,
+            "smirks_state_agreement": output.get("smirks_state_agreement"),
+            "projection_error": projection_error,
+        }
+        try:
+            self.store.append_event(state.run_id, "candidate_validation_result", payload, step_name="mechanism_synthesis")
+        except Exception:  # pragma: no cover - defensive
+            pass
+
     def _try_candidate_with_retries(
         self,
         state: RunState,
@@ -3273,6 +3333,13 @@ class RunCoordinator:
             self._record_validation_checks(state, mechanism_result=mechanism_result)
 
             validation_payload = mechanism_result.validation.as_dict()
+            self._emit_candidate_validation_result(
+                state,
+                candidate=candidate,
+                mechanism_output=mechanism_result.output,
+                validation_payload=validation_payload,
+                retry_index=retry_index,
+            )
             last_validation = validation_payload
             retry_feedback = self._retry_feedback_for_validation(validation_payload)
             last_failed_checks = list(retry_feedback.get("failed_checks", []))

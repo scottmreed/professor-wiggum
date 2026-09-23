@@ -778,7 +778,16 @@ function appendEventToTerminal(event) {
   if (errorKinds.includes(kind)) level = "error";
   else if (warnKinds.includes(kind)) level = "warn";
   else if (successKinds.includes(kind)) level = "success";
-  else if (kind === "mechanism_step_accepted") {
+  else if (kind === "candidate_validation_result") {
+    level = payload.accepted ? "success" : "warn";
+    const focus = payload.reaction_focus || {};
+    const be = payload.bond_electron_view || {};
+    const core = Array.isArray(focus.core_atom_ids) ? focus.core_atom_ids.join(",") : "";
+    msg = `candidate ${payload.candidate_id || "?"} rank ${payload.candidate_rank ?? "?"} → ${payload.accepted ? "validated" : "rejected"}`
+      + (payload.failed_checks && payload.failed_checks.length ? ` [${payload.failed_checks.join(", ")}]` : "")
+      + (core ? ` · focus {${core}}` : "")
+      + (be.electron_delta_sum !== undefined ? ` · ΣΔBE=${be.electron_delta_sum}${be.conserved ? " ✓" : " ✗"}` : "");
+  } else if (kind === "mechanism_step_accepted") {
     // Accepted is not the same as validated (PRD §16.6).
     level = payload.acceptance_kind === "soft_advance" ? "warn" : "success";
   }
@@ -2360,6 +2369,7 @@ function openEventStream() {
     "peer_round_complete",
     "consensus_merge_result",
     "step_mapping_generated",
+    "candidate_validation_result",
     "inference_call_started",
     "inference_call_completed",
     "inference_call_failed",
