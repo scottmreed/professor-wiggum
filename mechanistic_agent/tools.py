@@ -1270,6 +1270,26 @@ def attempt_atom_mapping(starting_materials: List[str], products: List[str]) -> 
 # Deterministic atom-mapping validation via rdkit-agent atom-map check
 # ---------------------------------------------------------------------------
 
+def _classify_rdkit_cli_failure(trace: Dict[str, Any]) -> Optional[str]:
+    """Map a failed ``_run_rdkit_cli_command`` trace to an error code.
+
+    Returns ``None`` when the tool never executed (not installed, subprocess
+    could not start, or timed out). Any other failure means the tool ran and
+    rejected or could not process our input, which must be reported, not
+    treated as "unavailable".
+    """
+    if "returncode" not in trace:
+        return None
+    returncode = trace.get("returncode")
+    if returncode == 2:
+        return "rdkit_cli_rejected_input"
+    if returncode == 3:
+        return "rdkit_cli_error"
+    if "output" not in trace:
+        return "rdkit_cli_unparseable_output"
+    return "rdkit_cli_error"
+
+
 def validate_atom_mapping_via_rdkit(
     *,
     starting_materials: List[str],
@@ -1277,11 +1297,26 @@ def validate_atom_mapping_via_rdkit(
     mapped_atoms: Optional[List[Dict[str, Any]]],
     backend_config: Any = None,
 ) -> Optional["StepValidationResult"]:
-    """Validate LLM-produced atom mappings using ``rdkit-agent atom-map check``.
+    """Validate LLM-produced atom-map pairs deterministically.
 
-    Returns a :class:`StepValidationResult` when validation was executed, or
-    ``None`` when rdkit-agent is unavailable (graceful skip).
+    Two checks are produced:
+
+    * ``atom_map_pairs_resolved`` (Python/RDKit): every ``mapped_atoms`` pair
+      must name a real atom on both sides with matching element and no atom
+      used twice. :func:`render_global_mapping` applies fresh map numbers to
+      the pairs that resolve and drops the rest; any dropped pair fails.
+    * ``atom_map_check`` (``rdkit-agent atom-map check``): the rendered mapped
+      SMIRKS must parse (``valid``) and carry the same map numbers on both
+      sides (``balanced``).
+
+    Returns ``None`` only when rdkit-agent could not be executed at all (not
+    installed, not resolvable, or timed out); that case is logged at WARNING.
+    A CLI that runs but rejects the invocation (exit 2/3, non-JSON output, or
+    an unexpected response shape) is reported as a *failed* check with an
+    ``error_code`` and logged at ERROR, so a malformed call can never pass as
+    "validated".
     """
+    from .core.global_mapping_context import render_global_mapping
     from .core.types import StepValidationCheck, StepValidationResult
 
     if not mapped_atoms:
@@ -1293,44 +1328,99 @@ def validate_atom_mapping_via_rdkit(
             )
         ])
 
+    rendered = render_global_mapping(starting_materials, products, mapped_atoms)
+    pairs_total = len(mapped_atoms)
+    pairs_used = int(rendered.get("pairs_used") or 0)
+    pairs_dropped = int(rendered.get("pairs_dropped") or 0)
+    pairs_details: Dict[str, Any] = {
+        "pairs_total": pairs_total,
+        "pairs_used": pairs_used,
+        "pairs_dropped": pairs_dropped,
+    }
+    pairs_ok = pairs_dropped == 0 and pairs_used > 0
+    if not pairs_ok:
+        pairs_details["error_code"] = "unresolvable_mapping_pairs"
+        pairs_details["message"] = (
+            f"{pairs_dropped} of {pairs_total} mapped_atoms pairs could not be resolved "
+            "(unknown species, out-of-range index, element mismatch, or atom used twice)"
+        )
+    checks: List[StepValidationCheck] = [
+        StepValidationCheck(name="atom_map_pairs_resolved", passed=pairs_ok, details=pairs_details),
+    ]
+    if pairs_used == 0:
+        return StepValidationResult(checks=checks)
+
+    mapped_smirks = (
+        ".".join(rendered["mapped_starting_materials"])
+        + ">>"
+        + ".".join(rendered["mapped_products"])
+    )
     trace = _run_rdkit_cli_command(
         command="atom-map",
-        args={
-            "action": "check",
-            "reactants": list(starting_materials),
-            "products": list(products),
-            "atom_map": list(mapped_atoms),
-        },
+        subcommand="check",
+        args={"smirks": mapped_smirks},
         backend_config=backend_config,
     )
 
     if trace.get("status") != "ok":
-        # rdkit-agent unavailable or errored — skip silently
-        return None
+        error_code = _classify_rdkit_cli_failure(trace)
+        if error_code is None:
+            logger.warning(
+                "rdkit-agent atom-map check unavailable; atom-map validation skipped (%s)",
+                trace.get("error") or trace.get("resolution_reason") or "unknown reason",
+            )
+            return None
+        logger.error(
+            "rdkit-agent atom-map check rejected invocation (%s, returncode=%s): %s",
+            error_code,
+            trace.get("returncode"),
+            trace.get("error"),
+        )
+        checks.append(StepValidationCheck(
+            name="atom_map_check",
+            passed=False,
+            details={
+                "error_code": error_code,
+                "returncode": trace.get("returncode"),
+                "error": str(trace.get("error") or ""),
+                "invocation": trace.get("invocation"),
+                "mapped_smirks": mapped_smirks,
+            },
+        ))
+        return StepValidationResult(checks=checks)
 
     output = trace.get("output") or {}
     valid = output.get("valid")
-    errors = output.get("errors") or []
-    warnings = output.get("warnings") or []
-
-    checks: List[StepValidationCheck] = []
-    if isinstance(valid, bool):
+    balanced = output.get("balanced")
+    if not isinstance(valid, bool) or not isinstance(balanced, bool):
+        logger.error(
+            "rdkit-agent atom-map check returned an unexpected response shape: %s",
+            sorted(output.keys()) if isinstance(output, dict) else type(output).__name__,
+        )
         checks.append(StepValidationCheck(
             name="atom_map_check",
-            passed=valid,
+            passed=False,
             details={
-                "errors": errors[:10],
-                "warnings": warnings[:10],
+                "error_code": "rdkit_cli_unexpected_response",
+                "response_keys": sorted(output.keys()) if isinstance(output, dict) else [],
+                "mapped_smirks": mapped_smirks,
             },
         ))
-    else:
-        # Unexpected response shape — treat as skip
-        checks.append(StepValidationCheck(
-            name="atom_map_check",
-            passed=True,
-            details={"skipped": True, "reason": "unexpected_response_shape"},
-        ))
+        return StepValidationResult(checks=checks)
 
+    checks.append(StepValidationCheck(
+        name="atom_map_check",
+        passed=valid and balanced,
+        details={
+            "valid": valid,
+            "balanced": balanced,
+            "mapped_smirks": mapped_smirks,
+            "mapped_atoms": output.get("mapped_atoms"),
+            "unmapped_atoms": output.get("unmapped_atoms"),
+            "map_numbers_only_in_reactants": list(output.get("map_numbers_only_in_reactants") or [])[:20],
+            "map_numbers_only_in_products": list(output.get("map_numbers_only_in_products") or [])[:20],
+        },
+    ))
     return StepValidationResult(checks=checks)
 
 
@@ -2324,12 +2414,21 @@ def _run_rdkit_cli_command(
     args: Dict[str, Any],
     backend_config: Any = None,
     timeout_seconds: Optional[float] = None,
+    subcommand: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """Invoke ``rdkit-agent <command> [<subcommand>] --json <args>``.
+
+    ``subcommand`` is required by multi-verb commands such as ``atom-map``
+    (``add | remove | check | list``); passing the verb inside the JSON payload
+    is rejected by the CLI with exit code 2.
+    """
     trace: Dict[str, Any] = {
         "command": command,
         "args": dict(args or {}),
         "status": "failed",
     }
+    if subcommand:
+        trace["subcommand"] = subcommand
     cfg = ChemistryBackendConfig.from_config(
         {
             "chemistry_backend": "rdkit_cli",
@@ -2359,7 +2458,10 @@ def _run_rdkit_cli_command(
         if timeout_seconds is not None
         else max(0.5, float(cfg.rdkit_cli_timeout_seconds))
     )
-    cmd = list(resolution.command_parts) + [command, "--json", json.dumps(args)]
+    cmd = list(resolution.command_parts) + [command]
+    if subcommand:
+        cmd.append(subcommand)
+    cmd += ["--json", json.dumps(args)]
     trace["invocation"] = cmd
     trace["timeout_seconds"] = timeout
     try:
