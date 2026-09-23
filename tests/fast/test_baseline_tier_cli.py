@@ -1188,3 +1188,122 @@ def test_eval_tier_status_only_and_custom_route_use_execute_helper(
     assert executed
     assert executed[0]["selected_case_ids"] == ["easy_03", "easy_01"]
     assert executed[0]["planner_metadata"]["route_kind"] == "custom"
+
+
+def _setup_empty_medium_tier_scope(base: Path) -> tuple[RunStore, Path]:
+    """A base dir where 'medium' is active-sourced from eval_tiers.json, which is empty.
+
+    Mirrors the real repo default at the time this test was written: `easy` is served
+    from `eval_tiers.json` (populated) while `medium`/`hard` were served from
+    `baseline_tiers_clawdiator.json`. This helper flips `medium`'s active source to
+    `eval_tiers` (left empty) to reproduce "the resolved tier has zero cases."
+    """
+    easy_ids = [f"easy_{i:02d}" for i in range(1, 13)]
+    hard_ids = [f"hard_{i:02d}" for i in range(1, 13)]
+    _write_eval_tiers(base, easy=easy_ids, medium=[], hard=hard_ids)
+    training = base / "training_data"
+    (training / "baseline_tiers_clawdiator.json").write_text(
+        json.dumps(
+            {
+                "_meta": {"source": "pytest"},
+                "easy": easy_ids,
+                "medium": [f"medium_{i:02d}" for i in range(1, 13)],
+                "hard": hard_ids,
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_development_leaderboard_policy(
+        base,
+        active_sources={
+            "easy": "eval_tiers",
+            "medium": "eval_tiers",
+            "hard": "baseline_tiers_clawdiator",
+        },
+    )
+
+    store = RunStore(base / "data" / "mechanistic.db")
+    easy_id = _seed_eval_set_cases(store, name="easy_set", case_ids=easy_ids)
+    medium_id = _seed_eval_set_cases(store, name="medium_set", case_ids=[f"medium_{i:02d}" for i in range(1, 13)])
+    hard_id = _seed_eval_set_cases(store, name="hard_set", case_ids=hard_ids)
+    tier_map_path = _write_tier_map(base, easy_id=easy_id, medium_id=medium_id, hard_id=hard_id)
+    return store, tier_map_path
+
+
+def test_eval_tier_status_only_fails_loudly_when_resolved_tier_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--tier medium --leaderboard-status-only` must error, not silently print status for 0 cases."""
+    base = tmp_path
+    _store, tier_map_path = _setup_empty_medium_tier_scope(base)
+    monkeypatch.chdir(base)
+
+    with pytest.raises(typer.BadParameter, match="resolves to 0 cases"):
+        eval_cmd(
+            eval_set_id="ignored",
+            model_name="anthropic/claude-opus-4.6",
+            thinking_level="high",
+            tier="medium",
+            all_tiers=False,
+            tier_map_path=str(tier_map_path),
+            tier_definitions_path=None,
+            run_group_prefix="grp",
+            case_ids=None,
+            harness="default",
+            run_group=None,
+            max_cases=25,
+            max_steps=10,
+            max_runtime=60.0,
+            allow_repeats=False,
+            leaderboard_status_only=True,
+            json_output=False,
+            allow_holdout=False,
+        )
+
+
+def test_eval_tier_run_fails_loudly_when_resolved_tier_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--tier medium` (no status-only) must error before executing any harness run for 0 cases."""
+    base = tmp_path
+    _store, tier_map_path = _setup_empty_medium_tier_scope(base)
+    monkeypatch.chdir(base)
+
+    executed: list[dict[str, object]] = []
+
+    def _fake_execute(**kwargs):  # noqa: ANN003
+        executed.append(dict(kwargs))
+        return {
+            "completed": 1,
+            "failed": 0,
+            "eval_run_id": "eval-run-1",
+            "eval_case_ids_hash": "hash",
+        }
+
+    monkeypatch.setattr(main_module, "_execute_harness_eval_run", _fake_execute)
+
+    with pytest.raises(typer.BadParameter, match="resolves to 0 cases"):
+        eval_cmd(
+            eval_set_id="ignored",
+            model_name="anthropic/claude-opus-4.6",
+            thinking_level="high",
+            tier="medium",
+            all_tiers=False,
+            tier_map_path=str(tier_map_path),
+            tier_definitions_path=None,
+            run_group_prefix="grp",
+            case_ids=None,
+            harness="default",
+            run_group=None,
+            max_cases=25,
+            max_steps=10,
+            max_runtime=60.0,
+            allow_repeats=False,
+            leaderboard_status_only=False,
+            json_output=False,
+            allow_holdout=False,
+        )
+
+    assert executed == [], "no harness eval run should execute when the resolved tier has 0 cases"
