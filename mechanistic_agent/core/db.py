@@ -17,6 +17,13 @@ from mechanistic_agent.prompt_assets import resolve_call_name_from_step, traces_
 from mechanistic_agent.smiles_utils import strip_atom_mapping_list
 
 SCHEMA_VERSION = "2026_03_single_model_selection_v1"
+# Additive migrations recorded in ``db_migrations`` alongside SCHEMA_VERSION.
+# Each entry's tables/columns are created idempotently in ``init_db``.
+ADDITIVE_MIGRATIONS = (
+    # run_resume_state: branch alternatives + mapped loop state per accepted
+    # step / branch point, restored on resume (PRD §9.4 blocker 3, §10.12-10.13).
+    "2026_09_run_resume_state_v1",
+)
 
 
 def _normalize_run_input_payload(input_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -378,6 +385,19 @@ class RunStore:
                 CREATE INDEX IF NOT EXISTS idx_run_pauses_run
                     ON run_pauses(run_id, paused_at DESC);
 
+                CREATE TABLE IF NOT EXISTS run_resume_state (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    step_index INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_run_resume_state_run_seq
+                    ON run_resume_state(run_id, seq);
+
                 CREATE TABLE IF NOT EXISTS ralph_attempts (
                     id TEXT PRIMARY KEY,
                     parent_run_id TEXT NOT NULL,
@@ -617,10 +637,11 @@ class RunStore:
                 )
                 """
             )
-            conn.execute(
-                "INSERT OR IGNORE INTO db_migrations(version, applied_at) VALUES (?, ?)",
-                (SCHEMA_VERSION, time.time()),
-            )
+            for version in (SCHEMA_VERSION, *ADDITIVE_MIGRATIONS):
+                conn.execute(
+                    "INSERT OR IGNORE INTO db_migrations(version, applied_at) VALUES (?, ?)",
+                    (version, time.time()),
+                )
             conn.commit()
 
     @staticmethod
@@ -1761,6 +1782,64 @@ class RunStore:
             )
             conn.commit()
             return bool(result.rowcount)
+
+    # -- resume state (branch alternatives + mapped loop state) -------------
+
+    def record_run_resume_state(
+        self,
+        run_id: str,
+        *,
+        kind: str,
+        step_index: int,
+        payload: Dict[str, Any],
+    ) -> int:
+        """Append a resume-state snapshot; the row with the highest ``seq`` wins."""
+        row_id = uuid.uuid4().hex
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM run_resume_state WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            seq = (int(row["max_seq"]) if row else 0) + 1
+            conn.execute(
+                """
+                INSERT INTO run_resume_state(id, run_id, seq, kind, step_index, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (row_id, run_id, seq, str(kind), int(step_index), self._json_dumps(payload or {}), time.time()),
+            )
+            conn.commit()
+        return seq
+
+    def get_latest_run_resume_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM run_resume_state
+                WHERE run_id = ?
+                ORDER BY seq DESC
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["payload"] = self._json_loads(item.pop("payload_json", None), {})
+        return item
+
+    def list_run_resume_states(self, run_id: str) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM run_resume_state WHERE run_id = ? ORDER BY seq ASC",
+                (run_id,),
+            ).fetchall()
+        output: List[Dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["payload"] = self._json_loads(item.pop("payload_json", None), {})
+            output.append(item)
+        return output
 
     def get_latest_run_pause(self, run_id: str) -> Optional[Dict[str, Any]]:
         with self._connect() as conn:

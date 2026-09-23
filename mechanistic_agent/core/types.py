@@ -125,6 +125,29 @@ class BranchCandidate:
             "resulting_state": self.resulting_state,
         }
 
+    def to_persisted_dict(self) -> Dict[str, Any]:
+        """Full JSON-safe form (everything ``_backtrack`` needs to re-apply it)."""
+        return {
+            "rank": self.rank,
+            "intermediate_smiles": self.intermediate_smiles,
+            "intermediate_output": dict(self.intermediate_output or {}),
+            "mechanism_output": dict(self.mechanism_output or {}),
+            "resulting_state": list(self.resulting_state or []),
+            "validation_summary": dict(self.validation_summary or {}),
+        }
+
+    @classmethod
+    def from_persisted_dict(cls, data: Dict[str, Any]) -> "BranchCandidate":
+        payload = dict(data or {})
+        return cls(
+            rank=int(payload.get("rank") or 0),
+            intermediate_smiles=str(payload.get("intermediate_smiles") or ""),
+            intermediate_output=dict(payload.get("intermediate_output") or {}),
+            mechanism_output=dict(payload.get("mechanism_output") or {}),
+            resulting_state=[str(s) for s in (payload.get("resulting_state") or [])],
+            validation_summary=dict(payload.get("validation_summary") or {}),
+        )
+
 
 @dataclass(slots=True)
 class BranchPoint:
@@ -147,6 +170,43 @@ class BranchPoint:
             "has_template_guidance_snapshot": bool(self.template_guidance_snapshot),
             "exhausted": self.exhausted,
         }
+
+    def to_persisted_dict(self) -> Dict[str, Any]:
+        """Full JSON-safe form including the untried alternatives (resume)."""
+        return {
+            "step_index": self.step_index,
+            "current_state": list(self.current_state),
+            "previous_intermediates": list(self.previous_intermediates),
+            "template_guidance_snapshot": (
+                dict(self.template_guidance_snapshot)
+                if isinstance(self.template_guidance_snapshot, dict)
+                else None
+            ),
+            "chosen_candidate": (
+                self.chosen_candidate.to_persisted_dict() if self.chosen_candidate is not None else None
+            ),
+            "alternatives": [alt.to_persisted_dict() for alt in self.alternatives],
+            "exhausted": self.exhausted,
+        }
+
+    @classmethod
+    def from_persisted_dict(cls, data: Dict[str, Any]) -> "BranchPoint":
+        payload = dict(data or {})
+        chosen = payload.get("chosen_candidate")
+        guidance = payload.get("template_guidance_snapshot")
+        return cls(
+            step_index=int(payload.get("step_index") or 0),
+            current_state=[str(s) for s in (payload.get("current_state") or [])],
+            previous_intermediates=[str(s) for s in (payload.get("previous_intermediates") or [])],
+            template_guidance_snapshot=dict(guidance) if isinstance(guidance, dict) else None,
+            chosen_candidate=BranchCandidate.from_persisted_dict(chosen) if isinstance(chosen, dict) else None,
+            alternatives=[
+                BranchCandidate.from_persisted_dict(alt)
+                for alt in (payload.get("alternatives") or [])
+                if isinstance(alt, dict)
+            ],
+            exhausted=bool(payload.get("exhausted")),
+        )
 
 
 @dataclass(slots=True)
@@ -875,13 +935,17 @@ class RunState:
     # Persistent atom identity (PRD §9, mapped_state.py). Set from the harness
     # at loop start. ``mapped_loop_state`` is a MappedState snapshot matching
     # ``current_state``; ``mapped_state_history`` keeps the pre-step snapshot per
-    # step_index so backtracking restores exact ids. Not persisted across
-    # resume yet (resume re-seeds identity).
+    # step_index so backtracking restores exact ids. Both are persisted with
+    # the branch points in ``run_resume_state`` (coordinator
+    # ``_persist_resume_state``) and restored on resume.
     loop_state_mapping: str = "stripped"
     record_smirks_state_agreement: bool = False
     mapped_seed_species: List[str] = field(default_factory=list)
     mapped_loop_state: Optional[Dict[str, Any]] = None
     mapped_state_history: Dict[int, Dict[str, Any]] = field(default_factory=dict)
+    # Highest persistent-atom-id high-water mark (allocator ``next_id``) seen
+    # on this run, persisted so a resumed allocator never reissues an id.
+    mapped_id_high_water: int = 0
 
     def initialise(self) -> None:
         if not self.current_state:

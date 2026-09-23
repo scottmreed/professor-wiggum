@@ -133,7 +133,7 @@ This PRD does **not** propose:
 LLM proposes candidates (mapped reaction_smirks, electron_pushes, UNMAPPED resulting_state)
 → predict_mechanistic_step: validates LLM-supplied resulting_state, parses SMIRKS for metadata only
 → deterministic validators (bond/electron via mech block, atom balance, state progress)
-→ validated.sort(key=rank); top applied; rest → BranchPoint alternatives (not persisted across resume)
+→ validated.sort(key=rank); top applied; rest → BranchPoint alternatives (persisted in `run_resume_state`, restored on resume)
 → post-step: reflection (deterministic), step_atom_mapping (LLM)
 → continue / backtrack / terminate
 ```
@@ -328,7 +328,7 @@ Code: `mechanistic_agent/core/mapped_state.py`. Tests: `tests/fast/test_persiste
 - **Blockers before any variant ships:**
   1. The executor has only been validated on ground truth. LLM SMIRKS agreement is unmeasured. The coordinator now records `validation_summary.smirks_state_agreement` for every accepted step (non-blocking, harness `record_smirks_state_agreement`, default on). Collect a baseline from real runs before making it a validator.
   2. `loop_state_mapping: "mapped"` (opt-in; default `"stripped"`) changes proposal-prompt inputs. It needs eval-tier evidence per `docs/change_evidence_policy.md`.
-  3. Branch alternatives and `RunState.mapped_loop_state` are not persisted across resume (`coordinator.py` branch-point hydration). A resumed run re-seeds identity. §10.12 and §10.13 pass at the `mapped_state` level only; coordinator integration is follow-up work.
+  3. ~~Branch alternatives and `RunState.mapped_loop_state` are not persisted across resume.~~ **Resolved.** The coordinator now writes a `run_resume_state` row (`core/db.py`, migration `2026_09_run_resume_state_v1`) on every applied candidate, branch point and backtrack. Each row holds the branch points with their full alternatives, the loop cursor, `mapped_loop_state`, `mapped_state_history` and an allocator high-water mark. `_hydrate_state_from_outputs` restores it, so backtracking after resume re-applies the same alternatives with the same ids, and the allocator never reissues an id. Runs recorded before the migration fall back to event replay, which has no alternatives. §10.12 and §10.13 now also pass at run level (`tests/fast/test_resume_branch_identity_persistence.py`).
   4. Unconstrained matches on stripped states can bind any of several symmetry-equivalent atoms. The chemistry is identical, but the id assignment among equivalent atoms is arbitrary (`distinct_outcomes` is recorded).
   5. `reaction_bond_deltas` (`mechanism_moves.py`) parses with RDKit defaults and drops bonds to mapped H. As a result, `observed_bond_deltas` metadata omits proton moves.
   6. §11's scoring redefinition is still required before `step_atom_mapping` is downgraded.
@@ -337,7 +337,7 @@ Code: `mechanistic_agent/core/mapped_state.py`. Tests: `tests/fast/test_persiste
 
 ## 10. Required atom-identity tests (`tests/fast/test_persistent_atom_identity.py`)
 
-All prerequisites of §9.2 apply. Tests 10.12 and 10.13 additionally depend on persisting branch alternatives, which today are lost on resume (`coordinator.py:443-446`).
+All prerequisites of §9.2 apply. Tests 10.12 and 10.13 additionally depend on persisting branch alternatives and the mapped loop state across resume. That landed with `run_resume_state` (§9.4 blocker 3). The run-level versions are in `tests/fast/test_resume_branch_identity_persistence.py`.
 
 10.1 **No-op round trip.** Assign IDs, serialize (mapped SMILES and the actual state serialization path), reparse; every atom keeps its ID; document which custom properties do and do not survive.  
 10.2 **Bond-order change** (`C-C→C=C`, `C=O→C-O`): 100% retention for surviving atoms.  

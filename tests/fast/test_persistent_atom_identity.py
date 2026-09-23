@@ -5,13 +5,12 @@ hand-built cases plus a ground-truth sweep over the benchmark (§10.14).
 
 Scope notes
 -----------
-* §10.12 (backtracking) and §10.13 (resume) are tested at the ``mapped_state``
-  level: snapshot/restore of the identity map, allocator monotonicity across
-  restore, and JSON persistence through SQLite and a file. Coordinator-level
-  integration is a follow-up, not an xfail: branch alternatives are not
-  persisted across resume today (``coordinator.py`` restores branch points
-  from events without their alternatives), and ``RunState.mapped_loop_state``
-  is not persisted either, so a resumed run re-seeds identity.
+* §10.12 (backtracking) and §10.13 (resume) are tested here at the
+  ``mapped_state`` level: snapshot/restore of the identity map, allocator
+  monotonicity across restore, and JSON persistence through SQLite and a
+  file. The coordinator-level versions (branch alternatives and mapped loop
+  state persisted in ``run_resume_state`` and restored on resume) live in
+  ``tests/fast/test_resume_branch_identity_persistence.py``.
 * The benchmark sweep runs Route A (SMIRKS) and Route B (moves) over every
   step of ``training_data/eval_set.json`` and
   ``training_data/practice_eval/practice_set.json`` (tracked) and

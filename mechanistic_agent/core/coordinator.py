@@ -378,6 +378,9 @@ class RunCoordinator:
             key=lambda row: (int(row.get("attempt") or 0), int(row.get("retry_index") or 0))
         )
         if not mechanism_rows:
+            # No passed step outputs: nothing else to hydrate (unchanged), but a
+            # resume snapshot, if one exists, is still authoritative.
+            self._restore_resume_state(state)
             return
 
         latest = mechanism_rows[-1]
@@ -434,12 +437,17 @@ class RunCoordinator:
                     emit_event=False,
                 )
 
+        # Branch points (with their untried alternatives) and the mapped loop
+        # state come from the latest ``run_resume_state`` snapshot when one
+        # exists; older runs fall back to event replay (no alternatives).
+        restored_resume_state = self._restore_resume_state(state)
+
         # Reconstruct branch points and failed paths from stored events.
         events = self.store.list_events(state.run_id) if hasattr(self.store, "list_events") else []
         for ev in events:
             ev_type = ev.get("event_type") or ""
             payload = ev.get("payload") or {}
-            if ev_type == "branch_point_created":
+            if ev_type == "branch_point_created" and not restored_resume_state:
                 bp = BranchPoint(
                     step_index=int(payload.get("step_index") or 0),
                     current_state=list(payload.get("current_state") or []),
@@ -450,9 +458,8 @@ class RunCoordinator:
                         else None
                     ),
                 )
-                # Restore alternative count (alternatives themselves are lost on
-                # serialisation but the branch point existence is preserved for
-                # backtracking decisions).
+                # Legacy runs (no run_resume_state rows): the alternatives were
+                # never persisted, so only the branch point's existence survives.
                 state.branch_points.append(bp)
             elif ev_type == "failed_path_recorded":
                 fp = FailedPath(
@@ -465,6 +472,186 @@ class RunCoordinator:
             elif ev_type == "template_guidance_state_updated":
                 if isinstance(payload, dict):
                     state.template_guidance_state = TemplateGuidanceState.from_dict(payload)
+
+    # ------------------------------------------------------------------
+    # Resume-state persistence (PRD §9.4 blocker 3, §10.12-10.13)
+    # ------------------------------------------------------------------
+
+    RESUME_STATE_SCHEMA = "run_resume_state.v1"
+
+    @staticmethod
+    def _snapshot_next_id(snapshot: Any) -> int:
+        if not isinstance(snapshot, dict):
+            return 0
+        try:
+            return int((snapshot.get("allocator") or {}).get("next_id") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _mapped_id_high_water(self, state: RunState) -> int:
+        marks = [int(state.mapped_id_high_water or 0), self._snapshot_next_id(state.mapped_loop_state)]
+        marks.extend(self._snapshot_next_id(snap) for snap in state.mapped_state_history.values())
+        return max(marks)
+
+    def _resume_state_payload(self, state: RunState) -> Dict[str, Any]:
+        state.mapped_id_high_water = self._mapped_id_high_water(state)
+        return {
+            "schema": self.RESUME_STATE_SCHEMA,
+            "step_index": state.step_index,
+            "current_state": list(state.current_state),
+            "previous_intermediates": list(state.previous_intermediates),
+            "branch_points": [bp.to_persisted_dict() for bp in state.branch_points],
+            "mapped_loop_state": state.mapped_loop_state,
+            "mapped_state_history": {
+                str(k): v for k, v in sorted(state.mapped_state_history.items())
+            },
+            "mapped_id_high_water": state.mapped_id_high_water,
+        }
+
+    def _persist_resume_state(self, state: RunState, kind: str) -> None:
+        """Snapshot branch points + mapped loop state so resume restores them.
+
+        Persistence only: never alters the run's path and never raises into
+        the loop.
+        """
+        recorder = getattr(self.store, "record_run_resume_state", None)
+        if not callable(recorder):
+            return
+        try:
+            recorder(
+                state.run_id,
+                kind=kind,
+                step_index=state.step_index,
+                payload=self._resume_state_payload(state),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            self._trace(
+                state,
+                f"RESUME_STATE_PERSIST_FAILED kind={kind} error={type(exc).__name__}: {exc}",
+            )
+
+    def _restore_resume_state(self, state: RunState) -> bool:
+        """Restore the latest resume snapshot onto ``state``. Returns True if found."""
+        loader = getattr(self.store, "get_latest_run_resume_state", None)
+        if not callable(loader):
+            return False
+        try:
+            row = loader(state.run_id)
+        except Exception:  # pragma: no cover - defensive
+            return False
+        payload = row.get("payload") if isinstance(row, dict) else None
+        if not isinstance(payload, dict) or payload.get("schema") != self.RESUME_STATE_SCHEMA:
+            return False
+
+        # Loop cursor as of the last applied candidate. Exact, unlike the
+        # step-output heuristic above, which cannot see which candidate was
+        # chosen after a backtrack or among parallel candidates.
+        if isinstance(payload.get("current_state"), list):
+            state.current_state = [str(s) for s in payload["current_state"]]
+        if isinstance(payload.get("previous_intermediates"), list):
+            state.previous_intermediates = [str(s) for s in payload["previous_intermediates"]]
+        try:
+            state.step_index = int(payload.get("step_index") or 0)
+        except (TypeError, ValueError):
+            pass
+
+        state.branch_points = [
+            BranchPoint.from_persisted_dict(bp)
+            for bp in (payload.get("branch_points") or [])
+            if isinstance(bp, dict)
+        ]
+
+        history_raw = payload.get("mapped_state_history")
+        history: Dict[int, Dict[str, Any]] = {}
+        if isinstance(history_raw, dict):
+            for key, snap in history_raw.items():
+                try:
+                    history[int(key)] = dict(snap)
+                except (TypeError, ValueError):
+                    continue
+        state.mapped_state_history = history
+        mapped = payload.get("mapped_loop_state")
+        state.mapped_loop_state = dict(mapped) if isinstance(mapped, dict) else None
+        try:
+            stored_mark = int(payload.get("mapped_id_high_water") or 0)
+        except (TypeError, ValueError):
+            stored_mark = 0
+        state.mapped_id_high_water = max(stored_mark, self._mapped_id_high_water(state))
+        # The allocator only advances: carry the run-wide high-water mark into
+        # the live snapshot's allocator so no id issued before the pause (on
+        # any path) is reissued after resume.
+        if state.mapped_loop_state is not None and state.mapped_id_high_water:
+            allocator = dict(state.mapped_loop_state.get("allocator") or {})
+            allocator["next_id"] = max(
+                self._snapshot_next_id(state.mapped_loop_state), state.mapped_id_high_water
+            )
+            state.mapped_loop_state["allocator"] = allocator
+        return True
+
+    def _consume_resumed_alternative(self, state: RunState, candidate: BranchCandidate) -> BranchCandidate:
+        """Mark the last-chance alternative as taken on its restored branch point.
+
+        Mirrors ``_backtrack``'s bookkeeping (pop, exhaust, drop later branch
+        points, update chosen) for the ``last_chance_backtrack`` resume path so
+        the alternative is not offered twice and the remaining ones stay
+        reachable. Returns the persisted candidate (with its validation
+        summary) when it matches; otherwise the candidate unchanged.
+        """
+        peek = self._peek_next_alternative(state)
+        if peek is None:
+            return candidate
+        bp, alt = peek
+        if (
+            bp.step_index != state.step_index
+            or alt.rank != candidate.rank
+            or alt.intermediate_smiles != candidate.intermediate_smiles
+        ):
+            return candidate
+        index = state.branch_points.index(bp)
+        taken = bp.alternatives.pop(0)
+        if not bp.alternatives:
+            bp.exhausted = True
+        state.branch_points = state.branch_points[: index + 1]
+        bp.chosen_candidate = taken
+        return taken
+
+    def _record_branch_point(
+        self,
+        state: RunState,
+        chosen: BranchCandidate,
+        alternatives: List[BranchCandidate],
+    ) -> BranchPoint:
+        """Store a branch point (Step D) and persist it with its alternatives."""
+        bp = BranchPoint(
+            step_index=state.step_index,
+            current_state=list(state.current_state),
+            previous_intermediates=list(state.previous_intermediates),
+            template_guidance_snapshot=(
+                state.template_guidance_state.as_dict()
+                if state.template_guidance_state is not None
+                else None
+            ),
+            chosen_candidate=chosen,
+            alternatives=alternatives,
+        )
+        state.branch_points.append(bp)
+        self.store.append_event(
+            state.run_id,
+            "branch_point_created",
+            {
+                "step_index": state.step_index,
+                "current_state": list(state.current_state),
+                "previous_intermediates": list(state.previous_intermediates),
+                "template_guidance_snapshot": (
+                    bp.template_guidance_snapshot if bp.template_guidance_snapshot is not None else {}
+                ),
+                "chosen_rank": chosen.rank,
+                "alternative_count": len(alternatives),
+                "alternative_ranks": [a.rank for a in alternatives],
+            },
+        )
+        self._persist_resume_state(state, "branch_point")
+        return bp
 
     def _step_model(self, state: RunState, step_name: str) -> Optional[str]:
         return state.run_config.step_models.get(step_name, state.run_config.model)
@@ -3360,7 +3547,13 @@ class RunCoordinator:
         summary["smirks_state_agreement"] = record
         candidate.validation_summary = summary
 
-    def _apply_candidate(self, state: RunState, candidate: BranchCandidate) -> None:
+    def _apply_candidate(
+        self,
+        state: RunState,
+        candidate: BranchCandidate,
+        *,
+        resume_state_kind: str = "accepted_step",
+    ) -> None:
         """Apply a validated candidate to the run state."""
         previous_state = list(state.current_state)
         self._record_smirks_state_agreement(state, candidate, previous_state)
@@ -3440,6 +3633,7 @@ class RunCoordinator:
             resulting_state=list(state.current_state),
             candidate_rank=candidate.rank,
         )
+        self._persist_resume_state(state, resume_state_kind)
 
     def _collect_failed_path_steps(self, state: RunState, from_step_index: int) -> List[Dict[str, Any]]:
         """Gather mechanism step outputs from the DB for steps after *from_step_index*."""
@@ -3522,7 +3716,7 @@ class RunCoordinator:
             bp.chosen_candidate = next_alt
 
             # Apply the alternative candidate
-            self._apply_candidate(state, next_alt)
+            self._apply_candidate(state, next_alt, resume_state_kind="backtrack")
 
             self.store.append_event(
                 state.run_id,
@@ -4291,7 +4485,7 @@ class RunCoordinator:
                         "resumed_from_pause": True,
                     },
                 )
-                self._apply_candidate(state, chosen)
+                self._apply_candidate(state, chosen, resume_state_kind="backtrack")
             else:
                 # --- Step A: Propose mechanism step candidates (topology-aware) ---
                 proposal_hints = dict(reproposal_hints.get(state.step_index + 1) or {})
@@ -5054,34 +5248,7 @@ class RunCoordinator:
 
                 # --- Step D: Store branch point if alternatives exist ---
                 if alternatives:
-                    bp = BranchPoint(
-                        step_index=state.step_index,
-                        current_state=list(state.current_state),
-                        previous_intermediates=list(state.previous_intermediates),
-                        template_guidance_snapshot=(
-                            state.template_guidance_state.as_dict()
-                            if state.template_guidance_state is not None
-                            else None
-                        ),
-                        chosen_candidate=chosen,
-                        alternatives=alternatives,
-                    )
-                    state.branch_points.append(bp)
-                    self.store.append_event(
-                        state.run_id,
-                        "branch_point_created",
-                        {
-                            "step_index": state.step_index,
-                            "current_state": list(state.current_state),
-                            "previous_intermediates": list(state.previous_intermediates),
-                            "template_guidance_snapshot": (
-                                bp.template_guidance_snapshot if bp.template_guidance_snapshot is not None else {}
-                            ),
-                            "chosen_rank": chosen.rank,
-                            "alternative_count": len(alternatives),
-                            "alternative_ranks": [a.rank for a in alternatives],
-                        },
-                    )
+                    self._record_branch_point(state, chosen, alternatives)
 
                 # --- Step E: Apply the chosen candidate ---
                 self._apply_candidate(state, chosen)
@@ -5667,6 +5834,11 @@ class RunCoordinator:
                         details.get("revert_previous_intermediates") or state.previous_intermediates
                     )
                     state.step_index = int(details.get("revert_to_step") or state.step_index)
+                    # With persisted alternatives, take this one off its branch
+                    # point exactly as _backtrack would (no-op for legacy runs).
+                    state.pending_resume_candidate = self._consume_resumed_alternative(
+                        state, state.pending_resume_candidate
+                    )
                     revert_template_guidance = details.get("revert_template_guidance_state")
                     if isinstance(revert_template_guidance, dict):
                         state.template_guidance_state = TemplateGuidanceState.from_dict(
