@@ -628,6 +628,16 @@ Context defaults to graph radius 1 around the core, with deterministic completio
 
 The full molecule remains available.
 
+## 9.2.1 Implementation (delivered 2026-09-23, `core/reaction_focus.py`)
+
+`build_reaction_focus(reaction_smirks, electron_pushes=, bond_electron_deltas=, context_radius=1)` implements `reaction_focus.v1` on Wiggum:
+
+- atom ids are `a<map>` from the candidate's mapped SMIRKS; persistent ids (`mapped_state.MappedState.map_to_pid`) map onto them 1:1 when the mapped loop state is on;
+- core = changed bonds ∪ changed formal charge ∪ changed hydrogen count ∪ changed non-bonding electrons ∪ electron-push participants ∪ non-zero ΔBE entries ∪ atoms present on one side only (`unbalanced_atom_ids`);
+- context = BFS radius 1 over the union of both sides' adjacency, plus every ring (SSSR on either side) that intersects the core, taken whole;
+- output is sorted by map number, so it is independent of species order and byte-identical on replay;
+- an unparsable SMIRKS returns an empty focus with `error` set instead of raising.
+
 ## 9.3 Reuse ChemIllusion `MechanismStateDiff`
 
 ChemIllusion already computes most of this information in `MechanismStateDiff`.
@@ -678,6 +688,22 @@ The first implementation should follow the Ugi/FlowER-style electron-accounting 
 - `core/mapped_state.py::MappedState` / `execute_candidate` give the persistent-ID atom order for both `BE(t)` and `BE(t+1)`.
 
 `bond_electron_view.v1` SHALL be built from these three inputs with the persistent atom ID as the row/column key.
+
+## 10.1.1 Convention `ugi_flower_kekule_v1` as implemented (`core/bond_electron.py`)
+
+| Item | Decision |
+|---|---|
+| Atom ordering | rows/columns follow the requested `atom_ids` (default: all mapped atoms sorted by map number) |
+| Off-diagonal `(i, j)` | shared bonding electrons = 2 × Kekulé bond order; 0 when not bonded |
+| Aromatic / Kekulé | molecules are Kekulized with aromatic flags cleared before counting, so ring bonds are 2 or 4 electrons, never 3 |
+| Diagonal `(i, i)` | non-bonding valence electrons with hydrogens folded in: `outer − formal_charge − Σ bond orders − n_H`; radical electrons are included |
+| Explicit H | mapped `[H:n]` atoms are ordinary rows; implicit H is folded into the heavy atom's diagonal |
+| Charge | enters the diagonal through the formula above, so a lone-pair donation shows as −2 on the donor diagonal and +2 on the new bond cell |
+| Unmapped atoms | not rows; a bond to one still counts in the mapped atom's diagonal |
+| Conservation | `electron_delta_sum = Σ_diag Δ + Σ_{i<j} Δ`; `conserved` additionally requires every atom with a changed row to be inside the projection (`missing_changed_atom_ids == []`), because a partial projection can sum to zero by coincidence (C2 + Br3 alone in an SN2) |
+| `is_focus_projection` | true whenever the rows were chosen by a `ReactionFocus`, even when the focus covers every atom of a small step; `full_atom_count` carries the total |
+
+Worked example (SN2 `[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3]`): `BE(a2,a3)` 2→0, `BE(a2,a4)` 0→2, `BE(a3,a3)` 6→8, `BE(a4,a4)` 8→6, `Σ ΔBE = 0`.
 
 ## 10.2 Default display
 
@@ -1265,6 +1291,25 @@ Contains:
 - mapping/identity summary;
 - `smirks_state_agreement`;
 - accepted/rejected status.
+
+### 16.4.1 As implemented (2026-09-23)
+
+`RunCoordinator._emit_candidate_validation_result` emits one event per candidate attempt right after the deterministic validators run, for validated and rejected candidates alike:
+
+```json
+{
+  "event_schema_version": "mechanism_observatory_event.v1",
+  "step_index": 3, "attempt": 3, "retry_index": 0,
+  "candidate_id": "c3-r1-9f2a1c0d", "candidate_rank": 1,
+  "accepted": true, "validation": {"passed": true, "checks": []}, "failed_checks": [],
+  "reaction_smirks": "...", "current_state": [], "resulting_state": [], "predicted_intermediate": "...",
+  "reaction_focus": {"schema_version": "reaction_focus.v1"},
+  "bond_electron_view": {"schema_version": "bond_electron_view.v1", "is_focus_projection": true},
+  "smirks_state_agreement": null, "projection_error": null
+}
+```
+
+`accepted` here means "passed the validators"; the eventual `mechanism_step_accepted.acceptance_kind` says whether the step was applied and how. Projection failures set `projection_error` instead of failing the step. The mapping-lineage payload (§11.4) and the persistent-id adapter remain open for the rest of M1.
 
 ## 16.5 Existing events retained
 
@@ -2022,6 +2067,8 @@ Normal users need:
 - focus/replay tests.
 
 **Exit criterion:** every accepted or rejected candidate has a deterministic focus mask and chemistry-delta payload.
+
+**Status (2026-09-23):** ReactionFocus v1, BE/ΔBE v1 and `candidate_validation_result` delivered (`feature/observatory-m1-reaction-focus`); persistent-identity adapter and mapping-lineage payload still open.
 
 ---
 
