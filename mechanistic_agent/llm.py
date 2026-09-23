@@ -636,6 +636,34 @@ def get_chat_model(
 ) -> Any:
     """Return a provider-specific chat model wrapper.
 
+    Inside a run step (``core.call_recorder.call_context`` open) the adapter is
+    wrapped in a ``RecordingChatAdapter`` that emits live ``inference_call_*``
+    events (Observatory PRD §13). Outside a step the bare adapter is returned.
+    """
+    from .core.call_recorder import maybe_record
+
+    return maybe_record(
+        _build_chat_model(
+            model_name,
+            temperature=temperature,
+            timeout=timeout,
+            model_kwargs=model_kwargs,
+            user_api_key=user_api_key,
+        ),
+        model_name,
+    )
+
+
+def _build_chat_model(
+    model_name: str,
+    *,
+    temperature: Optional[float] = None,
+    timeout: Optional[float] = None,
+    model_kwargs: Optional[Dict[str, Any]] = None,
+    user_api_key: Optional[str] = None,
+) -> Any:
+    """Return a provider-specific chat model wrapper.
+
     Routes to OpenRouter for Claude and OLMo models, Gemini for Google models,
     and OpenAI for all others.  Pass ``user_api_key`` to override env vars.
 

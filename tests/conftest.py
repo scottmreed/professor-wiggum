@@ -21,3 +21,20 @@ if "openai" not in sys.modules:  # pragma: no cover - import shim for optional d
 
     openai_stub.OpenAI = _OpenAIStub  # type: ignore[attr-defined]
     sys.modules["openai"] = openai_stub
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_live_call_context():
+    """A test that starts a step without recording it must not leak the live
+    call-recording context (core.call_recorder) into the next test."""
+    try:
+        from mechanistic_agent.core.call_recorder import close_call_context
+    except Exception:  # pragma: no cover - module optional in partial checkouts
+        yield
+        return
+    close_call_context()
+    yield
+    close_call_context()
