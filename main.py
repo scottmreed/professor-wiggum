@@ -250,6 +250,7 @@ def _build_eval_case_summary(
     subagent_scores: Dict[str, Any],
     scored_error: Optional[str] = None,
     mapping_agreement: Optional[Dict[str, Any]] = None,
+    scoring_version: Optional[str] = None,
 ) -> Dict[str, Any]:
     diagnostics = _extract_eval_run_diagnostics(snapshot)
     summary: Dict[str, Any] = {
@@ -262,8 +263,10 @@ def _build_eval_case_summary(
         "subagent_scores": subagent_scores,
     }
     if mapping_agreement is not None:
-        # Recorded metric (benchmark mapping recall); not part of the score.
+        # Benchmark mapping recall; the v2 mapping component of the score.
         summary["mapping_agreement"] = mapping_agreement
+    if scoring_version:
+        summary["scoring_version"] = scoring_version
     summary.update(diagnostics)
     summary.update(_extract_chemistry_backend_diagnostics(snapshot))
     return summary
@@ -1600,6 +1603,7 @@ def _run_baseline_eval_set(
                 "scoring_breakdown": graded.get("scoring_breakdown", {}),
                 "error": graded.get("error"),
                 "eval_mode": "baseline",
+                "scoring_version": graded.get("scoring_version"),
                 "run_metadata": {
                     "eval_set_id": resolved_eval_set.eval_set_id,
                     "eval_set_purpose": resolved_eval_set.purpose,
@@ -3466,7 +3470,11 @@ def _execute_harness_eval_run(
     selected_case_ids: Optional[Sequence[str]] = None,
     planner_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    from mechanistic_agent.scoring import score_snapshot_against_known, score_subagents_from_step_outputs
+    from mechanistic_agent.scoring import (
+        DEFAULT_SCORING_VERSION,
+        score_snapshot_against_known,
+        score_subagents_from_step_outputs,
+    )
 
     resolved_eval_set_id = str(resolved_eval_set.eval_set_id)
     model_family = get_model_family(model_name) or "unknown"
@@ -3582,14 +3590,22 @@ def _execute_harness_eval_run(
             snapshot = store.get_run_snapshot(run_id) or {}
             step_outputs = snapshot.get("step_outputs", [])
 
-            graded = score_snapshot_against_known(snapshot, expected) if expected else {"score": 0.0, "passed": False}
+            graded = (
+                score_snapshot_against_known(snapshot, expected, scoring_version=DEFAULT_SCORING_VERSION)
+                if expected
+                else {"score": 0.0, "passed": False}
+            )
             score = float(graded.get("score", 0.0))
             passed = bool(graded.get("passed", False))
             all_graded.append(graded)
 
             subagent_scores: Dict[str, Any] = {}
             try:
-                subagent_scores = score_subagents_from_step_outputs(step_outputs)
+                subagent_scores = score_subagents_from_step_outputs(
+                    step_outputs,
+                    scoring_version=DEFAULT_SCORING_VERSION,
+                    mapping_agreement=graded.get("mapping_agreement"),
+                )
             except Exception:
                 pass
 
@@ -3605,6 +3621,7 @@ def _execute_harness_eval_run(
                 subagent_scores=subagent_scores,
                 scored_error=graded.get("error"),
                 mapping_agreement=graded.get("mapping_agreement"),
+                scoring_version=DEFAULT_SCORING_VERSION,
             )
             chemistry = summary.get("chemistry_backend") if isinstance(summary.get("chemistry_backend"), dict) else {}
             if chemistry:
@@ -3726,6 +3743,81 @@ def _execute_harness_eval_run(
     if json_output:
         typer.echo(json.dumps(result_obj, indent=2))
     return result_obj
+
+
+@app.command(name="rescore-eval-results")
+def rescore_eval_results_cmd(
+    scoring_version: str = typer.Option(
+        "v2", "--scoring-version", help="Scoring version to recompute under (v1 or v2)."
+    ),
+    eval_set_id: Optional[str] = typer.Option(None, "--eval-set-id", help="Restrict to one eval set."),
+    eval_run_ids: Optional[List[str]] = typer.Option(
+        None, "--eval-run-id", help="Restrict to eval run(s); repeatable."
+    ),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Write recomputed results into the DB (backed up first). Default is a dry run on a temporary copy.",
+    ),
+    backup: bool = typer.Option(True, "--backup/--no-backup", help="With --apply, copy the DB to <db>.pre-rescore-<ts>.bak first."),
+    db_path: Optional[Path] = typer.Option(None, "--db-path", help="SQLite DB (default: resolved data root)."),
+    use_curriculum: bool = typer.Option(
+        True,
+        "--curriculum/--no-curriculum",
+        help="Resolve curriculum cases (flower_<id>) from the FlowER lookup cache when the eval set lacks them.",
+    ),
+    markdown_output: Optional[Path] = typer.Option(None, "--output", help="Also write the delta table (Markdown) here."),
+    json_output: bool = typer.Option(False, "--json", help="Emit the delta rows as JSON."),
+    completed_only: bool = typer.Option(True, "--completed-only/--include-running", help="Leaderboard row filter."),
+) -> None:
+    """Recompute stored eval results from stored traces under a scoring version.
+
+    Prints a per-leaderboard-row table: score before, score after, delta. Without
+    --apply nothing is written: the DB is copied (SQLite backup API) to a
+    temporary directory, rescored there, and the copy is deleted.
+    """
+    from mechanistic_agent.rescoring import format_delta_markdown, run_rescore
+    from mechanistic_agent.scoring import normalize_scoring_version
+
+    try:
+        version = normalize_scoring_version(scoring_version)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    path = Path(db_path).expanduser() if db_path else resolve_db_path(Path.cwd())
+    if not path.is_file():
+        typer.echo(
+            f"Runtime DB not found at {path}. Set MECHANISTIC_DATA_DIR or pass --db-path.", err=True
+        )
+        raise typer.Exit(1)
+
+    result = run_rescore(
+        path,
+        scoring_version=version,
+        apply=apply,
+        eval_set_id=eval_set_id,
+        eval_run_ids=list(eval_run_ids or []) or None,
+        backup=backup,
+        row_filter=lambda rows: _filter_leaderboard_rows(rows, completed_only=completed_only),
+        use_curriculum=use_curriculum,
+    )
+    table = format_delta_markdown(result.delta_rows, result.report)
+    if json_output:
+        typer.echo(json.dumps({"counts": result.report.counts(), "rows": result.delta_rows}, indent=2, default=str))
+    else:
+        mode = "APPLIED to" if result.applied else "DRY RUN (temporary copy of)"
+        typer.echo(f"{mode} {result.db_path}")
+        if result.backup_path:
+            typer.echo(f"Backup: {result.backup_path}")
+        typer.echo(table)
+    if markdown_output is not None:
+        markdown_output.write_text(table + "\n", encoding="utf-8")
+        typer.echo(f"Wrote delta table to {markdown_output}")
+    if result.applied:
+        typer.echo(
+            "Leaderboard rows now read the recomputed scores. Regenerate artifacts with "
+            "`python main.py leaderboard --eval-set-id <id> --markdown --output LEADERBOARD.md` "
+            "and `python main.py update-leaderboard-artifacts`."
+        )
 
 
 @app.command(name="eval")

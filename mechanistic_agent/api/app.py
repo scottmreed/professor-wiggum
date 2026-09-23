@@ -1732,10 +1732,15 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 else:
                     known_answer_comparison = {"available": False}
 
-                from mechanistic_agent.scoring import score_subagents_from_step_outputs
+                from mechanistic_agent.scoring import (
+                    DEFAULT_SCORING_VERSION,
+                    score_subagents_from_step_outputs,
+                )
 
                 subagent_scores = score_subagents_from_step_outputs(
-                    list(snapshot.get("step_outputs") or [])
+                    list(snapshot.get("step_outputs") or []),
+                    scoring_version=DEFAULT_SCORING_VERSION,
+                    mapping_agreement=(graded.get("scoring_breakdown") or {}).get("mapping_agreement"),
                 )
                 store.record_eval_run_result(
                     eval_run_id=eval_run_id,
@@ -1751,6 +1756,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                         "selected_step_models": step_models,
                         "known_answer_comparison": known_answer_comparison,
                         "scoring_breakdown": graded.get("scoring_breakdown", {}),
+                        "scoring_version": DEFAULT_SCORING_VERSION,
                         "run_metadata": {
                             "eval_set_id": resolved_eval_set.eval_set_id,
                             "eval_set_purpose": resolved_eval_set.purpose,
@@ -3508,6 +3514,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                     "scoring_breakdown": graded.get("scoring_breakdown", {}),
                     "error": graded.get("error"),
                     "eval_mode": "baseline",
+                    "scoring_version": graded.get("scoring_version"),
                     "run_metadata": {
                         "eval_set_id": resolved_eval_set.eval_set_id,
                         "eval_set_purpose": resolved_eval_set.purpose,
@@ -3734,10 +3741,15 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             total_score += score
             count += 1
 
-            from mechanistic_agent.scoring import score_subagents_from_step_outputs
+            from mechanistic_agent.scoring import (
+                DEFAULT_SCORING_VERSION,
+                score_subagents_from_step_outputs,
+            )
 
             subagent_scores = score_subagents_from_step_outputs(
-                list(snapshot.get("step_outputs") or [])
+                list(snapshot.get("step_outputs") or []),
+                scoring_version=DEFAULT_SCORING_VERSION,
+                mapping_agreement=(graded.get("scoring_breakdown") or {}).get("mapping_agreement"),
             )
             store.record_eval_run_result(
                 eval_run_id=eval_run_id,
@@ -3752,6 +3764,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                     "selected_step_models": step_models,
                     "scoring_breakdown": graded.get("scoring_breakdown", {}),
                     "subagent_scores": subagent_scores,
+                    "scoring_version": DEFAULT_SCORING_VERSION,
                 },
             )
 

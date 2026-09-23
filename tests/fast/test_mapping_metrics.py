@@ -295,8 +295,9 @@ def test_scoring_records_mapping_agreement_without_changing_score() -> None:
     )
     expected = _expected_for_record(record)
 
-    good = score_snapshot_against_known(_snapshot_for_record(record, good_atoms), expected)
-    bad = score_snapshot_against_known(_snapshot_for_record(record, bad_atoms), expected)
+    # Under scoring v1 the metric is recorded only (v2 scores it; see test_scoring_v2.py).
+    good = score_snapshot_against_known(_snapshot_for_record(record, good_atoms), expected, scoring_version="v1")
+    bad = score_snapshot_against_known(_snapshot_for_record(record, bad_atoms), expected, scoring_version="v1")
 
     assert good["mapping_agreement"]["available"] is True
     assert good["mapping_agreement"]["global"]["agreement"] == 1.0
