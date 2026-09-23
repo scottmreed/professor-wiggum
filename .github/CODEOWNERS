@@ -9,7 +9,7 @@
 # Enforcement note: for this to block merges, enable "Require review from Code
 # Owners" in the branch protection rules for the default branch.
 #
-# See CONTRIBUTING.md → "Keyless and agent-authored contributions".
+# See docs/change_evidence_policy.md → "Deterministic arbiters require human review".
 
 # Deterministic chemistry validators — the final arbiter (SOUL.md Guardrail 1)
 /mechanistic_agent/core/validators.py        @scottmreed
@@ -17,6 +17,9 @@
 
 # Evidence gate, eval definition, and holdout isolation (what "better" means)
 /scripts/validate_prompt_trace_evidence.py   @scottmreed
+/mechanistic_agent/prompt_trace_validator.py @scottmreed
+/mechanistic_agent/prompt_assets.py          @scottmreed
+/.github/workflows/prompt-trace-gate.yml     @scottmreed
 /training_data/eval_tiers.json               @scottmreed
 /training_data/leaderboard_holdout/          @scottmreed
 

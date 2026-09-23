@@ -460,8 +460,8 @@ def _render_leaderboard_markdown(
         "",
         "## PR Acceptance Rule",
         "",
-        "A PR is only mergeable if it improves the relevant leaderboard gate for its contribution track.",
-        "Single-reaction submissions are explicitly excluded from merge gates; they are review inputs only.",
+        "A behavior-changing PR is only mergeable if it improves the relevant leaderboard gate for its change type "
+        "(see docs/change_evidence_policy.md). Bug fixes and infrastructure changes need fast tests only.",
         "",
     ]
     if items:
@@ -561,7 +561,7 @@ def _render_leaderboard_markdown(
                 "RDKit validation gates these runs exactly like any other, so the score is "
                 "directly comparable; but cost is `budget_observability: opaque` (no API "
                 "spend is recorded, and inner agent spend is not measured), so agent-bridge "
-                "rows are **not eligible for Track 3 cost-class SOTA claims**. The declared "
+                "rows are **not eligible for cost-class SOTA claims**. The declared "
                 "origin is recorded in each run's `config.origin`.",
             ]
         )

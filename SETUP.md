@@ -1,6 +1,6 @@
 # Setup
 
-You can contribute without cloning the repo. See [CONTRIBUTING.md](CONTRIBUTING.md) for the no-clone path and the tracks that do require a local checkout.
+You can report chemistry failures or bugs without cloning the repo; see [CONTRIBUTING.md](CONTRIBUTING.md). The steps below are for running the system or submitting code.
 
 ## Prerequisites
 

@@ -2305,7 +2305,7 @@ async function resumeRun(decision) {
 }
 
 // Step feedback, run feedback, and advisory votes removed from UI.
-// Use the API directly or the CONTRIBUTING workflow for feedback.
+// Use the API directly, or open a GitHub issue (see CONTRIBUTING.md) for feedback.
 
 async function evaluateRun() {
   if (!runId) return;

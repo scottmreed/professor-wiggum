@@ -185,3 +185,40 @@ def test_baseline_runner_normalizes_openrouter_reasoning_payload(monkeypatch: py
     kwargs = captured_kwargs[-1]
     assert kwargs.get("effort") == "xhigh"
     assert "thinking" not in kwargs
+
+
+def test_baseline_system_prompt_composes_from_skills(tmp_path) -> None:
+    from pathlib import Path
+
+    from mechanistic_agent.core.baseline_runner import _load_baseline_system_prompt
+
+    mech = Path(tmp_path) / "skills" / "mechanistic"
+    (mech / "base_system").mkdir(parents=True)
+    (mech / "baseline_mechanism").mkdir(parents=True)
+    (mech / "base_system" / "SKILL.md").write_text(
+        "---\nkind: shared_base\ncall_name: base_system\n---\n<!-- PROMPT_START -->\nSHARED RULES\n<!-- PROMPT_END -->\n",
+        encoding="utf-8",
+    )
+    (mech / "baseline_mechanism" / "SKILL.md").write_text(
+        "---\nkind: llm\ncall_name: baseline_mechanism\n---\n<!-- PROMPT_START -->\nBASELINE TASK\n<!-- PROMPT_END -->\n",
+        encoding="utf-8",
+    )
+
+    prompt = _load_baseline_system_prompt(Path(tmp_path))
+    assert prompt == "SHARED RULES\n\nBASELINE TASK"
+    assert "---" not in prompt  # frontmatter is not leaked into the prompt
+
+
+def test_baseline_system_prompt_falls_back_when_no_skills(tmp_path) -> None:
+    from pathlib import Path
+
+    from mechanistic_agent.core.baseline_runner import _load_baseline_system_prompt
+
+    assert _load_baseline_system_prompt(Path(tmp_path)) == "You are an expert organic chemist."
+
+
+def test_baseline_system_prompt_reads_repo_skills_by_default() -> None:
+    from mechanistic_agent.core.baseline_runner import _load_baseline_system_prompt
+
+    prompt = _load_baseline_system_prompt()
+    assert prompt != "You are an expert organic chemist."  # skills/mechanistic/baseline_mechanism/SKILL.md exists in the repo

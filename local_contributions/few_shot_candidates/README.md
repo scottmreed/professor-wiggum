@@ -32,4 +32,4 @@ where `output` is a serialized JSON string (verified to parse).
 3. `python -m pytest tests/fast/ -q`
 4. `PYTHONPATH=. pytest tests/llm/test_eval_tiers.py --tier medium -k medium` and show the
    before/after medium-tier leaderboard delta.
-5. Open a Track 1 PR (`templates/contributions/track1_few_shot_pr.md`) with the origin fields filled in.
+5. Open a PR (behavior-changing; see `docs/change_evidence_policy.md`) with the origin fields filled in.

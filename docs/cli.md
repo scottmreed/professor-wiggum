@@ -212,4 +212,4 @@ python main.py baseline --eval-set-id eval_set --model openai/gpt-5.4 --json
 - [Custom eval sets](custom_eval_sets.md) — defining and importing eval sets.
 - [Development leaderboard routes](development_leaderboard_routes.md) — policy-driven tier access for `main.py eval`.
 - [AGENTS.md](../AGENTS.md) — runtime architecture, endpoints, and leaderboard/holdout behavior.
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — contribution tracks and eval tier requirements.
+- [CONTRIBUTING.md](../CONTRIBUTING.md) — how to contribute; [change_evidence_policy.md](change_evidence_policy.md) — internal merge policy and eval tier requirements.

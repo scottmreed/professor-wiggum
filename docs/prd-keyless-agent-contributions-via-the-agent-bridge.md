@@ -1,5 +1,7 @@
 # PRD: Keyless Agent Contributions via the Agent Bridge
 
+> **Superseded (September 2026).** The Track 1–5 contribution model this PRD builds on was retired; see [CONTRIBUTING.md](../CONTRIBUTING.md) and [change_evidence_policy.md](change_evidence_policy.md). The origin-provenance design below was adopted and remains in force. Kept for history.
+
 ## TL;DR
 
 **Goal.** Let a keyless agent surface (this Hyperagent — repo access, no provider API key) advance the project's goal and contribute *mergeable* PRs, by acting as the model behind subagent calls.

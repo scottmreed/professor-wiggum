@@ -28,7 +28,7 @@ Curriculum checkpoints and trainee lanes advance **as time permits**. There is n
 - Run group: `cli_eval_opus48_medium`  (FlowER **medium** tier, 3-step mechanisms)
 - Subagent quality this tier: `mechanism_step_proposal` `1.00`, `step_atom_mapping` `0.95` (the historical weak point: GPT-5.5 `0.58`, Opus 4.6 `0.965`)
 
-† Produced **keyless** via the agent bridge (no provider API key); cost is `budget_observability: opaque`, so this row is **not** eligible for a Track 3 cost-class SOTA claim. **Caveat:** these runs replayed FlowER's verified mechanism steps through the responder (`responder_saw_ground_truth: true`, see `local_contributions/opus48_medium_evidence.md`), so the snapshot measures harness/validator acceptance of correct chemistry, not blind model skill. The first blind hard-tier runs (Fable 5.1 via the bridge, 2026-09-16) are recorded under run group `cli_eval_fable51_hard_blind`. Medium tier = 3-step FlowER mechanisms (carbonate formation, carbamate aminolysis, sulfonylation); every elementary step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress). Easy-tier (1-step SN2/Menshutkin) WINs remain in the history.
+† Produced **keyless** via the agent bridge (no provider API key); cost is `budget_observability: opaque`, so this row is **not** eligible for a cost-class SOTA claim. **Caveat:** these runs replayed FlowER's verified mechanism steps through the responder (`responder_saw_ground_truth: true`, see `local_contributions/opus48_medium_evidence.md`), so the snapshot measures harness/validator acceptance of correct chemistry, not blind model skill. The first blind hard-tier runs (Fable 5.1 via the bridge, 2026-09-16) are recorded under run group `cli_eval_fable51_hard_blind`. Medium tier = 3-step FlowER mechanisms (carbonate formation, carbamate aminolysis, sulfonylation); every elementary step passed the deterministic RDKit validators (bond/electron balance, atom balance, state progress). Easy-tier (1-step SN2/Menshutkin) WINs remain in the history.
 
 ## Checkpoints
 
@@ -65,13 +65,11 @@ Regenerate the diagram with `python scripts/capture_harness_mermaid.py` (writes 
 - Refresh this README and `curriculum/generated/`: `python main.py curriculum render-readme --model-name agent-bridge`
 - Optional: `python main.py curriculum install-launchd` writes a sample plist if you automate `publish-due` locally
 
-### Contribution Methods
+### Contributing
 
-- Submit an individual reaction locally through the UI or API and use it as evidence for later tracked changes.
-- Add or revise few-shot examples for a trainee lane under `skills/mechanistic/<call_name>/models/<model-slug>/few_shot.jsonl`.
-- Update prompt instructions in `SKILL.md` for a shared skill or trainee-specific override.
-- Propose harness changes under `harness_versions/` and tie them to eval results.
-- Add another trainee lane by introducing exact-model overrides and documenting its evidence path.
+- Found a reaction the agent gets wrong? Open a **Chemistry failure** issue with reactants, products, and what went wrong.
+- Software bug or idea? Open an issue. Code PRs are welcome; you only need the fast tests, not model evals.
+- Prompt, few-shot, model, validator, and harness changes are evidence-gated internally: see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/change_evidence_policy.md](docs/change_evidence_policy.md).
 
 ### Docs
 
