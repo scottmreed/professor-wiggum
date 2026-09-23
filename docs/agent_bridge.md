@@ -206,7 +206,8 @@ Runs made through the bridge are attributed to the `agent-bridge` model
 (`model_family: "agent"`, pricing 0) in traces and the leaderboard, so they are
 never misattributed to a hosted model. Cost is explicitly
 `budget_observability: opaque` (no API spend is recorded, and inner agent spend
-is not measured), so agent-bridge rows are **not eligible for Track 3 cost-class
-SOTA claims** — they contribute through Tracks 1/2/4, where the artifact is
-chemistry/structure, not a model-cost claim. The public leaderboard marks these
+is not measured), so agent-bridge rows are **not eligible for cost-class SOTA
+claims** — they contribute prompt, subagent, and harness improvements, where the
+artifact is chemistry/structure, not a model-cost claim (see
+[change_evidence_policy.md](change_evidence_policy.md)). The public leaderboard marks these
 rows with a `†` footnote.

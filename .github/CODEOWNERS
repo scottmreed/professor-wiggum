@@ -9,7 +9,7 @@
 # Enforcement note: for this to block merges, enable "Require review from Code
 # Owners" in the branch protection rules for the default branch.
 #
-# See CONTRIBUTING.md → "Keyless and agent-authored contributions".
+# See docs/change_evidence_policy.md → "Deterministic arbiters require human review".
 
 # Deterministic chemistry validators — the final arbiter (SOUL.md Guardrail 1)
 /mechanistic_agent/core/validators.py        @scottmreed

@@ -122,7 +122,7 @@ Post-step validators (`bond_electron_validation`, `atom_balance_validation`, `st
 
 LLM-backed subagents use **forced tool calling** to get structured responses. Key conventions:
 
-- **Tool schemas** live in `mechanistic_agent/tool_schemas.py` — one OpenAI-format schema per LLM-backed subagent. Current schemas: `ASSESS_CONDITIONS_TOOL`, `MISSING_REAGENTS_TOOL`, `ATOM_MAPPING_TOOL`, `INTERMEDIATES_TOOL`, `MECHANISM_STEP_PROPOSAL_TOOL`, `REACTION_TYPE_SELECTION_TOOL`, `PREDICT_FULL_MECHANISM_TOOL`.
+- **Tool schemas** live in `mechanistic_agent/tool_schemas.py` — one OpenAI-format schema per LLM-backed subagent. Current schemas: `ASSESS_CONDITIONS_TOOL`, `MISSING_REAGENTS_TOOL`, `ATOM_MAPPING_TOOL`, `INTERMEDIATES_TOOL`, `MECHANISM_STEP_PROPOSAL_TOOL`, `REACTION_TYPE_SELECTION_TOOL`, `PREDICT_FULL_MECHANISM_TOOL`, and `HARNESS_MUTATION_TOOL` (used by the opt-in LLM harness-mutation proposer in `scripts/evolve_harness.py`, not by a runtime subagent).
 - **Routing**: Use `adapter_supports_forced_tools(model_name)` from `llm.py` to check if the adapter supports forced tools at runtime. Only OLMo falls back to text-based JSON parsing.
 - **`text` field**: Every tool schema includes a `text` property (not required) so verbose models can provide reasoning without disrupting structured output. Extract and log it separately from the structured fields.
 - **Gemini**: Uses `_GeminiChatAdapter` which converts OpenAI-format schemas via `_openai_tools_to_gemini()` and calls `generate_content()` with `ToolConfig(function_calling_config=FunctionCallingConfig(mode=FunctionCallingConfigMode.ANY, ...))` from the `google-genai` SDK.
@@ -196,17 +196,9 @@ The UI consists of static HTML/JS/CSS files served from `mechanistic_agent/ui/`.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution workflow. There are five contribution tracks, each with its own template, test requirements, and acceptance gate:
+See [CONTRIBUTING.md](CONTRIBUTING.md). Three doors: report a chemistry failure (issue), report a software bug or idea (issue), or submit code (PR with fast tests only).
 
-| Track | What you're contributing | Key gate | Eval tier required |
-|-------|--------------------------|----------|--------------------|
-| **Few-Shot Examples** | New lines in `skills/mechanistic/<call_name>/few_shot.jsonl` | Approved evidence trace + medium-tier improvement | **medium** |
-| **New Subagents** | New deterministic subagent, validator, or LLM-backed subagent | Fast tests + medium-tier improvement | **medium** + **hard** preferred |
-| **New Models** | New entry in `model_pricing.json` or new adapter in `llm.py` | Catalog tests + easy-tier cost-class improvement | **easy** |
-| **Harness Changes** | New or modified `harness_versions/<name>/harness.json` | Harness config tests + medium-tier improvement | **medium** |
-| **Single Reaction Submission** | One success or failure case for local review | Not mergeable; reviewed for future changes | none |
-
-Tracks 1-4 require `make test` before merge. PR approval is based on eval tier improvement, not the result of a single reaction. Track 5 submissions stay local and are evaluated as evidence for later tracked changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for full details.
+Behavior-changing changes (prompts, few-shots, models, validators, harness) are evidence-gated internally before merge: each change type has a required eval tier and, for prompt changes, approved linked evidence traces. The policy is in [docs/change_evidence_policy.md](docs/change_evidence_policy.md); ready-made agent prompts for common maintainer scenarios are in [docs/agent_playbooks.md](docs/agent_playbooks.md). PR approval is based on eval tier improvement, not the result of a single reaction.
 
 ## Project Soul and Evolution Philosophy
 
@@ -583,7 +575,7 @@ pip install rdkit-pypi
 - **`model_registry.py`**: Model selection and pricing information
 
 ### Versioned Assets (Repository Root)
-- **`prompt_versions/`**: Versioned prompt assets editable via PRs
+- **`skills/mechanistic/`**: Versioned prompt and few-shot assets (formerly `prompt_versions/`), changed via evidence-gated PRs
 - **`skills/`**: Versioned skill definitions for capabilities
 - **`traces/runs/<run_id>/scratchpad.md`**: Run-scoped scratchpad for mechanism history (ephemeral, created per run)
 - **`data/`**: Hybrid storage with SQLite + baseline evaluation artifacts

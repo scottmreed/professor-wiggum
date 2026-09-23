@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- **Retired the five-track public contribution model.** `CONTRIBUTING.md` now offers three doors (report a chemistry failure, report a bug or idea, submit code with fast tests only). The per-track PR templates under `templates/contributions/` were deleted (still in git history); the internal evidence and eval-tier merge policy moved to `docs/change_evidence_policy.md`, keyed by change type, and the agent quick-start prompts to `docs/agent_playbooks.md`. Added a `Chemistry failure` issue template and simplified the PR template. Evidence gating is unchanged as a repository invariant; it is no longer a contributor obligation.
+
 ### Added
 - **Claude Opus 4.8 model catalog entry** (`anthropic/claude-opus-4.8`, OpenRouter, tool-calling + reasoning), mirroring the 4.6 entry. It is the current active trainee.
 - **First `attempt_atom_mapping` few-shot lane** for `anthropic/claude-opus-4.8` (`skills/mechanistic/attempt_atom_mapping/models/anthropic__claude-opus-4.8/few_shot.jsonl`), seeded from approved, RDKit-validated atom-mapping traces produced **keyless** through the agent bridge. Targets the universally weakest subagent (`step_atom_mapping`).
