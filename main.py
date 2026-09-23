@@ -3917,6 +3917,18 @@ def eval_cmd(
                 tier_definitions_path=tier_definitions_path,
                 allow_holdout=allow_holdout,
             )
+            if not status.get("requested_tier_has_cases"):
+                requested_context = status["tier_contexts"].get(requested_tier) or {}
+                source_name = str(requested_context.get("source_name") or "unknown")
+                source_path = str(requested_context.get("source_path") or "unknown")
+                raise typer.BadParameter(
+                    f"Tier '{requested_tier}' resolves to 0 cases via its active source "
+                    f"'{source_name}' ({source_path}). Populate that tier's case list "
+                    f"(training_data/eval_tiers.json or training_data/baseline_tiers_clawdiator.json, "
+                    f"whichever training_data/development_leaderboard_policy.json selects for "
+                    f"'{requested_tier}') before running `eval --tier {requested_tier}` "
+                    "or `--leaderboard-status-only`."
+                )
             if not json_output:
                 _print_development_leaderboard_status(
                     status=status,
