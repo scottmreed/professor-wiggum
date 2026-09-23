@@ -270,10 +270,12 @@ def _trainee_display_name(model_name: str) -> str:
     return short
 
 
-def _resolve_leaderboard_row(store: RunStore, config: Dict[str, Any], *, model_name: str) -> Optional[Dict[str, Any]]:
-    eval_set_id = _resolve_eval_set_id(store, config)
-    if not eval_set_id:
-        return None
+def _resolve_leaderboard_row_on_eval_set(
+    store: RunStore,
+    eval_set_id: str,
+    *,
+    model_name: str,
+) -> Optional[Dict[str, Any]]:
     want = _leaderboard_row_model_keys(model_name)
     for row in store.leaderboard(eval_set_id, limit=50):
         if row.get("is_baseline"):
@@ -282,6 +284,13 @@ def _resolve_leaderboard_row(store: RunStore, config: Dict[str, Any], *, model_n
         if m in want:
             return row
     return None
+
+
+def _resolve_leaderboard_row(store: RunStore, config: Dict[str, Any], *, model_name: str) -> Optional[Dict[str, Any]]:
+    eval_set_id = _resolve_eval_set_id(store, config)
+    if not eval_set_id:
+        return None
+    return _resolve_leaderboard_row_on_eval_set(store, eval_set_id, model_name=model_name)
 
 
 def _entries_for_module(entries: Sequence[Dict[str, Any]], module: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -496,6 +505,98 @@ def build_readme_context(base_dir: Path, store: RunStore, *, model_name: str = O
     }
     _write_json(base_dir / README_CONTEXT_PATH, context)
     _write_json(base_dir / GENERATED_DIR / leaderboard_filename, {"item": context["latest_leaderboard_row"]})
+    return context
+
+
+def _model_name_candidates_from_leaderboard_stem(stem: str) -> List[str]:
+    """Reverse leaderboard filename stems into plausible model_name values."""
+    raw = str(stem or "").strip()
+    if not raw:
+        return []
+    candidates = [raw]
+    if "_" in raw:
+        candidates.append(raw.replace("_", "/", 1))
+    for prefix in ("openai", "anthropic", "google"):
+        if not raw.startswith(f"{prefix}_") and not raw.startswith(f"{prefix}/"):
+            candidates.append(f"{prefix}/{raw}")
+            if "_" in raw:
+                candidates.append(f"{prefix}/{raw.split('_', 1)[1]}")
+    deduped: List[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            deduped.append(candidate)
+    return deduped
+
+
+def _write_leaderboard_json_for_model(
+    base_dir: Path,
+    store: RunStore,
+    config: Dict[str, Any],
+    *,
+    model_name: str,
+    eval_set_id: str | None = None,
+) -> Optional[Dict[str, Any]]:
+    if eval_set_id:
+        row = _resolve_leaderboard_row_on_eval_set(store, eval_set_id, model_name=model_name)
+    else:
+        row = _resolve_leaderboard_row(store, config, model_name=model_name)
+    if row is None:
+        return None
+    canonical_model = str(row.get("model_name") or row.get("model") or model_name)
+    filename = _leaderboard_filename_for_model(canonical_model)
+    _write_json(base_dir / GENERATED_DIR / filename, {"item": row})
+    return row
+
+
+def refresh_curriculum_generated_artifacts(
+    base_dir: Path,
+    store: RunStore,
+    *,
+    model_name: str = OPUS_MODEL,
+    eval_set_id: str | None = None,
+    now: datetime | None = None,
+) -> Dict[str, Any]:
+    """Refresh curriculum/generated JSON artifacts without overwriting README.md."""
+    config = load_course_config(base_dir)
+    context = build_readme_context(base_dir, store, model_name=model_name, now=now)
+
+    if eval_set_id:
+        primary_row = _resolve_leaderboard_row_on_eval_set(store, eval_set_id, model_name=model_name)
+        if primary_row is not None:
+            context["latest_leaderboard_row"] = primary_row
+            canonical_model = str(
+                primary_row.get("model_name") or primary_row.get("model") or model_name
+            )
+            leaderboard_filename = _leaderboard_filename_for_model(canonical_model)
+            context["curriculum_links"]["leaderboard"] = f"curriculum/generated/{leaderboard_filename}"
+            _write_json(base_dir / README_CONTEXT_PATH, context)
+            _write_json(base_dir / GENERATED_DIR / leaderboard_filename, {"item": primary_row})
+
+    model_names: set[str] = {str(model_name)}
+    gen_dir = base_dir / GENERATED_DIR
+    if gen_dir.is_dir():
+        for path in sorted(gen_dir.glob("leaderboard_*.json")):
+            stem = path.stem.removeprefix("leaderboard_")
+            for candidate in _model_name_candidates_from_leaderboard_stem(stem):
+                model_names.add(candidate)
+
+    models_dir = base_dir / "skills" / "mechanistic" / "propose_mechanism_step" / "models"
+    if models_dir.is_dir():
+        for trainee_dir in sorted(models_dir.iterdir()):
+            if trainee_dir.is_dir():
+                model_names.add(trainee_dir.name.replace("__", "/"))
+
+    for lane_model in sorted(model_names):
+        _write_leaderboard_json_for_model(
+            base_dir,
+            store,
+            config,
+            model_name=lane_model,
+            eval_set_id=eval_set_id,
+        )
+
     return context
 
 

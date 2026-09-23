@@ -1,96 +1,155 @@
 {
   "item": {
-    "aggregate_gate_cases": null,
-    "aggregate_weighting": null,
-    "avg_latency_ms": 0.0,
-    "case_count": 4,
-    "created_at": 1773617575.4655218,
-    "deterministic_pass_rate": 1.0,
-    "eligible_bucket_count": 0,
-    "eligible_weight_sum": 0.0,
-    "eval_run_id": "66124bfc99df433593a152e1ddf4e344",
-    "eval_set_id": "b8855f9de2c741e6bf2d74117eeada70",
-    "harness_bundle_hash": "61a3a1edee30264021017550fda9c1bf5df94ea9d233e1fe016f7ba14d3e04cc",
+    "aggregate_gate_cases": 6,
+    "aggregate_weighting": "linear_step_count",
+    "avg_latency_ms": 6158.7,
+    "case_count": 20,
+    "created_at": 1773702136.443531,
+    "deterministic_pass_rate": 0.0,
+    "eligible_bucket_count": 2,
+    "eligible_weight_sum": 19.0,
+    "eval_run_id": "1bfe30f67f5640dcb1eb1c44b44fe78a",
+    "eval_set_id": "4e11fec749974f049f54739c9f4c50e8",
+    "harness_bundle_hash": "3d75d80fb15ae716ef2bce196cbfea5006c57325d86d27707a2f91b50e928507",
     "is_baseline": false,
     "is_simulated": false,
-    "mean_quality_score": 0.99755,
+    "llm_calls": 160,
+    "llm_tokens": 0,
+    "mean_quality_score": 0.2,
     "model": "anthropic/claude-opus-4.6",
     "model_family": "claude",
     "model_name": "anthropic/claude-opus-4.6",
-    "per_step_scores": {},
-    "per_subagent_scores": {
-      "atom_balance_validation": {
-        "case_count": 4,
-        "pass_rate": 1.0,
-        "quality_score": 1.0
+    "per_step_scores": {
+      "1": {
+        "completed_cases": 1,
+        "eligible_for_aggregate": false,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 1,
+        "target_cases": 12
       },
+      "10": {
+        "completed_cases": 1,
+        "eligible_for_aggregate": true,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 10,
+        "target_cases": 1
+      },
+      "2": {
+        "completed_cases": 4,
+        "eligible_for_aggregate": false,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 2,
+        "target_cases": 12
+      },
+      "3": {
+        "completed_cases": 1,
+        "eligible_for_aggregate": false,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 3,
+        "target_cases": 12
+      },
+      "4": {
+        "completed_cases": 5,
+        "eligible_for_aggregate": false,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 4,
+        "target_cases": 12
+      },
+      "5": {
+        "completed_cases": 4,
+        "eligible_for_aggregate": false,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 5,
+        "target_cases": 12
+      },
+      "6": {
+        "completed_cases": 1,
+        "eligible_for_aggregate": false,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 6,
+        "target_cases": 12
+      },
+      "7": {
+        "completed_cases": 1,
+        "eligible_for_aggregate": false,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 7,
+        "target_cases": 12
+      },
+      "8": {
+        "completed_cases": 1,
+        "eligible_for_aggregate": false,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 8,
+        "target_cases": 12
+      },
+      "9": {
+        "completed_cases": 1,
+        "eligible_for_aggregate": true,
+        "mean_quality_score": 0.2,
+        "pass_rate": 0.0,
+        "step_count": 9,
+        "target_cases": 1
+      }
+    },
+    "per_subagent_scores": {
       "atom_mapping": {
-        "case_count": 4,
+        "case_count": 20,
         "pass_rate": 1.0,
         "quality_score": 1.0
       },
       "balance_analysis": {
-        "case_count": 4,
-        "pass_rate": 1.0,
-        "quality_score": 1.0
-      },
-      "bond_electron_validation": {
-        "case_count": 4,
+        "case_count": 20,
         "pass_rate": 1.0,
         "quality_score": 1.0
       },
       "functional_groups": {
-        "case_count": 4,
+        "case_count": 20,
         "pass_rate": 1.0,
         "quality_score": 1.0
       },
       "initial_conditions": {
-        "case_count": 4,
+        "case_count": 20,
         "pass_rate": 1.0,
         "quality_score": 1.0
       },
       "mechanism_step_proposal": {
-        "case_count": 4,
+        "case_count": 20,
         "pass_rate": 1.0,
-        "quality_score": 1.0
+        "quality_score": 0.4
       },
       "missing_reagents": {
-        "case_count": 4,
+        "case_count": 20,
         "pass_rate": 1.0,
         "quality_score": 1.0
       },
       "ph_recommendation": {
-        "case_count": 4,
+        "case_count": 20,
         "pass_rate": 1.0,
         "quality_score": 1.0
       },
       "reaction_type_mapping": {
-        "case_count": 4,
+        "case_count": 20,
         "pass_rate": 1.0,
         "quality_score": 1.0
-      },
-      "reflection": {
-        "case_count": 4,
-        "pass_rate": 1.0,
-        "quality_score": 1.0
-      },
-      "state_progress_validation": {
-        "case_count": 4,
-        "pass_rate": 1.0,
-        "quality_score": 1.0
-      },
-      "step_atom_mapping": {
-        "case_count": 4,
-        "pass_rate": 1.0,
-        "quality_score": 0.965
       }
     },
-    "run_group_name": "curriculum_default_s1_r47_n4",
+    "run_group_name": "official_holdout_harness",
+    "scoring_version": "v2",
     "status": "completed",
     "thinking_level": "high",
-    "total_cost": 1.08125,
-    "total_weight_sum": 0.0,
-    "weighted_pass_rate": 1.0,
-    "weighted_quality_score": 0.99755
+    "total_cost": 0.0,
+    "total_weight_sum": 55.0,
+    "weighted_pass_rate": 0.0,
+    "weighted_quality_score": 0.2
   }
 }
