@@ -36,6 +36,18 @@ Set `MECHANISTIC_DATA_DIR` to point anywhere you prefer. Details:
 - Traces/curation: `GET /api/traces`, `POST /api/traces/{trace_id}/approve`, `POST /api/curation/export`, `GET /api/curation/exports`
 - Evals: `POST /api/evals/runset`, `GET /api/evals/leaderboard` (returns overall + per-subagent quality/pass scores)
 
+## Run Provenance Events (Observatory M0)
+
+Every step's engine and model are recorded by the actual engine, not the run's configured fallback model (`mechanistic_agent/core/provenance.py`, PRD `docs/PRD_live_mechanism_observatory_chemillusion.md` §12–§13).
+
+- `step_started` carries `planned_engine` (`llm` / `jev` / `deterministic` / `human`), `planned_model`, `planned_reasoning`.
+- `inference_call_completed` / `inference_call_failed` are emitted per real model or decision request before the step's `step_output`. Jev calls come from `output.decision_trace` (`DecisionRecord`); a swallowed provider error (`output.status` in `failed|fallback` with `output.error`) is a failed call.
+- `step_output.provenance` summarizes `engine`, `resolved_model` (from `output.model_used` first, so provider fallbacks are visible), `resolved_reasoning`, `primary_call_id`, `call_ids`, `model_fallback`, `fallback_chain`.
+- Deterministic and human steps store `model = NULL` in `step_outputs`; `LLM_STEP_KEYS` in `config.py` is a model-selection key set and must not be used to infer provenance.
+- Candidates get a `candidate_id` (`c<step>-r<rank>-<hex>`) at proposal time; `mechanism_candidates_proposed` lists them, and `mechanism_candidate_*`, `mechanism_retry_*`, `candidate_rescue_*`, `branch_point_created`, `backtrack`, `failed_path_recorded` carry it.
+- `mechanism_step_accepted` carries `acceptance_kind` (`validated` / `soft_advance` / `backtrack_alternative`). Accepted is not the same as validated: `proceed_on_validation_failure` produces `soft_advance` acceptances with `validation_summary.passed == false`.
+- `GET /api/runs/{id}` exposes `provenance` (`steps` per step name, `inventory.models_by_engine`), derived only from persisted events so a reload reproduces the live answer. All Observatory payloads carry `event_schema_version = mechanism_observatory_event.v1`.
+
 ## Leaderboard Holdout Isolation
 
 - The train-derived eval/sample artifacts remain the user-facing development surface:
