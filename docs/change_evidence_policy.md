@@ -100,6 +100,15 @@ Agent-authored work meets the same gates as everyone else; there is no separate 
 
    After official holdout runs, `python main.py update-leaderboard-artifacts` refreshes the Arena table and curriculum artifacts. Never edit leaderboard rows by hand.
 
+### Scoring versions
+
+Every eval result and leaderboard row records `scoring_version`. `v2` is the default. Its step-mapping component (20% of per-step validity and the whole `step_atom_mapping` subagent score) is measured: agreement with the benchmark atom mapping where the case has one, otherwise the stored `rdkit-agent atom-map check` pass/fail, otherwise a neutral 0.5. Each step records the source in `mapping_component_source`. `v1` used the mapper's self-reported confidence. It stays selectable (`scoring_version="v1"`) so historical numbers can be reproduced. Compare rows only within one scoring version; a row that shows `mixed` needs rescoring. To recompute stored results from their traces:
+
+```bash
+python main.py rescore-eval-results                 # dry run on a temporary copy; prints the per-row delta
+python main.py rescore-eval-results --apply         # back up the DB, then rescore it in place
+```
+
 Other useful commands:
 
 - Policy-driven single-tier runs: [development_leaderboard_routes.md](development_leaderboard_routes.md); status with `python main.py eval --eval-set-id ignored --tier easy --model <model> --thinking-level high --leaderboard-status-only`.

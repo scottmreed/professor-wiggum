@@ -2586,6 +2586,34 @@ class RunStore:
             conn.commit()
         return row_id
 
+    def update_eval_run_result(
+        self,
+        result_id: str,
+        *,
+        score: Optional[float],
+        passed: Optional[bool],
+        summary: Dict[str, Any],
+    ) -> None:
+        """Rewrite the score, pass flag and summary of one stored eval result (rescoring)."""
+        pass_value = None if passed is None else int(bool(passed))
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE eval_run_results SET score = ?, pass_bool = ?, summary_json = ? WHERE id = ?",
+                (score, pass_value, self._json_dumps(summary), result_id),
+            )
+            conn.commit()
+
+    @staticmethod
+    def _results_scoring_version(results: List[Dict[str, Any]]) -> str:
+        """Scoring version shared by a run's results: v1 for legacy rows, ``mixed`` if they differ."""
+        versions = set()
+        for item in results:
+            summary = item.get("summary") if isinstance(item.get("summary"), dict) else {}
+            versions.add(str(summary.get("scoring_version") or "v1"))
+        if not versions:
+            return "v1"
+        return versions.pop() if len(versions) == 1 else "mixed"
+
     def list_eval_run_results(self, eval_run_id: str) -> List[Dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -3060,6 +3088,7 @@ class RunStore:
                     "avg_latency_ms": avg_latency_ms,
                     "case_count": len(results),
                     "per_subagent_scores": per_subagent_agg,
+                    "scoring_version": self._results_scoring_version(results),
                     "is_baseline": is_baseline,
                     "is_simulated": is_simulated,
                     "weighted_quality_score": sum(scores) / len(scores),
