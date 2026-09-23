@@ -119,9 +119,20 @@ class BranchCandidate:
     resulting_state: List[str] = field(default_factory=list)
     validation_summary: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def candidate_id(self) -> Optional[str]:
+        """Stable id assigned at proposal time (Observatory PRD §13.4).
+
+        Lives in ``intermediate_output`` (the proposal dict) so it survives
+        ``to_persisted_dict`` round trips without a schema change.
+        """
+        value = (self.intermediate_output or {}).get("candidate_id")
+        return str(value) if isinstance(value, str) and value.strip() else None
+
     def as_dict(self) -> Dict[str, Any]:
         return {
             "rank": self.rank,
+            "candidate_id": self.candidate_id,
             "intermediate_smiles": self.intermediate_smiles,
             "resulting_state": self.resulting_state,
         }

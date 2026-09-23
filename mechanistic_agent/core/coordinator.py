@@ -50,6 +50,12 @@ from .subagents import (
     ReflectionAgent,
 )
 from .tool_executor import ToolExecutor
+from .provenance import (
+    assign_candidate_ids,
+    new_candidate_set_id,
+    planned_provenance,
+    resolve_step_provenance,
+)
 from .types import (
     BranchCandidate,
     BranchPoint,
@@ -652,8 +658,10 @@ class RunCoordinator:
                     bp.template_guidance_snapshot if bp.template_guidance_snapshot is not None else {}
                 ),
                 "chosen_rank": chosen.rank,
+                "chosen_candidate_id": chosen.candidate_id,
                 "alternative_count": len(alternatives),
                 "alternative_ranks": [a.rank for a in alternatives],
+                "alternative_candidate_ids": [a.candidate_id for a in alternatives],
             },
         )
         self._persist_resume_state(state, "branch_point")
@@ -884,8 +892,17 @@ class RunCoordinator:
 
     def _record_step(self, state: RunState, result: StepResult) -> None:
         validation_payload = result.validation.as_dict() if result.validation else None
-        resolved_model = result.model or self._step_model(state, result.step_name)
-        resolved_reasoning = result.reasoning_level or self._step_reasoning(state, result.step_name)
+        # Provenance is normalized by the actual engine (Observatory PRD §12.3):
+        # deterministic/human steps never inherit the run's fallback model, and
+        # ``output.model_used`` (provider fallback inside tools.py) wins over
+        # the configured model.
+        provenance = resolve_step_provenance(
+            result,
+            configured_model=self._step_model(state, result.step_name),
+            configured_reasoning=self._step_reasoning(state, result.step_name),
+        )
+        resolved_model = provenance.resolved_model
+        resolved_reasoning = provenance.resolved_reasoning
         self.store.record_step_output(
             run_id=state.run_id,
             step_name=result.step_name,
@@ -901,6 +918,15 @@ class RunCoordinator:
             usage=result.token_usage,
             cost=result.cost,
         )
+        # Call-level events first so the step_output summary can point at them
+        # (PRD §13, derived "M0a" path).
+        for call in provenance.calls:
+            self.store.append_event(
+                state.run_id,
+                "inference_call_completed" if call.status == "completed" else "inference_call_failed",
+                call.to_dict(),
+                step_name=result.step_name,
+            )
         self.store.append_event(
             state.run_id,
             "step_output",
@@ -912,6 +938,7 @@ class RunCoordinator:
                 "source": result.source,
                 "output": result.output,
                 "validation": validation_payload,
+                "provenance": provenance.as_dict(),
             },
             step_name=result.step_name,
         )
@@ -1021,6 +1048,16 @@ class RunCoordinator:
     ) -> None:
         start_time = time.time()
         state.step_start_times[f"{step_name}_{attempt}_{retry_index}"] = start_time
+        policy = getattr(state, "decision_policy", None)
+        jev_cfg = getattr(state, "jev_config", None)
+        planned = planned_provenance(
+            step_name,
+            step_models=state.run_config.step_models,
+            default_model=state.run_config.model,
+            step_reasoning=state.run_config.step_reasoning,
+            reaction_type_policy=str(getattr(policy, "reaction_type", "llm") or "llm"),
+            jev_model=getattr(jev_cfg, "model", None),
+        )
         self.store.append_event(
             state.run_id,
             "step_started",
@@ -1030,6 +1067,7 @@ class RunCoordinator:
                 "attempt": attempt,
                 "retry_index": retry_index,
                 "start_time": start_time,
+                **planned,
             },
             step_name=step_name,
         )
@@ -3046,6 +3084,7 @@ class RunCoordinator:
                 {
                     "attempt": state.step_index + 1,
                     "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                     "candidate_smiles": smiles,
                     "reason": incomplete_reason,
                 },
@@ -3070,6 +3109,7 @@ class RunCoordinator:
                 {
                     "attempt": state.step_index + 1,
                     "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                     "candidate_smiles": smiles,
                     "details": dict(constraint_violation),
                 },
@@ -3149,6 +3189,7 @@ class RunCoordinator:
                         "attempt": state.step_index + 1,
                         "retry_index": retry_index,
                         "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                         "candidate_smiles": smiles,
                         "error": str(exc),
                     },
@@ -3183,6 +3224,7 @@ class RunCoordinator:
                         "attempt": state.step_index + 1,
                         "retry_index": retry_index,
                         "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                         "candidate_smiles": smiles,
                         "error": str(exc),
                     },
@@ -3221,6 +3263,7 @@ class RunCoordinator:
                     {
                         "attempt": state.step_index + 1,
                         "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                         "candidate_smiles": smiles,
                         "errors": invalid_species_errors,
                     },
@@ -3267,6 +3310,7 @@ class RunCoordinator:
                     {
                         "attempt": state.step_index + 1,
                         "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                         "failed_checks": list(last_failed_checks),
                     },
                     step_name="candidate_rescue",
@@ -3284,6 +3328,7 @@ class RunCoordinator:
                     {
                         "attempt": state.step_index + 1,
                         "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                     },
                     step_name="candidate_rescue",
                 )
@@ -3362,6 +3407,7 @@ class RunCoordinator:
                             {
                                 "attempt": state.step_index + 1,
                                 "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                                 "status": "validated",
                             },
                             step_name="candidate_rescue",
@@ -3395,6 +3441,7 @@ class RunCoordinator:
                     "attempt": state.step_index + 1,
                     "retry_index": retry_index,
                     "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                     "candidate_smiles": smiles,
                     "failed_checks": last_failed_checks,
                     "validator_hints": dict(retry_feedback.get("validator_hints", {})),
@@ -3462,6 +3509,7 @@ class RunCoordinator:
                         "attempt": state.step_index + 1,
                         "retry_index": retry_index + 1,
                         "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                         "retry_guidance": retry_feedback.get("guidance", ""),
                         "validator_hints": dict(retry_feedback.get("validator_hints", {})),
                     },
@@ -3622,12 +3670,24 @@ class RunCoordinator:
                     guidance.disable_reason = "early_consecutive_template_mismatch"
             self._emit_template_guidance_state(state)
 
+        soft_advance = bool(
+            (candidate.validation_summary or {}).get("soft_advance")
+            or (candidate.mechanism_output or {}).get("soft_advance")
+        )
+        if soft_advance:
+            acceptance_kind = "soft_advance"
+        elif resume_state_kind == "backtrack":
+            acceptance_kind = "backtrack_alternative"
+        else:
+            acceptance_kind = "validated"
         self.store.append_event(
             state.run_id,
             "mechanism_step_accepted",
             {
                 "step_index": state.step_index,
                 "candidate_rank": candidate.rank,
+                "candidate_id": candidate.candidate_id,
+                "acceptance_kind": acceptance_kind,
                 "current_state": previous_state,
                 "resulting_state": list(state.current_state),
                 "predicted_intermediate": candidate.intermediate_smiles,
@@ -3703,6 +3763,7 @@ class RunCoordinator:
                 {
                     "branch_step_index": bp.step_index,
                     "candidate_rank": chosen_rank,
+                    "candidate_id": bp.chosen_candidate.candidate_id if bp.chosen_candidate else None,
                     "steps_in_path": len(failed_steps),
                 },
             )
@@ -3745,6 +3806,7 @@ class RunCoordinator:
                 {
                     "reverted_to_step": bp.step_index,
                     "alternative_rank": next_alt.rank,
+                    "candidate_id": next_alt.candidate_id,
                     "intermediate": next_alt.intermediate_smiles,
                     "remaining_alternatives": len(bp.alternatives),
                 },
@@ -4501,6 +4563,7 @@ class RunCoordinator:
                     {
                         "reverted_to_step": state.step_index,
                         "alternative_rank": chosen.rank,
+                        "candidate_id": chosen.candidate_id,
                         "intermediate": chosen.intermediate_smiles,
                         "remaining_alternatives": 0,
                         "resumed_from_pause": True,
@@ -4555,6 +4618,33 @@ class RunCoordinator:
                     else 0
                 )
                 all_candidates_rejected = not candidates and rejected_candidate_count > 0
+                assign_candidate_ids(candidates, step_number=state.step_index + 1)
+                self.store.append_event(
+                    state.run_id,
+                    "mechanism_candidates_proposed",
+                    {
+                        "event_schema_version": "mechanism_observatory_event.v1",
+                        "step_index": state.step_index + 1,
+                        "proposal_round": int(reproposals_by_step.get(state.step_index + 1, 0)) + 1,
+                        "candidate_set_id": new_candidate_set_id(state.step_index + 1),
+                        "current_state": list(state.current_state),
+                        "coordination_topology": state.run_config.coordination_topology,
+                        "rejected_candidate_count": rejected_candidate_count,
+                        "candidates": [
+                            {
+                                "candidate_id": c.get("candidate_id"),
+                                "rank": c.get("rank"),
+                                "intermediate_smiles": c.get("intermediate_smiles"),
+                                "reaction_smirks": c.get("reaction_smirks"),
+                                "reaction_description": c.get("reaction_description"),
+                                "resulting_state": c.get("resulting_state"),
+                            }
+                            for c in candidates
+                            if isinstance(c, dict)
+                        ],
+                    },
+                    step_name="mechanism_step_proposal",
+                )
 
                 # --- Step B: Validate each candidate (up to 3 retries per candidate) ---
                 validated: List[BranchCandidate] = []
@@ -4604,6 +4694,7 @@ class RunCoordinator:
                             {
                                 "attempt": state.step_index + 1,
                                 "candidate_rank": candidate.get("rank"),
+                    "candidate_id": candidate.get("candidate_id"),
                                 "candidate_smiles": candidate.get("intermediate_smiles"),
                                 "error": str(exc),
                             },

@@ -7,7 +7,29 @@
 **Wiggum baseline inspected:** `main` through `bf56e43c598f4c33200430d4733c4a588e0f5c87`  
 **ChemIllusion baseline inspected:** `main` at `8f8e89e841eadac703197012fcee2fb37a4671ff`  
 **Related Wiggum work:** PRs #27, #28, #29, #31, #32, #33, #35, #36 and `docs/PRD_jev_atom_identity_mechanistic.md`  
-**Related ChemIllusion work:** Mechanism Explorer stack and commit `dc70d22ae141add4025a849028d7621fe78cddc2` (`typesafe/jev-latest` pricing/catalog stub)
+**Related ChemIllusion work:** Mechanism Explorer stack and commit `dc70d22ae141add4025a849028d7621fe78cddc2` (`typesafe/jev-latest` pricing/catalog stub)  
+**Re-audited against Wiggum `main`:** `c9248b8` (2026-09-23, includes PRs #37–#41) — corrections in §0 and §3.7
+
+---
+
+## 0. Revision log
+
+### 2026-09-23 (rev 2) — re-audit against `c9248b8`
+
+The first draft inspected `bf56e43`. Five PRs landed before implementation started, and a line-level re-read of the runtime changed several premises. Corrections applied in this revision:
+
+| Section | Change |
+|---|---|
+| §3.6 | **Jev is live on Wiggum `main` for one decision.** PR #40 wired `ReactionTypeAgent` to the OpenRouter Decisions API behind `decision_policy.reaction_type == "jev"`. Rewritten to describe what exists and what is still reserved. |
+| §3.7 (new) | Gaps found in the re-audit that the first draft missed: internal provider fallback not surfaced, soft-advance acceptances, human path bypasses the coordinator, `LLM_STEP_KEYS` lists deterministic steps. |
+| §10.1 | Names the existing bond-electron substrate (`bond_electron_deltas`, `reaction_bond_deltas`, `\|mech:v1\|` notation) so BE(t)/ΔBE/BE(t+1) is a projection, not a new engine. |
+| §12.2 | Provenance schema is now mapped field-by-field onto the existing `DecisionRecord` so Jev calls do not get a second, incompatible record. |
+| §13 | Splits call-level events into M0a (derived at `_record_step` from `StepResult` + `decision_trace`) and M0b (live hook in `llm.py`). |
+| §15.2 | Reaction-type Choice on `typesafe/jev-1.13-20260917` **is** calibrated (n=72, ECE 0.056, `docs/calibration/jev_reaction_type_2026-09-23.md`); `calibrated`/`calibration_version` must reflect that. |
+| §16.6 (new) | `mechanism_step_accepted` gains `acceptance_kind`; soft-advanced steps must not render as validated. |
+| §17.2 | PR #37 already persists branch points with full alternatives in `run_resume_state`; replay gap narrowed to per-candidate history. |
+| §27, §35, §36, §39 | M0 file list and tests updated to the actual code sites; `make test` does not exist (no Makefile), use `python -m pytest tests/fast -q`. |
+| §38 | Q1/Q2 partially answered by PR #40 and the calibration run. |
 
 ---
 
@@ -185,6 +207,27 @@ The current `eventKinds` array in `mechanistic_agent/ui/app.js` does not include
 
 This is a concrete bug/omission for the Observatory and must be fixed in M0.
 
+The gap is wider than one event. The coordinator emits roughly 70 event types; the UI subscribes to 38. Mechanism-loop events that a chemist would want to see and that the UI currently drops include:
+
+```text
+mechanism_step_accepted
+mechanism_candidate_incomplete
+mechanism_candidate_constraint_rejected
+mechanism_candidate_execution_exception
+mechanism_candidate_uncaught_exception
+mechanism_validation_exception
+invalid_species_in_candidate
+candidate_rescue_started / candidate_rescue_completed / candidate_rescue_skipped_*
+proposal_quality_summary
+mechanism_reproposal_requested / mechanism_reproposal_limit_reached
+mechanism_step_soft_advance
+topology_dispatch / independent_agent_result / peer_round_complete / consensus_merge_result
+step_mapping_generated
+remaining_mechanism_fallback_generated / remaining_mechanism_fallback_failed
+```
+
+M0 subscribes to the mechanism-loop subset; the RAlph/evolution kinds stay research-only.
+
 ## 3.5 Recent Wiggum changes materially improve the Observatory substrate
 
 The 2026-09-23 changes are directly relevant:
@@ -231,11 +274,20 @@ There are two separate “Jev has been added” facts in the current codebase.
 
 `docs/PRD_jev_atom_identity_mechanistic.md` defines the Jev-first decision-layer architecture and the Phase-0 instrumentation explicitly reserves an engine label for future `jev` calls.
 
-However, on the inspected `main`, code search does **not** show a live `source="jev"` call path yet. `mechanistic_agent/core/db.py` still documents `jev` as reserved while its current `engine_by_source` maps only `llm`.
+**Rev 2 correction.** PR #40 (`4d35737`, 2026-09-23) made one Jev decision live on `main`:
+
+- `mechanistic_agent/decisions/jev.py` — `JevDecisionClient` over the OpenRouter Decisions API (`PROVIDER = "openrouter"`), returning a `DecisionRecord` per question with `model`, `model_version`, `provider`, `decision_type`, `selected`, `probabilities`, `confidence`, `latency_ms`, `usage`, `cost`, `request_id`, `called`, `failure`.
+- `mechanistic_agent/core/reaction_type_jev.py` — `select_reaction_type_jev` behind `decision_policy.reaction_type == "jev"`; on Jev failure with `jev.fallback == "llm"` it calls the LLM selector and records the failed decision in `output.decision_trace`.
+- `mechanistic_agent/core/subagents.py::ReactionTypeAgent._run_jev` — returns `StepResult(source="jev", model=output.model_used)`; the fallback case returns `source="llm"` with both engines' usage billed to the step.
+- `mechanistic_agent/core/db.py::get_run_cost_summary` — `engine_by_source = {"llm", "jev"}`; `call_summary` exposes `jev_calls`, `jev_tokens`, `by_engine`, and counts nested `decision_trace` requests by `request_id`.
+- `harness_versions/jev_reaction_type/harness.json` — the opt-in harness variant; the default harness still uses `reaction_type: "llm"`.
+- `docs/calibration/jev_reaction_type_2026-09-23.md` — shadow calibration on 72 curated labels: top-1 accuracy 0.917, ECE 0.056, provider reported revision `typesafe/jev-1.13-20260917`.
+
+Still reserved (accepted and round-tripped by `DecisionPolicy`, ignored by the runtime): `conditions`, `global_mapping`, `step_mapping`, `missing_reagents_gate`, `candidate_ranker`. `DECISION_POLICY_WIRED_KEYS == ("reaction_type",)`.
 
 Therefore:
 
-> The Observatory contract must support Jev immediately, but the PRD must not represent current Wiggum main as already executing Jev decisions.
+> The Observatory contract must represent the reaction-type Jev decision as live today, including the Jev→LLM fallback inside one logical step, and must treat the other Jev roles as reserved. The provenance schema in §12 is mapped onto `DecisionRecord` rather than defined beside it.
 
 ### ChemIllusion
 
@@ -258,6 +310,47 @@ Therefore:
 > A pricing-catalog entry is not inference integration.
 
 The model-provenance schema defined below is designed so the Jev runtime can land without another UI/data-model redesign.
+
+---
+
+## 3.7 Additional gaps found in the 2026-09-23 re-audit
+
+These are confirmed at line level on `c9248b8` and are M0 requirements.
+
+### 3.7.1 Deterministic steps inherit the run model — exact mechanism
+
+All deterministic `StepResult`s (`balance_analysis`, `ph_recommendation`, `functional_groups`, `mechanism_synthesis`, `reflection`, and the three validator rows written by `_record_validation_checks`) are created with `model=None`. `_record_step()` then does:
+
+```python
+resolved_model = result.model or self._step_model(state, result.step_name)
+# _step_model: state.run_config.step_models.get(step_name, state.run_config.model)
+```
+
+so every deterministic row is stored with the run's LLM model. `mechanistic_agent/config.py::LLM_STEP_KEYS` makes this worse by listing `functional_groups` and `mechanism_synthesis`, so `select_step_models()` writes explicit entries for two deterministic steps. `GET /api/runs/{id}` progress rows then fall back to `cfg.step_models[step_name]` for pending steps. Fix at `_record_step` (normalize by `source`) and stop treating `LLM_STEP_KEYS` as "steps that have a model".
+
+### 3.7.2 Internal provider fallback is invisible to provenance
+
+`tools.py::propose_mechanism_step` and `select_reaction_type` retry on a `fallback_model` and set `output["model_used"] = fallback_model`, but `IntermediateAgent.run` (and the other LLM agents) build `StepResult(model=<configured>)` and call `_extract_step_cost(output, <configured>)`. Only `_run_jev` propagates `model_used`. The stored `model` and the cost attribution are therefore wrong on every fallback. M0 must resolve `resolved_model` from `output.model_used` first; cost re-attribution is a follow-up.
+
+**Observed live (2026-09-23, M0 branch).** A keyless `agent-bridge` run with no bridge directory configured produced `reaction_type_mapping` with `requested_model: agent-bridge`, `resolved_model: gpt-4o`, `model_fallback: true`: the selector fell back to a hard-coded OpenAI model and spent real tokens on a run the user believed was keyless. Before M0 the stored row said only `model: gpt-4o` with no trace of what was requested.
+
+**Swallowed errors are failed calls.** `tools.py` catches provider exceptions and returns `status: failed|fallback` plus an `error` string while the `StepResult` keeps `source="llm"`. Provenance SHALL emit `inference_call_failed` for that shape; a chat step that never got a model response must not be counted as a completed call. Seven of eight LLM steps in the run above were of this kind and would otherwise have inflated `llm_calls`.
+
+### 3.7.3 Accepted ≠ validated: soft advance
+
+`harness_versions/default/harness.json` sets `run_config_defaults.proceed_on_validation_failure: true`. When every candidate fails, the loop emits `mechanism_step_soft_advance`, writes a `mechanism_synthesis` row with a failing `soft_advance` check, and then calls `_apply_candidate`, which emits `mechanism_step_accepted` with `validation_summary.passed == false`. A pathway view that draws every accepted edge the same way would show a chemically unvalidated step as accepted. See §16.6.
+
+### 3.7.4 Candidate identity carrier already exists
+
+Candidates are plain dicts keyed by `rank`; `BranchCandidate.intermediate_output` holds that dict and PR #37 persists it via `to_persisted_dict()`. A `candidate_id` written into the candidate dict at extraction time therefore flows through validation, branch points, resume snapshots, and backtracking without a schema migration. Ranks repeat across `mechanism_reproposal_requested` rounds, so rank alone is not an identity.
+
+### 3.7.5 The human path bypasses the coordinator
+
+`POST /api/runs/{id}/mechanism_steps` writes `step_started` and `step_outputs` rows directly in `api/app.py` with `source="human"`, `model="human_input"`, and never emits `step_output`. Provenance normalization must be a shared helper (`core/provenance.py`) used by both `_record_step` and the verified-step route.
+
+### 3.7.6 No candidates-proposed event
+
+The only record of what was proposed is `output.candidates` inside the `mechanism_step_proposal` `step_output`. Rejected-at-proposal candidates appear as a count (`rejected_candidates`). §16.1 `mechanism_candidates_proposed` is therefore new, not an enrichment.
 
 ---
 
@@ -578,6 +671,14 @@ The implementation must document the matrix convention:
 
 The first implementation should follow the Ugi/FlowER-style electron-accounting vocabulary already motivating this feature, with a versioned convention so it can evolve safely.
 
+**Existing substrate (rev 2).** Wiggum already computes per-step bond-electron deltas; the BE view is a projection of them, not a new engine:
+
+- `tools.py::predict_mechanistic_step` returns `bond_electron_deltas` and `bond_electron_validation` (`dbe_source: inferred_from_electron_pushes | explicit`) for every candidate.
+- `core/mechanism_moves.py::reaction_bond_deltas(reaction_smirks)` and `implied_bond_deltas(moves)` derive deltas from a mapped SMIRKS or from the `|mech:v1;lp:4>2;sigma:2-3>3|` CXSMILES move block (`docs/mechanism_move_notation.md`); PR #39 fixed explicit-hydrogen handling.
+- `core/mapped_state.py::MappedState` / `execute_candidate` give the persistent-ID atom order for both `BE(t)` and `BE(t+1)`.
+
+`bond_electron_view.v1` SHALL be built from these three inputs with the persistent atom ID as the row/column key.
+
 ## 10.2 Default display
 
 Do not show the entire `N × N` matrix for a large molecule.
@@ -784,6 +885,21 @@ If the provider cannot report the resolved revision, do not fabricate one:
 
 Production should prefer a pinned Jev model/revision before confidence thresholds are treated as stable.
 
+**Mapping onto the existing `DecisionRecord` (rev 2).** Jev calls already produce a typed record; the provenance schema is populated from it rather than duplicated:
+
+| Provenance field | `DecisionRecord` / `decision_trace` source |
+|---|---|
+| `call_id` | `request_id` (provider id when returned, else `local-<uuid>`) |
+| `engine` | `decision_engine` (`"jev"`) |
+| `role` | from the question: `reaction_type`, later `conditions_decision`, `global_mapping`, `candidate_ranking` |
+| `provider` | `provider` (`"openrouter"`) |
+| `requested_model` | `JevConfig.model` / catalog id (`typesafe/jev-1.13`) |
+| `resolved_model` | `model_version` as reported by the provider (`typesafe/jev-1.13-20260917`); `null` if not returned |
+| `decision_type` | `decision_type` (`choice` / `score` / `noul`) |
+| `status` | `completed` when `called and not failure`; `failed` when `called and failure`; no record when `called == False` (no request sent) |
+| `latency_ms`, `usage` | same-named fields |
+| `fallback_from_call_id` | set on the LLM call that answered after a failed Jev call in the same step |
+
 ## 12.3 Deterministic provenance
 
 Deterministic operations have no LLM model.
@@ -834,6 +950,13 @@ The existing verified-step API already stores `source="human"` and `model="human
 - candidate ranking after proposal.
 
 Introduce call-level events.
+
+**Two delivery stages (rev 2).**
+
+- **M0a — derived.** `_record_step()` derives `inference_call_completed` / `inference_call_failed` from the `StepResult` (`source`, `model`, `output.model_used`, `token_usage`) and from `output.decision_trace` entries, then emits `step_output` with a `provenance` summary pointing at those call IDs. Events are emitted after the fact, so `started_at` is the step start time and `latency_ms` is the step duration unless the record carries its own.
+- **M0b — live.** A recorder hook in `llm.py` (and `JevDecisionClient`) emits `inference_call_started` before the request and the completion/failure event with measured latency. Retries inside `tools.py` become separate calls with `retry_index`. M0b replaces the derived path once both agree on the same run.
+
+The UI must not depend on which stage produced an event; both carry `event_schema_version`.
 
 ## 13.2 Events
 
@@ -1047,10 +1170,12 @@ The Wiggum Jev PRD already warns that Jev probability calibration may depend on:
 - model version;
 - chemistry domain.
 
-Until calibration exists, show:
+Calibration is per question and per Jev revision. On `c9248b8` exactly one surface is calibrated: reaction-type `Choice` on `typesafe/jev-1.13-20260917` (`docs/calibration/jev_reaction_type_2026-09-23.md`, n=72, ECE 0.056). For that surface emit `calibrated: true`, `calibration_version: "jev_reaction_type_2026-09-23"`. Every other Jev question and every LLM self-confidence emits `calibrated: false` and shows:
 - number;
 - relative color;
 - tooltip `Model probability — not calibrated`.
+
+A Jev revision change invalidates `calibrated` until the calibration script is re-run.
 
 ## 15.3 Candidate-set normalization
 
@@ -1154,6 +1279,28 @@ Continue using:
 
 Enrich rather than replace unless migration requires a versioned event schema.
 
+## 16.6 `mechanism_step_accepted` acceptance kind (rev 2)
+
+Add to the accepted event:
+
+```json
+{
+  "candidate_id": "c3-r1-9f2a1c0d",
+  "acceptance_kind": "validated"
+}
+```
+
+`acceptance_kind` values:
+
+```text
+validated              all enabled validators passed
+soft_advance           proceed_on_validation_failure / balance_pending; validation failed
+backtrack_alternative  a stored branch alternative applied after backtracking
+human                  verified-mode submission
+```
+
+The pathway view SHALL render `soft_advance` edges with a distinct "unvalidated" treatment and SHALL never count them toward a "validated steps" total. `branch_point_created` gains `chosen_candidate_id` and `alternative_candidate_ids`; `backtrack` and `failed_path_recorded` gain `candidate_id`.
+
 ---
 
 # 17. Wiggum event persistence and replay
@@ -1168,7 +1315,7 @@ A frontend reload must not lose rejected branches or model provenance.
 
 ## 17.2 Branch details
 
-The current runtime preserves branch/failure information, but some in-memory branch alternatives are not sufficient as a long-term replay contract.
+PR #37 (`aff1b3f`) persists branch points with their full untried alternatives and the mapped loop state in `run_resume_state` snapshots, so resume/backtrack no longer depends on process memory. What remains missing for replay is the per-candidate history: which candidates were proposed each round, which failed which check, and which call produced them. Snapshots are latest-state; the Observatory needs the ordered event record.
 
 For every candidate that becomes a visible branch, persist:
 - candidate ID;
@@ -1589,6 +1736,13 @@ Billing rules must use confirmed provider pricing before production charging dec
 5. Do not inherit an LLM model for deterministic `StepResult`s.
 6. Add stable `candidate_id`.
 7. Correlate candidate events, call events, validation events, accepted events.
+8. Emit `mechanism_candidates_proposed` after `_propose_for_topology` and add `acceptance_kind` in `_apply_candidate` (§16.6).
+9. Resolve `resolved_model` from `output.model_used` before the configured model (§3.7.2).
+
+### `mechanistic_agent/core/subagents.py` / `mechanistic_agent/config.py`
+
+- Stop treating `LLM_STEP_KEYS` membership as "has a model": `functional_groups` and `mechanism_synthesis` are deterministic (§3.7.1).
+- Follow-up (not M0): pass `output.model_used` into `_extract_step_cost` so fallback cost is attributed to the model that ran.
 
 ### `mechanistic_agent/core/types.py`
 
@@ -2031,7 +2185,17 @@ Cases:
 10. backtrack to alternative;
 11. process reload/replay.
 
-Add a regression assertion that `mechanism_synthesis` does not show an LLM model when it is deterministic.
+Add a regression assertion that `mechanism_synthesis` does not show an LLM model when it is deterministic. `tests/fast/test_llm_call_counter.py` already asserts `source == "deterministic"` for that step; extend it rather than duplicating.
+
+Additional M0 cases (rev 2):
+
+12. LLM step whose `output.model_used` differs from the configured model records the fallback model as `resolved_model`.
+13. Jev→LLM fallback within `reaction_type_mapping` yields one failed `jev` call and one completed `llm` call with `fallback_from_call_id` set.
+14. Validator rows (`bond_electron_validation` etc.) expose `engine: deterministic` and `model: null`.
+15. Soft-advanced step emits `mechanism_step_accepted` with `acceptance_kind: soft_advance`.
+16. Two proposal rounds with the same ranks produce distinct `candidate_id`s; the id survives `BranchCandidate.to_persisted_dict()` round trip.
+
+Run with `python -m pytest tests/fast -q` (the `make test` target referenced in `AGENTS.md` has no Makefile in the checkout). Baseline on `c9248b8`: 772 passed.
 
 ## ChemIllusion backend tests
 
@@ -2074,6 +2238,9 @@ Test:
 | `mechanistic_agent/core/observatory.py` | **new**, aggregate/replay projection |
 | `mechanistic_agent/api/app.py` | enriched snapshot/SSE and Observatory endpoint |
 | `mechanistic_agent/ui/app.js` | subscribe accepted/inference events; local model badges |
+| `mechanistic_agent/core/subagents.py` | (follow-up) attribute fallback cost to `output.model_used` |
+| `mechanistic_agent/config.py` | `LLM_STEP_KEYS` no longer implies model provenance for deterministic steps |
+| `mechanistic_agent/api/app.py` (verified-step route) | use the shared provenance helper for `source="human"` rows |
 | `Dockerfile.runtime` | **new**, stripped production build |
 | `mechanistic_agent/api/runtime_app.py` | **new**, narrow product API |
 | `runtime_assets/*` | **new**, versioned production inference bundle |
@@ -2121,10 +2288,10 @@ Test:
 These should not block M0.
 
 ### Q1. Which Jev endpoint/adapter becomes canonical?
-ChemIllusion's current catalog stub points to an OpenRouter chat-completions endpoint, while the Wiggum Jev PRD describes the dedicated decision semantics/API. Verify the actual production adapter before implementation and version it.
+**Partially answered (rev 2).** Wiggum's live adapter is the OpenRouter Decisions API (`mechanistic_agent/decisions/jev.py`, `PROVIDER = "openrouter"`, catalog id `typesafe/jev-1.13`). ChemIllusion's `typesafe/jev-latest` catalog stub points at chat completions and is not equivalent. The runtime service should ship the Wiggum adapter; ChemIllusion should not add a second one.
 
 ### Q2. What exact Jev revision is available through the chosen provider?
-Prefer pinned/versioned provenance. If only `latest` is exposed, store that honestly and capture runtime/config version.
+**Answered (rev 2).** The Decisions API returns the revision (`typesafe/jev-1.13-20260917` on 2026-09-23). Store it as `resolved_model`; the `resolved_model: null` case applies only when the response omits it.
 
 ### Q3. Which service owns durable detailed run events?
 Recommendation: Mechanism Runtime owns the detailed event log; ChemIllusion owns user/run ownership and product metadata.
@@ -2153,7 +2320,11 @@ The first PR should be intentionally narrow:
 5. Add stable candidate IDs.
 6. Add `mechanism_step_accepted` to current UI subscriptions.
 7. Add provenance/replay tests.
-8. Add a small current-model badge in the Wiggum local UI.
+8. Add a small current-engine/model badge in the Wiggum local UI.
+9. Emit `mechanism_candidates_proposed` and `acceptance_kind` (§16.1, §16.6).
+10. Use the same provenance helper in the verified-step API route.
+
+Order of work inside the PR (rev 2): provenance helper + tests → `_record_step` / `_mark_step_started` → candidate IDs and event enrichment → API/UI subscription and badge. M0b (live `llm.py` hook) is a second PR.
 
 Do **not** build the entire ChemIllusion Observatory in this PR.
 

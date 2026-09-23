@@ -683,6 +683,74 @@ function appendTerminalLine(kind, stepName, message, level = "info") {
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 
+// ---------------------------------------------------------------------------
+// Engine / model provenance badge (Observatory PRD §14, M0). Text is the
+// primary identifier; colour is secondary and never encodes confidence.
+// ---------------------------------------------------------------------------
+function formatEngineLabel(engine, model, reasoning) {
+  const eng = engine || "unknown";
+  if (eng === "deterministic") return "Engine: deterministic (RDKit)";
+  if (eng === "human") return "Engine: human";
+  const parts = [`Engine: ${eng}`];
+  if (model) parts.push(model);
+  if (reasoning) parts.push(reasoning);
+  return parts.join(" · ");
+}
+
+function setEngineBadge(engine, text, title) {
+  const el = document.getElementById("engineBadge");
+  if (!el) return;
+  el.hidden = false;
+  el.className = `engine-badge ${engine || "unknown"}`;
+  el.textContent = text;
+  if (title) el.title = title;
+}
+
+function updateEngineBadge(event) {
+  const kind = event.event_type || "";
+  const payload = event.payload || {};
+  const step = event.step_name || payload.step_name || "";
+  if (kind === "step_started" && payload.planned_engine) {
+    setEngineBadge(
+      payload.planned_engine,
+      `${formatEngineLabel(payload.planned_engine, payload.planned_model, payload.planned_reasoning)} · running ${step}`,
+      "Planned engine/model for the step that just started",
+    );
+  } else if (kind === "inference_call_completed") {
+    setEngineBadge(
+      payload.engine,
+      `${formatEngineLabel(payload.engine, payload.resolved_model || payload.requested_model, payload.reasoning_level)} · ${payload.role || step}${payload.model_fallback ? " · fallback" : ""}`,
+      `call ${payload.call_id || ""}`,
+    );
+  } else if (kind === "inference_call_failed") {
+    setEngineBadge(
+      payload.engine,
+      `Engine: ${payload.engine || "?"} · ${payload.requested_model || ""} · FAILED (${payload.error || "error"})`,
+      `call ${payload.call_id || ""}`,
+    );
+  } else if (kind === "step_output" && payload.provenance) {
+    const prov = payload.provenance;
+    setEngineBadge(
+      prov.engine,
+      `${formatEngineLabel(prov.engine, prov.resolved_model, prov.resolved_reasoning)} · ${step}${prov.model_fallback ? " · fallback" : ""}`,
+      prov.fallback_chain && prov.fallback_chain.length ? `chain: ${prov.fallback_chain.join(" → ")}` : "",
+    );
+  }
+}
+
+function renderProvenanceInventory(snapshot) {
+  const el = document.getElementById("modelInventory");
+  if (!el) return;
+  const inv = snapshot.provenance && snapshot.provenance.inventory;
+  if (!inv || !inv.models_by_engine || !Object.keys(inv.models_by_engine).length) {
+    el.textContent = "";
+    return;
+  }
+  const parts = Object.entries(inv.models_by_engine).map(([engine, models]) => `${engine}: ${models.join(", ")}`);
+  const failed = inv.failed_calls ? ` · ${inv.failed_calls} failed call${inv.failed_calls === 1 ? "" : "s"}` : "";
+  el.textContent = `Models used — ${parts.join(" · ")}${failed}`;
+}
+
 function appendEventToTerminal(event) {
   const kind = event.event_type || "event";
   const step = event.step_name || "";
@@ -692,14 +760,22 @@ function appendEventToTerminal(event) {
   else if (payload.error) msg = payload.error;
   else if (Object.keys(payload).length) msg = JSON.stringify(payload);
 
-  const errorKinds = ["run_failed", "step_failed", "mechanism_retry_failed", "mechanism_retry_exhausted"];
-  const warnKinds = ["run_paused", "ralph_budget_warning", "runtime_limit"];
+  const errorKinds = [
+    "run_failed", "step_failed", "mechanism_retry_failed", "mechanism_retry_exhausted",
+    "inference_call_failed", "mechanism_candidate_execution_exception",
+    "mechanism_candidate_uncaught_exception", "mechanism_validation_exception",
+  ];
+  const warnKinds = ["run_paused", "ralph_budget_warning", "runtime_limit", "mechanism_step_soft_advance", "mechanism_reproposal_requested"];
   const successKinds = ["run_completed", "target_products_detected"];
 
   let level = "info";
   if (errorKinds.includes(kind)) level = "error";
   else if (warnKinds.includes(kind)) level = "warn";
   else if (successKinds.includes(kind)) level = "success";
+  else if (kind === "mechanism_step_accepted") {
+    // Accepted is not the same as validated (PRD §16.6).
+    level = payload.acceptance_kind === "soft_advance" ? "warn" : "success";
+  }
 
   appendTerminalLine(kind, step, msg, level);
 
@@ -2256,6 +2332,30 @@ function openEventStream() {
     "evaluation_completed",
     "evaluation_saved",
     "harness_updated",
+    // Observatory M0: mechanism-loop and provenance events (PRD §3.4, §13, §16).
+    "mechanism_step_accepted",
+    "mechanism_candidates_proposed",
+    "mechanism_candidate_incomplete",
+    "mechanism_candidate_constraint_rejected",
+    "mechanism_candidate_execution_exception",
+    "mechanism_candidate_uncaught_exception",
+    "mechanism_validation_exception",
+    "invalid_species_in_candidate",
+    "candidate_rescue_started",
+    "candidate_rescue_completed",
+    "candidate_rescue_skipped_alternate",
+    "candidate_rescue_skipped_runtime_guard",
+    "proposal_quality_summary",
+    "mechanism_reproposal_requested",
+    "mechanism_reproposal_limit_reached",
+    "mechanism_step_soft_advance",
+    "topology_dispatch",
+    "independent_agent_result",
+    "peer_round_complete",
+    "consensus_merge_result",
+    "step_mapping_generated",
+    "inference_call_completed",
+    "inference_call_failed",
     "stream_end",
   ];
 
@@ -2263,7 +2363,9 @@ function openEventStream() {
     eventSource.addEventListener(kind, (ev) => {
       if (kind === "stream_end") return;
       try {
-        appendEventToTerminal(JSON.parse(ev.data));
+        const parsed = JSON.parse(ev.data);
+        updateEngineBadge(parsed);
+        appendEventToTerminal(parsed);
       } catch (_) {
         // no-op
       }
@@ -2687,6 +2789,7 @@ async function refreshLeaderboardModal() {
 }
 
 function renderProgress(snapshot) {
+  renderProvenanceInventory(snapshot);
   const progress = snapshot.progress || {};
   const percent = progress.progress_percentage || 0;
   const completed = progress.completed_count || 0;
