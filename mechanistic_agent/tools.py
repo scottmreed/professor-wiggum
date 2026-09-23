@@ -36,6 +36,7 @@ from .model_registry import (
     get_fallback_model,
     get_model_catalog,
     get_model_family,
+    update_usage_totals,
 )
 from .prompt_assets import compose_system_prompt, format_few_shot_block
 from .smiles_utils import (
@@ -3825,6 +3826,14 @@ def predict_missing_reagents(
                     tools=[MISSING_REAGENTS_TOOL],
                     tool_choice=build_tool_choice("missing_reagents_result"),
                 )
+                # The retry is a second real model call; merge its token usage
+                # into the step's usage total rather than discarding it, so the
+                # LLM-call/token counter (and downstream cost) sees both calls.
+                retry_usage = getattr(retry_response, "usage", None)
+                if retry_usage:
+                    merged_usage: Dict[str, Any] = dict(report.get("_llm_usage") or {})
+                    update_usage_totals(merged_usage, retry_usage)
+                    report["_llm_usage"] = merged_usage
                 # Re-parse the retry response.
                 retry_data: Any = None
                 if hasattr(retry_response, "tool_calls") and retry_response.tool_calls:
@@ -4248,6 +4257,7 @@ def select_reaction_type(
     model_used = reaction_type_model
     error_messages: List[str] = []
     response: Any = None
+    usage: Optional[Dict[str, Any]] = None
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": human_prompt},
@@ -4463,21 +4473,25 @@ def select_reaction_type(
             result["note"] = "; ".join(error_messages)
         return _serialise(result)
     except Exception as exc:
-        return _serialise(
-            {
-                "status": "fallback",
-                "selected_label_exact": "no_match",
-                "selected_type_id": None,
-                "confidence": 0.0,
-                "rationale": f"Reaction type mapping fallback due to error: {exc}",
-                "top_candidates": [],
-                "selected_template": None,
-                "available_reaction_type_count": len(templates),
-                "model_used": model_used,
-                "tool_calling_used": use_forced_tools,
-                "error_details": error_messages,
-            }
-        )
+        fallback_result: Dict[str, Any] = {
+            "status": "fallback",
+            "selected_label_exact": "no_match",
+            "selected_type_id": None,
+            "confidence": 0.0,
+            "rationale": f"Reaction type mapping fallback due to error: {exc}",
+            "top_candidates": [],
+            "selected_template": None,
+            "available_reaction_type_count": len(templates),
+            "model_used": model_used,
+            "tool_calling_used": use_forced_tools,
+            "error_details": error_messages,
+        }
+        # A real model call (primary or fallback-model) may have already
+        # returned usage before a downstream parsing error was raised; do
+        # not drop those tokens from the call/usage counter.
+        if usage:
+            fallback_result["_llm_usage"] = usage
+        return _serialise(fallback_result)
 
 
 def _score_protonation(smiles: str) -> Tuple[int, int]:

@@ -972,13 +972,22 @@ class RunStore:
         return output
 
     def get_run_cost_summary(self, run_id: str) -> Dict[str, Any]:
-        """Aggregate token usage and cost across all step outputs for a run."""
+        """Aggregate token usage, cost, and a real-model-call tally for a run."""
         from mechanistic_agent.model_registry import update_cost_totals, update_usage_totals
 
         steps = self.list_step_outputs(run_id)
         usage_totals: Dict[str, int] = {}
         cost_totals: Dict[str, float] = {}
         per_step: List[Dict[str, Any]] = []
+
+        # Engine label per recorded `source` value. Only `llm` denotes a real
+        # model call today; `jev` is reserved for future decision-model calls
+        # (docs/PRD_jev_atom_identity_mechanistic.md §18). `deterministic` and
+        # `human` sources are intentionally excluded from the call tally.
+        engine_by_source = {"llm": "llm"}
+        calls_by_step: Dict[str, Dict[str, Any]] = {}
+        calls_by_engine: Dict[str, Dict[str, Any]] = {}
+        total_calls = 0
 
         for step in steps:
             step_usage = step.get("usage")
@@ -997,11 +1006,42 @@ class RunStore:
                     "cost": step_cost,
                 })
 
+            engine = engine_by_source.get(str(step.get("source") or ""))
+            if engine is None:
+                continue
+            step_name = str(step.get("step_name") or "unknown")
+            step_entry = calls_by_step.setdefault(step_name, {"calls": 0, "usage": {}, "cost": {}})
+            step_entry["calls"] += 1
+            engine_entry = calls_by_engine.setdefault(engine, {"calls": 0, "usage": {}, "cost": {}})
+            engine_entry["calls"] += 1
+            if step_usage:
+                update_usage_totals(step_entry["usage"], step_usage)
+                update_usage_totals(engine_entry["usage"], step_usage)
+            if step_cost:
+                update_cost_totals(step_entry["cost"], step_cost)
+                update_cost_totals(engine_entry["cost"], step_cost)
+            total_calls += 1
+
+        for entry in list(calls_by_step.values()) + list(calls_by_engine.values()):
+            entry["usage"] = entry["usage"] or None
+            entry["cost"] = entry["cost"] or None
+
+        llm_engine = calls_by_engine.get("llm") or {}
+        llm_usage = llm_engine.get("usage") or {}
+        call_summary = {
+            "total_calls": total_calls,
+            "by_step": calls_by_step,
+            "by_engine": calls_by_engine,
+            "llm_calls": int(llm_engine.get("calls") or 0),
+            "llm_tokens": int(llm_usage.get("total_tokens") or 0),
+        }
+
         return {
             "run_id": run_id,
             "total_usage": usage_totals or None,
             "total_cost": cost_totals or None,
             "step_costs": per_step,
+            "call_summary": call_summary,
         }
 
     def record_verification_decision(
@@ -2972,6 +3012,28 @@ class RunStore:
                 return True
         return False
 
+    def _aggregate_llm_calls_for_results(self, results: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Sum real LLM-call counts and tokens across an eval run's case runs.
+
+        Derived from each case's underlying mechanistic run via
+        ``get_run_cost_summary``'s ``call_summary`` (itself derived from
+        ``step_outputs``), not from a separately-tracked counter, so it stays
+        consistent with the per-run cost/call instrumentation.
+        """
+        total_calls = 0
+        total_tokens = 0
+        for item in results:
+            run_id = str(item.get("run_id") or "").strip()
+            if not run_id:
+                continue
+            try:
+                call_summary = (self.get_run_cost_summary(run_id) or {}).get("call_summary") or {}
+            except Exception:
+                continue
+            total_calls += int(call_summary.get("llm_calls") or 0)
+            total_tokens += int(call_summary.get("llm_tokens") or 0)
+        return {"llm_calls": total_calls, "llm_tokens": total_tokens}
+
     def leaderboard(self, eval_set_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
         eval_set = self.get_eval_set(eval_set_id)
         is_holdout = str((eval_set or {}).get("purpose") or "general") == "leaderboard_holdout"
@@ -3006,6 +3068,8 @@ class RunStore:
                     value = cost.get("total_cost")
                     if isinstance(value, (int, float)):
                         total_cost += float(value)
+
+            llm_call_totals = self._aggregate_llm_calls_for_results(results)
 
             latencies = [
                 float(item["latency_ms"])
@@ -3057,6 +3121,8 @@ class RunStore:
                     "mean_quality_score": sum(scores) / len(scores),
                     "deterministic_pass_rate": pass_rate,
                     "total_cost": total_cost,
+                    "llm_calls": llm_call_totals["llm_calls"],
+                    "llm_tokens": llm_call_totals["llm_tokens"],
                     "avg_latency_ms": avg_latency_ms,
                     "case_count": len(results),
                     "per_subagent_scores": per_subagent_agg,
