@@ -73,6 +73,18 @@ def is_agent_bridge_model(model_name: Optional[str]) -> bool:
         return False
 
 
+def is_decision_model(model_name: Optional[str]) -> bool:
+    """Return True when the catalog marks the model as ``model_kind: "decision"``."""
+    if not model_name:
+        return False
+    try:
+        from mechanistic_agent.model_registry import is_decision_model as _is_decision
+
+        return _is_decision(model_name)
+    except Exception:
+        return False
+
+
 def _resolve_google_api_key(user_key: Optional[str] = None) -> Optional[str]:
     if user_key:
         return user_key
@@ -631,6 +643,13 @@ def get_chat_model(
     agent bridge, which forwards the request to an external agent/subagent
     instead of a hosted API and therefore needs no API key.
     """
+    if is_decision_model(model_name):
+        raise ValueError(
+            f"Model '{model_name}' is a decision model (catalog model_kind='decision'), not a chat "
+            "model. It answers typed Choice/Score/Noul questions, not chat or tool calls; use "
+            "mechanistic_agent.llm.get_decision_model() instead."
+        )
+
     if is_agent_bridge_model(model_name):
         from .agent_bridge import AgentBridgeAdapter
 
@@ -694,6 +713,44 @@ def get_chat_model(
         model_kwargs=model_kwargs,
         api_key=api_key,
     )
+
+
+def get_decision_model(
+    model_name: Optional[str] = None,
+    *,
+    timeout: Optional[float] = None,
+    user_api_key: Optional[str] = None,
+    transport: Any = None,
+) -> Any:
+    """Return a :class:`~mechanistic_agent.decisions.jev.JevDecisionClient`.
+
+    This is the explicit route for catalog entries with ``model_kind:
+    "decision"`` (PRD §16.2). ``model_name`` defaults to the catalog's default
+    decision model. Decision models are reached through OpenRouter's Decisions
+    API, so the key is the same ``OPENROUTER_API_KEY`` used for OpenRouter chat
+    models. A missing key is not raised here: the client returns failure
+    records (``missing_api_key``) so callers can fall back.
+    """
+    from .decisions.jev import JevDecisionClient
+    from .model_registry import get_default_decision_model, get_model_provider
+
+    name = model_name or get_default_decision_model()
+    if not name or not is_decision_model(name):
+        raise ValueError(
+            f"Model '{model_name}' is not a decision model (catalog model_kind != 'decision')."
+        )
+    provider = get_model_provider(name)
+    if provider != "openrouter":
+        raise ValueError(
+            f"Decision model '{name}' has provider '{provider}'; only 'openrouter' "
+            "(Decisions API) is routed."
+        )
+    kwargs: Dict[str, Any] = {"api_key": _resolve_openrouter_api_key(user_api_key)}
+    if timeout is not None:
+        kwargs["timeout"] = float(timeout)
+    if transport is not None:
+        kwargs["transport"] = transport
+    return JevDecisionClient(name, **kwargs)
 
 
 def adapter_supports_forced_tools(model_name: Optional[str]) -> bool:

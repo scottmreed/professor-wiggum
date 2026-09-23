@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 
 RunMode = Literal["verified", "unverified"]
@@ -77,7 +77,8 @@ class StepResult:
     reasoning_level: Optional[str] = None
     attempt: int = 1
     retry_index: int = 0
-    source: Literal["llm", "human", "deterministic"] = "llm"
+    # "jev" = answered by a decision model (counted separately in call_summary).
+    source: Literal["llm", "human", "deterministic", "jev"] = "llm"
     validation: Optional[StepValidationResult] = None
     token_usage: Optional[Dict[str, int]] = None
     cost: Optional[Dict[str, float]] = None
@@ -443,6 +444,184 @@ def _coerce_flag(value: Any, default: bool) -> bool:
     return default
 
 
+# ---------------------------------------------------------------------------
+# Decision policy (PRD §17). Only ``reaction_type`` is wired today; the other
+# keys are accepted, validated and round-tripped so harness files can carry
+# them, but the runtime ignores them until their milestone lands.
+# ---------------------------------------------------------------------------
+DECISION_POLICY_ENUMS: Dict[str, Tuple[str, ...]] = {
+    "conditions": ("llm", "jev"),
+    "global_mapping": ("llm", "rdkit_jev_llm_fallback", "disabled"),
+    "step_mapping": ("llm", "identity_rdkit_jev_llm_fallback", "disabled"),
+    "reaction_type": ("llm", "jev"),
+    "missing_reagents_gate": ("balance_only", "balance_plus_noul"),
+    "candidate_ranker": ("generator", "consensus", "jev", "llm_judge"),
+}
+DECISION_POLICY_WIRED_KEYS: Tuple[str, ...] = ("reaction_type",)
+SHADOW_RANKERS = ("generator", "consensus", "jev", "llm_judge")
+JEV_THRESHOLD_KEYS: Tuple[str, ...] = (
+    "mapping_accept_probability",
+    "mapping_min_margin",
+    "reaction_type_active_probability",
+    "reaction_type_min_margin",
+    "missing_chemistry_noul",
+)
+JEV_FALLBACK_MODES: Tuple[str, ...] = ("llm", "no_match")
+
+
+def _coerce_enum(value: Any, allowed: Tuple[str, ...], default: str) -> str:
+    text = str(value or "").strip().lower()
+    return text if text in allowed else default
+
+
+@dataclass(slots=True)
+class DecisionPolicy:
+    """Which engine answers each bounded decision (PRD §17).
+
+    Defaults reproduce today's production behaviour. ``loop_state_mapping``
+    stays a top-level harness field (it predates this block).
+    """
+
+    conditions: str = "llm"
+    global_mapping: str = "llm"
+    step_mapping: str = "llm"
+    reaction_type: str = "llm"
+    missing_reagents_gate: str = "balance_only"
+    candidate_ranker: str = "generator"
+    shadow_rankers: List[str] = field(default_factory=list)
+    # When True (today's behaviour) a run whose example_id has a curated
+    # reaction-type label skips the model and uses the label. Comparison runs
+    # (Jev vs LLM) must set it False; a run config key
+    # ``example_reaction_type_bypass`` or the env var
+    # MECHANISTIC_EXAMPLE_REACTION_TYPE_BYPASS overrides it per run.
+    example_reaction_type_bypass: bool = True
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Non-default keys only, so default harness files save unchanged."""
+        default = DecisionPolicy()
+        out: Dict[str, Any] = {}
+        for key in DECISION_POLICY_ENUMS:
+            value = getattr(self, key)
+            if value != getattr(default, key):
+                out[key] = value
+        if self.shadow_rankers:
+            out["shadow_rankers"] = list(self.shadow_rankers)
+        if self.example_reaction_type_bypass is not True:
+            out["example_reaction_type_bypass"] = False
+        return out
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "DecisionPolicy":
+        data = data if isinstance(data, dict) else {}
+        kwargs: Dict[str, Any] = {}
+        defaults = cls()
+        for key, allowed in DECISION_POLICY_ENUMS.items():
+            kwargs[key] = _coerce_enum(data.get(key), allowed, getattr(defaults, key))
+        raw_shadow = data.get("shadow_rankers")
+        shadow: List[str] = []
+        if isinstance(raw_shadow, list):
+            for item in raw_shadow:
+                text = str(item or "").strip().lower()
+                if text in SHADOW_RANKERS and text not in shadow:
+                    shadow.append(text)
+        kwargs["shadow_rankers"] = shadow
+        kwargs["example_reaction_type_bypass"] = _coerce_flag(
+            data.get("example_reaction_type_bypass"), True
+        )
+        return cls(**kwargs)
+
+
+def _coerce_threshold(value: Any) -> Optional[float]:
+    """Threshold in [0, 1], or None (observational / unset)."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number < 0.0 or number > 1.0:  # NaN or out of range
+        return None
+    return number
+
+
+@dataclass(slots=True)
+class JevConfig:
+    """Jev decision-model settings (PRD §17). All thresholds default to None.
+
+    ``None`` means observational: the decision is recorded and the existing
+    RunConfig gates apply. Thresholds are per question and per Jev version and
+    must come from Phase D calibration, never be copied across questions.
+    """
+
+    model: Optional[str] = None  # catalog id; None = catalog default decision model
+    reaction_type_top_n: int = 5
+    mapping_max_options: int = 6
+    mapping_hard_max_options: int = 12
+    timeout_seconds: float = 30.0
+    # What reaction-type selection does when the Jev call fails: "llm" calls
+    # the existing LLM selector, "no_match" disables template guidance.
+    fallback: str = "llm"
+    thresholds: Dict[str, Optional[float]] = field(
+        default_factory=lambda: {key: None for key in JEV_THRESHOLD_KEYS}
+    )
+
+    def as_dict(self) -> Dict[str, Any]:
+        default = JevConfig()
+        out: Dict[str, Any] = {}
+        for key in (
+            "model",
+            "reaction_type_top_n",
+            "mapping_max_options",
+            "mapping_hard_max_options",
+            "timeout_seconds",
+            "fallback",
+        ):
+            value = getattr(self, key)
+            if value != getattr(default, key):
+                out[key] = value
+        if any(value is not None for value in self.thresholds.values()) or set(
+            self.thresholds
+        ) != set(JEV_THRESHOLD_KEYS):
+            out["thresholds"] = dict(self.thresholds)
+        return out
+
+    def is_default(self) -> bool:
+        return not self.as_dict()
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "JevConfig":
+        data = data if isinstance(data, dict) else {}
+        defaults = cls()
+
+        def _pos_int(key: str) -> int:
+            try:
+                return max(1, int(data.get(key, getattr(defaults, key))))
+            except (TypeError, ValueError):
+                return getattr(defaults, key)
+
+        try:
+            timeout = float(data.get("timeout_seconds", defaults.timeout_seconds))
+            if timeout <= 0:
+                timeout = defaults.timeout_seconds
+        except (TypeError, ValueError):
+            timeout = defaults.timeout_seconds
+        thresholds: Dict[str, Optional[float]] = {key: None for key in JEV_THRESHOLD_KEYS}
+        raw_thresholds = data.get("thresholds")
+        if isinstance(raw_thresholds, dict):
+            for key, value in raw_thresholds.items():
+                thresholds[str(key)] = _coerce_threshold(value)
+        model = data.get("model")
+        return cls(
+            model=str(model).strip() if isinstance(model, str) and model.strip() else None,
+            reaction_type_top_n=_pos_int("reaction_type_top_n"),
+            mapping_max_options=_pos_int("mapping_max_options"),
+            mapping_hard_max_options=_pos_int("mapping_hard_max_options"),
+            timeout_seconds=timeout,
+            fallback=_coerce_enum(data.get("fallback"), JEV_FALLBACK_MODES, defaults.fallback),
+            thresholds=thresholds,
+        )
+
+
 @dataclass(slots=True)
 class HarnessConfig:
     """Complete harness pipeline definition.
@@ -476,6 +655,10 @@ class HarnessConfig:
     # Record (never enforce) whether executing the chosen candidate's SMIRKS on
     # the mapped loop state reproduces its stated resulting_state (§16.8).
     record_smirks_state_agreement: bool = True
+    # Which engine answers each bounded decision, and Jev settings (PRD §17).
+    # Both are written only when non-default.
+    decision_policy: DecisionPolicy = field(default_factory=DecisionPolicy)
+    jev: JevConfig = field(default_factory=JevConfig)
 
     def as_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -502,6 +685,12 @@ class HarnessConfig:
             d["loop_state_mapping"] = self.loop_state_mapping
         if not self.record_smirks_state_agreement:
             d["record_smirks_state_agreement"] = False
+        decision_policy = self.decision_policy.as_dict()
+        if decision_policy:
+            d["decision_policy"] = decision_policy
+        jev = self.jev.as_dict()
+        if jev:
+            d["jev"] = jev
         return d
 
     @classmethod
@@ -539,6 +728,8 @@ class HarnessConfig:
             metadata=dict(data.get("metadata") or {}),
             loop_state_mapping=normalize_loop_state_mapping(data.get("loop_state_mapping")),
             record_smirks_state_agreement=_coerce_flag(data.get("record_smirks_state_agreement"), True),
+            decision_policy=DecisionPolicy.from_dict(data.get("decision_policy")),
+            jev=JevConfig.from_dict(data.get("jev")),
         )
 
     def get_topology_profile(self, topology: str) -> TopologyProfile:
@@ -651,6 +842,9 @@ class RunConfig:
     proceed_only_on_arrow_push_failure: bool = False
     runtime_trace_enabled: bool = False
     runtime_trace_label: Optional[str] = None
+    # Per-run override of the harness decision_policy.example_reaction_type_bypass
+    # (None = use env MECHANISTIC_EXAMPLE_REACTION_TYPE_BYPASS, then the harness).
+    example_reaction_type_bypass: Optional[bool] = None
 
 
 @dataclass(slots=True)
@@ -946,6 +1140,10 @@ class RunState:
     # Highest persistent-atom-id high-water mark (allocator ``next_id``) seen
     # on this run, persisted so a resumed allocator never reissues an id.
     mapped_id_high_water: int = 0
+    # Decision policy and Jev settings, copied from the harness at run start
+    # (PRD §17). Defaults reproduce today's behaviour.
+    decision_policy: DecisionPolicy = field(default_factory=DecisionPolicy)
+    jev_config: JevConfig = field(default_factory=JevConfig)
 
     def initialise(self) -> None:
         if not self.current_state:

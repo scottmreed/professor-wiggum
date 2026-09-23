@@ -579,5 +579,33 @@
       "cached_input": 0.3,
       "output": 15.0
     }
+  },
+  "typesafe/jev-1.13": {
+    "id": "typesafe/jev-1.13",
+    "family": "typesafe",
+    "provider": "openrouter",
+    "model_kind": "decision",
+    "supports_tools": false,
+    "api_model_id": "typesafe/jev-1.13",
+    "decision_endpoint": "https://openrouter.ai/api/alpha/decisions",
+    "decision_types": [
+      "choice",
+      "score",
+      "noul"
+    ],
+    "limits": {
+      "choice_max_options": 255,
+      "score_min_levels": 2,
+      "score_max_levels": 10,
+      "max_state_plus_question_tokens": 32000
+    },
+    "billing": "input_only",
+    "label": "Jev 1.13 (TypeSafe decision model)",
+    "description": "Typed decision model (Choice / Score / Noul) reached through OpenRouter's Decisions API (POST /api/alpha/decisions). Not a chat model: get_chat_model refuses it; use llm.get_decision_model. Pinned version; thresholds do not transfer across versions. Input-only billing.",
+    "pricing_per_million": {
+      "input": 0.042,
+      "cached_input": 0.0,
+      "output": 0.0
+    }
   }
 }
