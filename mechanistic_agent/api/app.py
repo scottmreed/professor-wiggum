@@ -83,6 +83,7 @@ from mechanistic_agent.prompt_assets import (
     resolve_call_name_from_step,
     traces_root,
     unified_prompt_diff,
+    write_call_few_shot_examples,
 )
 from mechanistic_agent.data_paths import db_path as resolve_db_path, evidence_root
 from mechanistic_agent.prompt_trace_validator import validate_evidence_for_calls
@@ -2968,24 +2969,19 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             examples_dir.mkdir(parents=True, exist_ok=True)
             for call_name, rows in grouped.items():
                 path = examples_dir / call_name / "few_shot.jsonl"
-                repo_path = base / "prompt_versions" / "calls" / call_name / "few_shot.jsonl"
                 path.parent.mkdir(parents=True, exist_ok=True)
-                repo_path.parent.mkdir(parents=True, exist_ok=True)
-                lines = []
-                for row in rows:
-                    lines.append(
-                        json.dumps(
-                            {
-                                "input": row.get("input_text"),
-                                "output": row.get("output_text"),
-                            },
-                            sort_keys=True,
-                        )
-                    )
-                content = "\n".join(lines) + ("\n" if lines else "")
+                examples = [
+                    {"input": row.get("input_text"), "output": row.get("output_text")}
+                    for row in rows
+                ]
+                content = "\n".join(json.dumps(example, sort_keys=True) for example in examples)
+                content += "\n" if examples else ""
                 path.write_text(content, encoding="utf-8")
-                repo_path.write_text(content, encoding="utf-8")
                 _add_file(path)
+                # Merge into the live skill asset (skills/mechanistic/<call>/few_shot.jsonl);
+                # the former prompt_versions/ target no longer exists. Merge semantics keep
+                # existing score / example_key metadata instead of overwriting the file.
+                repo_path = write_call_few_shot_examples(call_name, examples, base_dir=base)
                 _add_file(repo_path)
 
         if payload.include_baselines:

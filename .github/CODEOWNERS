@@ -17,6 +17,9 @@
 
 # Evidence gate, eval definition, and holdout isolation (what "better" means)
 /scripts/validate_prompt_trace_evidence.py   @scottmreed
+/mechanistic_agent/prompt_trace_validator.py @scottmreed
+/mechanistic_agent/prompt_assets.py          @scottmreed
+/.github/workflows/prompt-trace-gate.yml     @scottmreed
 /training_data/eval_tiers.json               @scottmreed
 /training_data/leaderboard_holdout/          @scottmreed
 

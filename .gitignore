@@ -172,7 +172,9 @@ training_data/practice_eval/*.png
 
 # Legacy — stays gitignored
 training_data/local_legacy/
-traces/
+# traces/* (not traces/) so the re-include of traces/evidence/ below is effective:
+# git cannot re-include files under an excluded directory.
+traces/*
 !traces/evidence/
 !traces/evidence/**
 plans/
@@ -185,3 +187,4 @@ local_contributions/pr_drafts/
 # clawdiators-test — ground truth is local only (mirrors competition policy)
 clawdiators-test/easy/test_ground_truth.json
 clawdiators-test/**/__pycache__/
+docs/PRD_jev_atom_identity_mechanistic.md

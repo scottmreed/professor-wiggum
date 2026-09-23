@@ -154,9 +154,18 @@ class PromptRegistry:
             },
         )
 
+    def _portable_path(self, path: str) -> str:
+        """Record paths relative to the repo root so the hash is machine-independent."""
+        if self._base_dir is None or not path:
+            return path
+        try:
+            return Path(path).relative_to(self._base_dir).as_posix()
+        except ValueError:
+            return path
+
     def bundle_hash(self, *, model_name: str | None = None) -> str:
         records = self.list(model_name=model_name)
-        return _bundle_hash((record.path, record.sha256) for record in records)
+        return _bundle_hash((self._portable_path(record.path), record.sha256) for record in records)
 
 
 class SkillRegistry:
