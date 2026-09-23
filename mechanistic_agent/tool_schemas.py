@@ -719,6 +719,7 @@ HARNESS_MUTATION_TOOL: Dict[str, Any] = {
                         "set_field",
                         "set_enabled",
                         "set_run_config_default",
+                        "set_decision_policy",
                         "append_instruction",
                         "replace_instruction",
                         "remove_few_shot",
@@ -729,13 +730,15 @@ HARNESS_MUTATION_TOOL: Dict[str, Any] = {
                 "target": {
                     "type": "string",
                     "description": (
-                        "topology: '<profile>.<field>'; harness: module id or run_config_defaults key; "
+                        "topology: '<profile>.<field>'; harness: module id, run_config_defaults key, "
+                        "or 'decision_policy.<key>' for set_decision_policy (editable: reaction_type); "
                         "prompt/few_shot: the call name (e.g. propose_mechanism_step)."
                     ),
                 },
                 "value": {
                     "description": (
                         "New value: integer for topology fields, boolean/int for harness keys, "
+                        "an engine enum for decision_policy keys (reaction_type: 'llm' or 'jev'), "
                         "instruction text for prompts, an index (remove) or {input, output} object (add) for few-shots."
                     ),
                 },

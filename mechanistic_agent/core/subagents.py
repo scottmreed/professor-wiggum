@@ -243,6 +243,50 @@ class MappingAgent:
 @dataclass(slots=True)
 class ReactionTypeAgent:
     executor: ToolExecutor
+    # Optional decision client override (tests, calibration). None = route
+    # through llm.get_decision_model for the harness jev.model.
+    jev_client: Any = None
+
+    def _run_jev(self, state: RunState, context: Dict[str, Any]) -> StepResult:
+        output = self.executor.run_reaction_type_mapping_jev(
+            starting=state.run_input.starting_materials,
+            products=state.run_input.products,
+            jev_config=state.jev_config,
+            client=self.jev_client,
+            **context,
+        )
+        decision_usage = output.pop("_decision_usage", None)
+        decision_cost = output.pop("_decision_cost", None)
+        if str(output.get("decision_engine") or "") == "llm":
+            # Jev failed and the LLM selector answered; bill both to the step.
+            from mechanistic_agent.model_registry import update_cost_totals, update_usage_totals
+
+            llm_model = state.run_config.step_models.get("reaction_type_mapping", state.run_config.model)
+            usage, cost = _extract_step_cost(output, output.get("model_used") or llm_model)
+            usage = dict(usage or {})
+            cost = dict(cost or {})
+            if isinstance(decision_usage, dict):
+                update_usage_totals(usage, decision_usage)
+            if isinstance(decision_cost, dict):
+                update_cost_totals(cost, decision_cost)
+            return StepResult(
+                step_name="reaction_type_mapping",
+                tool_name="select_reaction_type",
+                output=output,
+                model=str(output.get("model_used") or llm_model),
+                source="llm",
+                token_usage=usage or None,
+                cost=cost or None,
+            )
+        return StepResult(
+            step_name="reaction_type_mapping",
+            tool_name="select_reaction_type",
+            output=output,
+            model=str(output.get("model_used") or "") or None,
+            source="jev",
+            token_usage=decision_usage if isinstance(decision_usage, dict) else None,
+            cost=decision_cost if isinstance(decision_cost, dict) else None,
+        )
 
     def run(
         self,
@@ -255,6 +299,19 @@ class ReactionTypeAgent:
         missing_reagents: Optional[Dict[str, Any]] = None,
         atom_mapping: Optional[Dict[str, Any]] = None,
     ) -> StepResult:
+        policy = getattr(state, "decision_policy", None)
+        if getattr(policy, "reaction_type", "llm") == "jev":
+            return self._run_jev(
+                state,
+                dict(
+                    balance_analysis=balance_analysis,
+                    functional_groups=functional_groups,
+                    ph_recommendation=ph_recommendation,
+                    initial_conditions=initial_conditions,
+                    missing_reagents=missing_reagents,
+                    atom_mapping=atom_mapping,
+                ),
+            )
         output = self.executor.run_reaction_type_mapping(
             starting=state.run_input.starting_materials,
             products=state.run_input.products,

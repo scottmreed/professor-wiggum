@@ -469,6 +469,14 @@ mechanistic_agent/
 - **Routing:** `get_model_provider` defaults to `openai` (`model_registry.py:81-85`) and `get_chat_model` (`llm.py:617-697`) only knows chat adapters. A decision model needs an explicit provider branch and a non-chat adapter; a chat wrapper is the wrong shape. Prefer OpenRouter's Decisions endpoint so the existing key and provenance plumbing apply.
 - Fast tests with mocks only; no network.
 
+**As built (M2, 2026-09-23).**
+
+- `mechanistic_agent/decisions/jev.py`: `JevDecisionClient.choice/score/noul/decide_many` (one request, many questions). Wire format: Choice `criteria` is an object `{label: description}` and must contain `none` or `no_match`; Score `criteria` is an ordered array (index 0 lowest, 2–10 levels); Noul `criteria` is optional `{"true": ..., "false": ...}`. Response `answers[<key>]` is parsed by `parse_answer`; top-level `id`, `model` (versioned, e.g. `typesafe/jev-1.13-20260917`) and `usage.cost` are recorded. Runtime failures never raise; they return a `DecisionRecord` with `failure` ∈ {`missing_api_key`, `request_too_large`, `timeout`, `transport_error`, `http_<status>`, `malformed_response`, `missing_answer`, `missing_probabilities`, `unknown_choice`}. `DecisionRecord` fields: `question_id`, `decision_type`, `model` (catalog id), `model_version`, `provider`, `selected`, `probabilities`, `confidence` (None for Noul), `score`, `legend`, `latency_ms`, `usage`, `cost`, `request_id`, `called`, `failure`, `failure_detail`; `to_trace()` emits the §18 entry. `decisions/policies.py` resolves thresholds (None = observational), reaction-type gates and the example-bypass flag. `decisions/calibration.py` holds the Phase D metrics.
+- Catalog: `typesafe/jev-1.13` with `provider: "openrouter"`, `model_kind: "decision"`, `supports_tools: false`, `api_model_id`, `decision_endpoint`, `decision_types`, `limits`, `billing: "input_only"`, pricing input 0.042 / output 0 per M. `model_registry.get_model_kind/is_decision_model/get_default_decision_model`; `get_model_options()` hides decision models from the run-model picker.
+- Routing: `llm.get_decision_model()` returns the client with the existing `OPENROUTER_API_KEY` (or the per-run `openrouter` user key); `llm.get_chat_model()` raises `ValueError` for any `model_kind: "decision"` entry. The client refuses ids that are not catalog decision models (SOUL Guardrail 3).
+- Reaction type: `core/reaction_type_jev.py` (`build_reaction_type_state`, `build_reaction_type_question`, `select_reaction_type_jev`), reached through `ReactionTypeAgent` when `decision_policy.reaction_type == "jev"`. Step `source` is `"jev"`; a Jev failure with `jev.fallback: "llm"` (default) calls the LLM selector and records `source: "llm"` with the failed decision in `decision_trace`. `get_run_cost_summary().call_summary` adds `jev_calls` / `jev_tokens` and `by_engine.jev`, counting decision requests from `decision_trace` by `request_id`.
+- Calibration: `scripts/calibrate_jev_reaction_type.py` (dry run by default; `--live` for real calls).
+
 ### 16.3 Mapping agent
 
 ```text
@@ -530,6 +538,15 @@ Optional `context_review` enum object; no rationale unless `question`.
   }
 }
 ```
+
+**As built (M2, 2026-09-23).** `HarnessConfig` has `decision_policy: DecisionPolicy` and `jev: JevConfig` (`core/types.py`). Both round-trip and are written only when non-default, so existing harness files save unchanged and `schema_version` stays `2.1`. Field names:
+
+- `decision_policy`: `conditions`, `global_mapping`, `step_mapping`, `reaction_type`, `missing_reagents_gate`, `candidate_ranker` (enums as above; unknown values load as the default), `shadow_rankers` (subset of generator/consensus/jev/llm_judge), `example_reaction_type_bypass` (bool, default true). Only `reaction_type` is wired; the others are accepted and ignored until their milestone. `loop_state_mapping` stays a top-level harness field (it predates this block).
+- `jev`: `model` (catalog id; default = catalog default decision model, `typesafe/jev-1.13`), `reaction_type_top_n` (5), `mapping_max_options` (6), `mapping_hard_max_options` (12), `timeout_seconds` (30), `fallback` (`llm` | `no_match`), `thresholds` with the five keys above, each `null` or a number in [0, 1] (invalid values load as `null`).
+- Reaction-template gates: for Jev selections `reaction_type_active_probability` / `reaction_type_min_margin` replace RunConfig `reaction_template_confidence_threshold` / `reaction_template_margin_threshold` when set; unset, the RunConfig values (0.65 / 0.10) apply to Jev probabilities. With probabilities summing to 1 and a 0.65 confidence gate, the 0.10 margin gate can never trigger, so `weak` guidance only appears once Phase D sets a lower active-probability threshold.
+- Example bypass: the curated `example_id` shortcut and its no_match heuristic run only when enabled. Precedence: run config `example_reaction_type_bypass` > env `MECHANISTIC_EXAMPLE_REACTION_TYPE_BYPASS` > harness `decision_policy.example_reaction_type_bypass`. The effective value is recorded in the step output as `example_reaction_type_bypass: {enabled, source}`.
+- Evolver: `LLMLaneMutator.apply` accepts `operation: "set_decision_policy"`, `target: "decision_policy.reaction_type"`, `value: "llm" | "jev"` (enum-coerced; only wired keys are mutable); `HARNESS_MUTATION_TOOL` lists the operation.
+- Variant: `harness_versions/jev_reaction_type/harness.json` = default + `decision_policy.reaction_type: "jev"`.
 
 Evolver changes required: extend `_RUN_CONFIG_DEFAULT_KEYS` or add a `decision_policy` lane in `HARNESS_MUTATION_TOOL` and `LLMLaneMutator.apply` with enum-typed coercion (today values are forced to bool/int, `llm_mutator.py:386-393`). Add the new modules to every `harness_versions/*/harness.json` so `set_enabled` can toggle them. Reaction-template thresholds move here from RunConfig.
 

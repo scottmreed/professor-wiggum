@@ -10,7 +10,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from mechanistic_agent.model_registry import get_model_family, get_model_provider, resolve_model_key
 from mechanistic_agent.prompt_assets import resolve_call_name_from_step, traces_root
@@ -56,6 +56,47 @@ def _normalize_run_input_payload(input_payload: Dict[str, Any]) -> Dict[str, Any
         payload["input_boundary"] = boundary
 
     return payload
+
+
+_DECISION_ENGINES = frozenset({"jev"})
+
+
+def _decision_calls_from_output(output: Any) -> Tuple[bool, List[Dict[str, Any]]]:
+    """Real decision-model requests recorded in ``output.decision_trace``.
+
+    Returns ``(has_trace, calls)``. Entries sharing a ``request_id`` (one
+    multi-question request) are one call; entries with ``called`` false (no
+    request sent, e.g. missing key) are not calls. Each call carries the
+    request's usage and cost breakdown.
+    """
+    if not isinstance(output, dict) or not isinstance(output.get("decision_trace"), list):
+        return False, []
+    calls: Dict[str, Dict[str, Any]] = {}
+    for index, entry in enumerate(output["decision_trace"]):
+        if not isinstance(entry, dict) or not entry.get("called"):
+            continue
+        engine = str(entry.get("decision_engine") or "")
+        if engine not in _DECISION_ENGINES:
+            continue
+        request_id = str(entry.get("request_id") or f"entry-{index}")
+        if request_id in calls:
+            continue
+        usage = entry.get("usage") if isinstance(entry.get("usage"), dict) else None
+        cost = entry.get("cost_breakdown") if isinstance(entry.get("cost_breakdown"), dict) else None
+        if cost is None and isinstance(entry.get("cost"), (int, float)):
+            cost = {"total_cost": float(entry["cost"])}
+        calls[request_id] = {"engine": engine, "usage": usage, "cost": cost}
+    return True, list(calls.values())
+
+
+def _subtract_totals(totals: Dict[str, Any], part: Any) -> None:
+    """In-place ``totals -= part`` for numeric keys, floored at zero."""
+    if not isinstance(part, dict):
+        return
+    for key, value in part.items():
+        if key in totals and isinstance(value, (int, float)) and isinstance(totals[key], (int, float)):
+            remaining = totals[key] - value
+            totals[key] = type(totals[key])(max(0, remaining)) if isinstance(totals[key], int) else max(0.0, remaining)
 
 
 class RunStore:
@@ -1001,16 +1042,36 @@ class RunStore:
         cost_totals: Dict[str, float] = {}
         per_step: List[Dict[str, Any]] = []
 
-        # Engine label per recorded `source` value. Only `llm` denotes a real
-        # model call today; `jev` is reserved for future decision-model calls
-        # (docs/PRD_jev_atom_identity_mechanistic.md §18). `deterministic` and
-        # `human` sources are intentionally excluded from the call tally.
-        engine_by_source = {"llm": "llm"}
+        # Engine label per recorded `source` value: `llm` is a chat-model call,
+        # `jev` a decision-model call (docs/PRD_jev_atom_identity_mechanistic.md
+        # §18). `deterministic` and `human` sources are excluded from the tally.
+        # Decision calls nested in a step (``output.decision_trace``, e.g. a
+        # failed Jev call that fell back to the LLM) are counted per request
+        # id under their own engine, and their usage/cost is carved out of the
+        # step's so each engine is billed once.
+        engine_by_source = {"llm": "llm", "jev": "jev"}
         calls_by_step: Dict[str, Dict[str, Any]] = {}
         calls_by_engine: Dict[str, Dict[str, Any]] = {}
         total_calls = 0
 
+        def _tally(step_name: str, engine: str, calls: int, usage: Any, cost: Any) -> None:
+            nonlocal total_calls
+            step_entry = calls_by_step.setdefault(step_name, {"calls": 0, "usage": {}, "cost": {}})
+            engine_entry = calls_by_engine.setdefault(engine, {"calls": 0, "usage": {}, "cost": {}})
+            step_entry["calls"] += calls
+            engine_entry["calls"] += calls
+            if usage:
+                update_usage_totals(step_entry["usage"], usage)
+                update_usage_totals(engine_entry["usage"], usage)
+            if cost:
+                update_cost_totals(step_entry["cost"], cost)
+                update_cost_totals(engine_entry["cost"], cost)
+            total_calls += calls
+
         for step in steps:
+            step_name = str(step.get("step_name") or "unknown")
+            source_engine = engine_by_source.get(str(step.get("source") or ""))
+            has_trace, decision_calls = _decision_calls_from_output(step.get("output"))
             step_usage = step.get("usage")
             step_cost = step.get("cost")
             if step_usage:
@@ -1026,22 +1087,21 @@ class RunStore:
                     "usage": step_usage,
                     "cost": step_cost,
                 })
-
-            engine = engine_by_source.get(str(step.get("source") or ""))
-            if engine is None:
+            if not has_trace:
+                if source_engine is not None:
+                    _tally(step_name, source_engine, 1, step_usage, step_cost)
                 continue
-            step_name = str(step.get("step_name") or "unknown")
-            step_entry = calls_by_step.setdefault(step_name, {"calls": 0, "usage": {}, "cost": {}})
-            step_entry["calls"] += 1
-            engine_entry = calls_by_engine.setdefault(engine, {"calls": 0, "usage": {}, "cost": {}})
-            engine_entry["calls"] += 1
-            if step_usage:
-                update_usage_totals(step_entry["usage"], step_usage)
-                update_usage_totals(engine_entry["usage"], step_usage)
-            if step_cost:
-                update_cost_totals(step_entry["cost"], step_cost)
-                update_cost_totals(engine_entry["cost"], step_cost)
-            total_calls += 1
+            # The decision trace is authoritative for decision-engine calls
+            # (a Jev attempt that never sent a request counts zero).
+            residual_usage = dict(step_usage or {})
+            residual_cost = dict(step_cost or {})
+            for call in decision_calls:
+                _tally(step_name, call["engine"], 1, call["usage"], call["cost"])
+                _subtract_totals(residual_usage, call["usage"])
+                _subtract_totals(residual_cost, call["cost"])
+            if source_engine is not None and source_engine not in _DECISION_ENGINES:
+                # The step's own chat engine (e.g. the LLM fallback) made one more call.
+                _tally(step_name, source_engine, 1, residual_usage or None, residual_cost or None)
 
         for entry in list(calls_by_step.values()) + list(calls_by_engine.values()):
             entry["usage"] = entry["usage"] or None
@@ -1049,12 +1109,16 @@ class RunStore:
 
         llm_engine = calls_by_engine.get("llm") or {}
         llm_usage = llm_engine.get("usage") or {}
+        jev_engine = calls_by_engine.get("jev") or {}
+        jev_usage = jev_engine.get("usage") or {}
         call_summary = {
             "total_calls": total_calls,
             "by_step": calls_by_step,
             "by_engine": calls_by_engine,
             "llm_calls": int(llm_engine.get("calls") or 0),
             "llm_tokens": int(llm_usage.get("total_tokens") or 0),
+            "jev_calls": int(jev_engine.get("calls") or 0),
+            "jev_tokens": int(jev_usage.get("total_tokens") or 0),
         }
 
         return {

@@ -173,6 +173,46 @@ class ToolExecutor:
             )
         )
 
+    def run_reaction_type_mapping_jev(
+        self,
+        *,
+        starting: List[str],
+        products: List[str],
+        balance_analysis: Optional[Dict[str, Any]] = None,
+        functional_groups: Optional[Dict[str, Any]] = None,
+        ph_recommendation: Optional[Dict[str, Any]] = None,
+        initial_conditions: Optional[Dict[str, Any]] = None,
+        missing_reagents: Optional[Dict[str, Any]] = None,
+        atom_mapping: Optional[Dict[str, Any]] = None,
+        jev_config: Any = None,
+        client: Any = None,
+    ) -> Dict[str, Any]:
+        """Reaction-type Choice via Jev (decision_policy.reaction_type == "jev").
+
+        Species are map-stripped like every other model input. On a Jev
+        failure the configured fallback may call the LLM selector above.
+        """
+        from .reaction_type_jev import select_reaction_type_jev
+
+        context = dict(
+            balance_analysis=balance_analysis,
+            functional_groups=functional_groups,
+            ph_recommendation=ph_recommendation,
+            initial_conditions=initial_conditions,
+            missing_reagents=missing_reagents,
+            atom_mapping=atom_mapping,
+        )
+        return select_reaction_type_jev(
+            starting_materials=self._sanitize_species_list(starting),
+            products=self._sanitize_species_list(products),
+            jev_config=jev_config,
+            client=client,
+            llm_fallback=lambda: self.run_reaction_type_mapping(
+                starting=starting, products=products, **context
+            ),
+            **context,
+        )
+
     def run_candidate_rescue(
         self,
         *,

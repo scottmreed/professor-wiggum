@@ -1,6 +1,7 @@
 """Explicit run coordinator for the local-first mechanistic runtime."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -348,6 +349,11 @@ class RunCoordinator:
             runtime_trace_label=(
                 str(config.get("runtime_trace_label")).strip()
                 if config.get("runtime_trace_label")
+                else None
+            ),
+            example_reaction_type_bypass=(
+                self._coerce_bool(config.get("example_reaction_type_bypass"), True)
+                if config.get("example_reaction_type_bypass") is not None
                 else None
             ),
         )
@@ -918,7 +924,7 @@ class RunCoordinator:
             attempt=result.attempt,
         )
         model_version_id: Optional[str] = None
-        if result.source == "llm" and resolved_model:
+        if result.source in ("llm", "jev") and resolved_model:
             model_version_id = self.store.upsert_model_version(
                 model_name=resolved_model,
                 reasoning_level=resolved_reasoning,
@@ -1145,10 +1151,18 @@ class RunCoordinator:
         selected_label = str(output.get("selected_label_exact") or "").strip()
         selected_type_id = str(output.get("selected_type_id") or "").strip() or None
         confidence = float(output.get("confidence") or 0.0)
-        _thresh_cfg = state.run_config.reaction_template_confidence_threshold
-        confidence_threshold = float(_thresh_cfg if _thresh_cfg is not None else 0.65)
-        _margin_cfg = state.run_config.reaction_template_margin_threshold
-        margin_threshold = float(_margin_cfg if _margin_cfg is not None else 0.10)
+        from mechanistic_agent.decisions.policies import resolve_reaction_type_gates
+
+        # LLM selections use the RunConfig gates; Jev selections use the
+        # harness jev.thresholds when set, else the same RunConfig gates.
+        gates = resolve_reaction_type_gates(
+            decision_engine=str(output.get("decision_engine") or "") or None,
+            jev=getattr(state, "jev_config", None),
+            run_confidence_threshold=state.run_config.reaction_template_confidence_threshold,
+            run_margin_threshold=state.run_config.reaction_template_margin_threshold,
+        )
+        confidence_threshold = float(gates["confidence_threshold"])
+        margin_threshold = float(gates["margin_threshold"])
         confidence_gap = self._selection_confidence_gap(output)
 
         if selected_label and selected_label != "no_match" and state.selected_reaction_template:
@@ -1601,6 +1615,8 @@ class RunCoordinator:
 
     def _run_initial_phase(self, state: RunState, harness: Optional[HarnessConfig] = None) -> None:
         """Run pre-loop analysis modules. Driven by harness config when provided."""
+        if harness is not None:
+            self._configure_decision_policy(state, harness)
         existing = self._existing_steps(state.run_id)
         context: Dict[str, Optional[Dict[str, Any]]] = {}
 
@@ -1713,15 +1729,40 @@ class RunCoordinator:
             if key not in full_context and val is not None:
                 full_context[key] = val
 
+        reaction_type_result = self._select_reaction_type_result(state, catalog, full_context)
+        output = reaction_type_result.output or {}
+        self._apply_reaction_type_selection(state, output, emit_event=True)
+        return reaction_type_result
+
+    def _select_reaction_type_result(
+        self,
+        state: RunState,
+        catalog: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> StepResult:
+        """Reaction-type selection shared by the harness and legacy pre-loop paths.
+
+        When the run has an ``example_id`` and the example bypass is enabled
+        (default, today's behaviour), the curated label is used without a model
+        call, and a ``no_match`` from the model is replaced by the example
+        heuristic. Comparison runs disable the bypass (PRD §7.3) via the run
+        config key ``example_reaction_type_bypass``, the env var
+        ``MECHANISTIC_EXAMPLE_REACTION_TYPE_BYPASS`` or the harness
+        ``decision_policy.example_reaction_type_bypass``.
+        """
+        example_id = state.run_input.example_id
+        bypass_enabled, bypass_source = self._example_reaction_type_bypass(state)
+        use_example = bool(example_id) and bypass_enabled
+
         mapped_output: Optional[Dict[str, Any]] = None
-        if state.run_input.example_id:
-            mapping = example_mapping_for_reaction_id(catalog, state.run_input.example_id)
+        if use_example:
+            mapping = example_mapping_for_reaction_id(catalog, example_id)
             if isinstance(mapping, dict):
                 mapped_output = self._build_example_mapping_output(
                     mapping=mapping,
                     catalog=catalog,
                     reason="Deterministic mapping from reaction_type_templates example_mappings.",
-                    example_id=state.run_input.example_id,
+                    example_id=example_id,
                 )
 
         if mapped_output is not None:
@@ -1734,16 +1775,16 @@ class RunCoordinator:
         else:
             reaction_type_result = self.reaction_type_agent.run(
                 state,
-                balance_analysis=full_context.get("balance_analysis"),
-                functional_groups=full_context.get("functional_groups"),
-                ph_recommendation=full_context.get("ph_recommendation"),
-                initial_conditions=full_context.get("initial_conditions"),
-                missing_reagents=full_context.get("missing_reagents"),
-                atom_mapping=full_context.get("atom_mapping"),
+                balance_analysis=context.get("balance_analysis"),
+                functional_groups=context.get("functional_groups"),
+                ph_recommendation=context.get("ph_recommendation"),
+                initial_conditions=context.get("initial_conditions"),
+                missing_reagents=context.get("missing_reagents"),
+                atom_mapping=context.get("atom_mapping"),
             )
             output = reaction_type_result.output or {}
             selected_label = str(output.get("selected_label_exact") or "").strip().lower()
-            if state.run_input.example_id and selected_label == "no_match":
+            if use_example and selected_label == "no_match":
                 fallback_mapping = suggest_reaction_type_for_example(
                     catalog,
                     starting_materials=list(state.run_input.starting_materials),
@@ -1754,13 +1795,21 @@ class RunCoordinator:
                         mapping=fallback_mapping,
                         catalog=catalog,
                         reason="Example fallback heuristic applied after no_match selection.",
-                        example_id=state.run_input.example_id,
+                        example_id=example_id,
                     )
                     if isinstance(mapped_output, dict):
+                        # Keep the model's decision trace; the call still happened.
+                        for key in ("decision_trace", "decision_engine", "jev_fallback"):
+                            if key in output:
+                                mapped_output[key] = output[key]
                         reaction_type_result.output = mapped_output
 
-        output = reaction_type_result.output or {}
-        self._apply_reaction_type_selection(state, output, emit_event=True)
+        if example_id:
+            reaction_type_result.output = dict(reaction_type_result.output or {})
+            reaction_type_result.output["example_reaction_type_bypass"] = {
+                "enabled": bypass_enabled,
+                "source": bypass_source,
+            }
         return reaction_type_result
 
     def _run_inject_canonical_byproducts(
@@ -1989,52 +2038,7 @@ class RunCoordinator:
                 step_name="reaction_type_mapping",
                 tool_name="select_reaction_type",
             )
-            mapped_output: Optional[Dict[str, Any]] = None
-            if state.run_input.example_id:
-                mapping = example_mapping_for_reaction_id(catalog, state.run_input.example_id)
-                if isinstance(mapping, dict):
-                    mapped_output = self._build_example_mapping_output(
-                        mapping=mapping,
-                        catalog=catalog,
-                        reason="Deterministic mapping from reaction_type_templates example_mappings.",
-                        example_id=state.run_input.example_id,
-                    )
-
-            if mapped_output is not None:
-                reaction_type_result = StepResult(
-                    step_name="reaction_type_mapping",
-                    tool_name="select_reaction_type",
-                    output=mapped_output,
-                    source="deterministic",
-                )
-            else:
-                reaction_type_result = self.reaction_type_agent.run(
-                    state,
-                    balance_analysis=context.get("balance_analysis"),
-                    functional_groups=context.get("functional_groups"),
-                    ph_recommendation=context.get("ph_recommendation"),
-                    initial_conditions=context.get("initial_conditions"),
-                    missing_reagents=context.get("missing_reagents"),
-                    atom_mapping=context.get("atom_mapping"),
-                )
-                output = reaction_type_result.output or {}
-                selected_label = str(output.get("selected_label_exact") or "").strip().lower()
-                if state.run_input.example_id and selected_label == "no_match":
-                    fallback_mapping = suggest_reaction_type_for_example(
-                        catalog,
-                        starting_materials=list(state.run_input.starting_materials),
-                        products=list(state.run_input.products),
-                    )
-                    if isinstance(fallback_mapping, dict):
-                        mapped_output = self._build_example_mapping_output(
-                            mapping=fallback_mapping,
-                            catalog=catalog,
-                            reason="Example fallback heuristic applied after no_match selection.",
-                            example_id=state.run_input.example_id,
-                        )
-                        if isinstance(mapped_output, dict):
-                            reaction_type_result.output = mapped_output
-
+            reaction_type_result = self._select_reaction_type_result(state, catalog, context)
             self._record_step(state, reaction_type_result)
             output = reaction_type_result.output or {}
             self._apply_reaction_type_selection(state, output, emit_event=True)
@@ -3488,6 +3492,23 @@ class RunCoordinator:
             "rescue_outcome": rescue_outcome,
             "mechanism_output": last_mechanism_output,
         }
+
+    @staticmethod
+    def _configure_decision_policy(state: RunState, harness: Optional[HarnessConfig]) -> None:
+        """Copy ``decision_policy`` and ``jev`` from the harness onto the run state (PRD §17)."""
+        cfg = harness if harness is not None else HarnessConfig()
+        state.decision_policy = copy.deepcopy(cfg.decision_policy)
+        state.jev_config = copy.deepcopy(cfg.jev)
+
+    @staticmethod
+    def _example_reaction_type_bypass(state: RunState) -> Tuple[bool, str]:
+        """Whether the curated example_id reaction-type shortcut may run, and why."""
+        from mechanistic_agent.decisions.policies import resolve_example_bypass
+
+        return resolve_example_bypass(
+            run_value=state.run_config.example_reaction_type_bypass,
+            policy=state.decision_policy,
+        )
 
     @staticmethod
     def _configure_loop_state_mapping(state: RunState, harness: Optional[HarnessConfig]) -> None:
@@ -5788,6 +5809,7 @@ class RunCoordinator:
             harness,
             raw_config=run_row.get("config") if isinstance(run_row.get("config"), dict) else {},
         )
+        self._configure_decision_policy(state, harness)
 
         # Set thread-local model context so tool functions can read model config.
         model_context.set_run_context(

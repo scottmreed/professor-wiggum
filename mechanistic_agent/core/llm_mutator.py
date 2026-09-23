@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+from .types import DECISION_POLICY_ENUMS, DECISION_POLICY_WIRED_KEYS
 from .lane_mutator import (
     FewShotLaneMutator,
     HarnessLaneMutator,
@@ -39,6 +40,12 @@ _RUN_CONFIG_DEFAULT_KEYS = {
     "retry_same_candidate_max",
     "max_reproposals_per_step",
     "repeat_failure_signature_limit",
+}
+# decision_policy keys the evolver may flip, with their enum (default first).
+# Only keys the runtime actually wires are mutable; the rest of the PRD §17
+# block is accepted by the harness schema but has no runtime effect yet.
+_DECISION_POLICY_MUTABLE: Dict[str, tuple] = {
+    key: DECISION_POLICY_ENUMS[key] for key in DECISION_POLICY_WIRED_KEYS
 }
 _PROMPT_START = "<!-- PROMPT_START -->"
 _PROMPT_END = "<!-- PROMPT_END -->"
@@ -250,6 +257,7 @@ class LLMLaneMutator:
             summary["harness_name"] = payload.get("name")
             summary["topology_profiles"] = payload.get("topology_profiles") or {}
             summary["run_config_defaults"] = payload.get("run_config_defaults") or {}
+            summary["decision_policy"] = payload.get("decision_policy") or {}
             modules = []
             for section in ("pre_loop_modules", "post_step_modules", "post_loop_modules"):
                 for module in payload.get(section) or []:
@@ -288,7 +296,7 @@ class LLMLaneMutator:
             "reasons, rescue outcomes, soft-advances) and a summary of the current editable assets. "
             "Diagnose the most frequent or most damaging failure pattern and propose the single edit "
             "most likely to remove it. You may only edit: a topology profile integer field, a harness "
-            "module enabled flag or run_config_defaults key, a call prompt (append or replace an "
+            "module enabled flag, run_config_defaults key or decision_policy engine, a call prompt (append or replace an "
             "instruction between the prompt markers), or a few-shot lane (remove an example by index or "
             "add one as a JSON object with input/output). Never propose changes to validators, scoring, "
             "eval data or the model catalog — they are not reachable. Prefer prompt/few-shot edits when "
@@ -303,7 +311,13 @@ class LLMLaneMutator:
                 "current_assets": asset_summary,
                 "operations": {
                     "topology": "set_field: target='<profile>.<field>' (agent_count|max_candidates_per_agent|peer_rounds), value=int",
-                    "harness": "set_enabled: target='<module_id>', value=true|false  OR  set_run_config_default: target='<key>', value",
+                    "harness": (
+                        "set_enabled: target='<module_id>', value=true|false  OR  "
+                        "set_run_config_default: target='<key>', value  OR  "
+                        "set_decision_policy: target='decision_policy.<key>', value=<enum> ("
+                        + "; ".join(f"{k}: {'|'.join(v)}" for k, v in _DECISION_POLICY_MUTABLE.items())
+                        + ")"
+                    ),
                     "prompt": "append_instruction: target='<call_name>', value='<one instruction line>'  OR  replace_instruction: target='<call_name>', old_text='<exact text>', value='<replacement>'",
                     "few_shot": "remove_few_shot: target='<call_name>', value=<0-based index>  OR  add_few_shot: target='<call_name>', value={\"input\": ..., \"output\": ...}",
                 },
@@ -402,6 +416,27 @@ class LLMLaneMutator:
                     defaults[proposal.target] = value
                     payload["run_config_defaults"] = defaults
                     summary = f"run_config_defaults.{proposal.target} -> {value}"
+                elif proposal.operation == "set_decision_policy":
+                    key = proposal.target.split(".", 1)[1] if proposal.target.startswith("decision_policy.") else proposal.target
+                    allowed = _DECISION_POLICY_MUTABLE.get(key)
+                    if allowed is None:
+                        raise ProposalRejected(f"decision_policy key {key!r} not editable")
+                    value = str(proposal.value or "").strip().lower()
+                    if value not in allowed:
+                        raise ProposalRejected(f"decision_policy.{key} must be one of {list(allowed)}, got {proposal.value!r}")
+                    policy = dict(payload.get("decision_policy") or {})
+                    old_value = str(policy.get(key) or allowed[0])
+                    if old_value == value:
+                        raise ProposalRejected("harness proposal is a no-op")
+                    if value == allowed[0]:
+                        policy.pop(key, None)  # default values are not written
+                    else:
+                        policy[key] = value
+                    if policy:
+                        payload["decision_policy"] = policy
+                    else:
+                        payload.pop("decision_policy", None)
+                    summary = f"decision_policy.{key}: {old_value} -> {value}"
                 else:
                     raise ProposalRejected(f"unsupported harness operation {proposal.operation!r}")
                 out_path = parent_asset_path.with_name(f"{parent_asset_path.stem}.llm_harness_mutated.json")
