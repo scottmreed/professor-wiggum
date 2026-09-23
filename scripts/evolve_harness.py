@@ -37,12 +37,14 @@ from mechanistic_agent.core.archive import (
     EvolutionArchive,
 )
 from mechanistic_agent.core.lane_mutator import (
+    AssetState,
     FewShotLaneMutator,
     HarnessLaneMutator,
     MutatedAsset,
     PromptLaneMutator,
     TopologyLaneMutator,
-    applied_mutation,
+    applied_assets,
+    snapshot_mutated_asset,
 )
 from mechanistic_agent.core.types import ArchiveEntry, IslandConfig, IslandEvolutionConfig
 from mechanistic_agent.flower_curriculum import (
@@ -1217,6 +1219,7 @@ def apply_island_mutation(
     mutation_proposer: str = "random",
     mutation_model: Optional[str] = None,
     failure_digest: Optional[List[Dict[str, Any]]] = None,
+    target_model_name: Optional[str] = None,
 ) -> Tuple[str, str, MutatedAsset]:
     """Dispatch to the appropriate lane mutator for this island.
 
@@ -1225,8 +1228,14 @@ def apply_island_mutation(
     island's allowed lanes (falls back to the blind mutator when the proposal
     is not applicable). The acceptance rule downstream is unchanged.
 
+    ``harness_path`` is the parent's harness JSON. Prompt / few-shot variants
+    are derived from the asset a run for ``target_model_name`` resolves (its
+    per-model override, or the parent's variant when called under
+    ``applied_assets(parent_state)``).
+
     Returns (mutation_type, mutation_summary, mutated_asset). The asset is a
-    sibling variant file; evaluate it under ``applied_mutation(mutated_asset)``.
+    sibling variant file; evaluate it under
+    ``applied_assets(parent_state.with_mutation(mutated_asset))``.
     """
     lane = rng.choice(island.allowed_lanes)
     call_names = ISLAND_CALL_NAMES.get(island.mutation_target, [])
@@ -1238,6 +1247,7 @@ def apply_island_mutation(
             base_dir=base_dir,
             model_name=str(mutation_model or "agent-bridge"),
             call_names=list(call_names) or None,
+            target_model_name=target_model_name,
         )
         result = mutator_llm.propose(
             harness_path,
@@ -1249,13 +1259,13 @@ def apply_island_mutation(
 
     if lane in ("prompt",) and call_names:
         call_name = rng.choice(call_names)
-        mutator = PromptLaneMutator(base_dir=base_dir, call_name=call_name)
+        mutator = PromptLaneMutator(base_dir=base_dir, call_name=call_name, model_name=target_model_name)
         result = mutator.propose(harness_path)
         return "prompt_edit", result.summary, result
 
     if lane in ("few_shot",) and call_names:
         call_name = rng.choice(call_names)
-        mutator_fs = FewShotLaneMutator(base_dir=base_dir, call_name=call_name)
+        mutator_fs = FewShotLaneMutator(base_dir=base_dir, call_name=call_name, model_name=target_model_name)
         result = mutator_fs.propose(harness_path)
         return "few_shot_mine", result.summary, result
 
@@ -1271,7 +1281,7 @@ def apply_island_mutation(
 
     # Fallback: few-shot on default call_name
     fallback_cn = call_names[0] if call_names else "propose_mechanism_step"
-    mutator_fb = FewShotLaneMutator(base_dir=base_dir, call_name=fallback_cn)
+    mutator_fb = FewShotLaneMutator(base_dir=base_dir, call_name=fallback_cn, model_name=target_model_name)
     result = mutator_fb.propose(harness_path)
     return "few_shot_mine", result.summary, result
 
@@ -1442,6 +1452,17 @@ def _initial_failure_digest(store: RunStore, eval_set_id: str, *, limit: int = 8
     return build_failure_digest(snapshots, max_runs=limit)
 
 
+def archive_entry_asset_state(entry: ArchiveEntry) -> AssetState:
+    """The assets an archive entry was evaluated under (base assets for seeds / legacy rows)."""
+    try:
+        payload = json.loads(entry.harness_config_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return AssetState.from_dict(payload.get("asset_state"))
+
+
 def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig) -> None:
     """Archive-based island evolution loop."""
     base_dir = _PROJECT_ROOT
@@ -1474,6 +1495,14 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
     runtime_store = RunStore(
         runtime_base / "data" / "mechanistic.db" if config.dry_run else resolve_db_path(runtime_base)
     )
+    # A dry run keeps every write (curriculum index, lookup cache, variants)
+    # under the workspace so the checkout stays clean.
+    if config.dry_run and config.curriculum_index_path.is_relative_to(base_dir):
+        config.curriculum_index_path = runtime_base / config.curriculum_index_path.relative_to(base_dir)
+    if config.dry_run and config.curriculum_index_report_path.is_relative_to(base_dir):
+        config.curriculum_index_report_path = runtime_base / config.curriculum_index_report_path.relative_to(base_dir)
+    if config.dry_run and config.lookup_cache_path.is_relative_to(base_dir):
+        config.lookup_cache_path = runtime_base / config.lookup_cache_path.relative_to(base_dir)
 
     # Case source: the FlowER curriculum index by default, or the cases of a
     # non-default eval set (e.g. the practice set) when one is named explicitly.
@@ -1515,7 +1544,12 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
     generation = archive.max_generation() + 1
     start_generation = generation
     max_generations = max(0, int(getattr(island_config, "max_generations", 0) or 0))
-    harness_path = base_dir / "harness_versions" / config.harness / "harness.json"
+    # Base harness for entries without a harness variant. In a dry run this is
+    # the workspace copy, so mutators write their sibling variants there.
+    harness_path = runtime_base / "harness_versions" / config.harness / "harness.json"
+    # Each archive entry's variant files are snapshotted here so a later
+    # mutation reusing a sibling file name cannot change a recorded lineage node.
+    variants_root = workspace / "island_variants"
 
     mode_label = "DRY RUN" if config.dry_run else "FULL RUN"
     print(f"\nIsland Evolution {mode_label} — generation {generation}")
@@ -1536,14 +1570,32 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                 print(f"  No parents available on island {island.id}, skipping")
                 continue
 
+            # The parent is the base of this mutation: its harness variant is the
+            # harness the mutator edits, and its prompt / few-shot variants stay
+            # applied while the child is proposed and evaluated.
+            try:
+                parent_state = archive_entry_asset_state(parent)
+            except (KeyError, ValueError) as exc:
+                print(f"  Parent asset state unreadable ({exc}), skipping island")
+                continue
+            missing = parent_state.missing_paths()
+            if missing:
+                print(f"  Parent variant file(s) missing: {', '.join(str(p) for p in missing)}; skipping island")
+                continue
+            entry_id = uuid.uuid4().hex
+
             # 2. Apply mutation
             try:
-                mutation_type, mutation_summary, mutated_asset = apply_island_mutation(
-                    island, parent, runtime_base, harness_path, rng,
-                    mutation_proposer=str(getattr(island_config, "mutation_proposer", "random") or "random"),
-                    mutation_model=getattr(island_config, "mutation_model", None) or config.model_name,
-                    failure_digest=latest_failure_digest.get(island.id, []),
-                )
+                with applied_assets(parent_state):
+                    mutation_type, mutation_summary, scratch_asset = apply_island_mutation(
+                        island, parent, runtime_base, parent_state.harness_path or harness_path, rng,
+                        mutation_proposer=str(getattr(island_config, "mutation_proposer", "random") or "random"),
+                        mutation_model=getattr(island_config, "mutation_model", None) or config.model_name,
+                        failure_digest=latest_failure_digest.get(island.id, []),
+                        target_model_name=config.model_name,
+                    )
+                mutated_asset = snapshot_mutated_asset(scratch_asset, variants_root / entry_id)
+                child_state = parent_state.with_mutation(mutated_asset)
                 print(f"  Mutation: {mutation_type} — {mutation_summary}")
             except (FileNotFoundError, ValueError) as exc:
                 print(f"  Mutation failed: {exc}, skipping island")
@@ -1602,24 +1654,26 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                 print(f"  No runnable cases for island {island.id}")
                 continue
 
-            # Evaluate the mutated variant, not the parent: harness/topology
-            # variants go in as the run's harness_config_path, prompt/few-shot
-            # variants are installed as call-asset overrides for the batch.
-            with applied_mutation(mutated_asset) as harness_override:
+            # Evaluate the child (parent assets + this mutation), not the parent:
+            # the harness variant goes in as the run's harness_config_path and
+            # prompt/few-shot variants are installed as call-asset overrides.
+            with applied_assets(child_state) as harness_override:
                 registry = RegistrySet(runtime_base)
                 hashes = registry.bundle_hashes()
                 hashes["mutated_asset_path"] = str(mutated_asset.asset_path)
+                hashes["asset_state"] = child_state.to_dict()
                 if harness_override:
                     hashes["harness_config_path"] = harness_override
 
-                eval_run_id, case_results = run_curriculum_batch(
-                    config,
-                    prepared_batch=prepared_batch,
-                    store=runtime_store,
-                    base_dir=runtime_base,
-                    workspace=workspace,
-                    harness_config_path=harness_override,
-                )
+                with (pushd(runtime_base) if config.dry_run else contextlib.nullcontext()):
+                    eval_run_id, case_results = run_curriculum_batch(
+                        config,
+                        prepared_batch=prepared_batch,
+                        store=runtime_store,
+                        base_dir=runtime_base,
+                        workspace=workspace,
+                        harness_config_path=harness_override,
+                    )
 
             # 4. Score and create archive entry
             scores = [r["score"] for r in case_results if "score" in r]
@@ -1631,7 +1685,7 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
             score_delta = mean_score - parent.mean_quality_score
 
             entry = ArchiveEntry(
-                id=uuid.uuid4().hex,
+                id=entry_id,
                 generation=generation,
                 island_id=island.id,
                 parent_id=parent.id,

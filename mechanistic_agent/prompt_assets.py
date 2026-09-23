@@ -228,14 +228,16 @@ def _parse_skill_md_frontmatter(text: str) -> Dict[str, str]:
 # file. Evolution loops (island mode, overnight Ralph) write mutated variants as
 # sibling files; ``call_asset_overrides`` makes an in-process evaluation resolve
 # those variants instead of the committed assets, without touching the files.
-# Keyed by (call_name, "prompt" | "few_shot"). Deliberately not thread-local so
-# multi-agent topologies that fan out to worker threads see the same variant.
-_CALL_ASSET_OVERRIDES: Dict[Tuple[str, str], Path] = {}
+# Keyed by (call_name, "prompt" | "few_shot", scope), where scope is ``None`` for
+# the shared call asset and a model asset slug for a ``models/<slug>/`` lane.
+# Deliberately not thread-local so multi-agent topologies that fan out to worker
+# threads see the same variant.
+_CALL_ASSET_OVERRIDES: Dict[Tuple[str, str, Optional[str]], Path] = {}
 _CALL_ASSET_OVERRIDES_LOCK = threading.Lock()
 
 
-def _call_asset_override(call_name: str, kind: str) -> Optional[Path]:
-    return _CALL_ASSET_OVERRIDES.get((call_name, kind))
+def _call_asset_override(call_name: str, kind: str, scope: Optional[str] = None) -> Optional[Path]:
+    return _CALL_ASSET_OVERRIDES.get((call_name, kind, scope))
 
 
 @contextlib.contextmanager
@@ -243,20 +245,29 @@ def call_asset_overrides(
     *,
     prompts: Optional[Mapping[str, Path]] = None,
     few_shots: Optional[Mapping[str, Path]] = None,
+    model_name: Optional[str] = None,
 ) -> Iterator[None]:
     """Temporarily resolve ``call_name`` prompt / few-shot assets from variant files.
 
-    ``prompts`` maps call_name -> a SKILL.md variant; it wins over both the call
-    base prompt and any per-model override. ``few_shots`` maps call_name -> a
-    few_shot.jsonl variant that replaces the call's base few-shot file (a
-    per-model few-shot override, if any, is still merged in front of it).
+    A variant replaces exactly one asset file, at the scope it was derived from:
+
+    * ``model_name=None`` (shared scope): the variant replaces the call's base
+      ``SKILL.md`` / ``few_shot.jsonl``. A model that has its own
+      ``models/<slug>/SKILL.md`` keeps resolving that override (it never read the
+      base prompt); a model few-shot override is still merged in front of the
+      replaced base few-shot file.
+    * ``model_name=<model>``: the variant replaces that model's
+      ``models/<slug>/`` asset and only applies when resolving for that model;
+      the shared base few-shot file is still merged behind it.
+
     Previous values are restored on exit.
     """
-    entries: Dict[Tuple[str, str], Path] = {}
+    scope = model_asset_slug(model_name) if str(model_name or "").strip() else None
+    entries: Dict[Tuple[str, str, Optional[str]], Path] = {}
     for call_name, path in (prompts or {}).items():
-        entries[(normalize_call_name(call_name), "prompt")] = Path(path)
+        entries[(normalize_call_name(call_name), "prompt", scope)] = Path(path)
     for call_name, path in (few_shots or {}).items():
-        entries[(normalize_call_name(call_name), "few_shot")] = Path(path)
+        entries[(normalize_call_name(call_name), "few_shot", scope)] = Path(path)
     with _CALL_ASSET_OVERRIDES_LOCK:
         previous = {key: _CALL_ASSET_OVERRIDES.get(key) for key in entries}
         _CALL_ASSET_OVERRIDES.update(entries)
@@ -304,27 +315,60 @@ def resolved_shared_base_path(base_dir: Path | None = None, model_name: str | No
     return shared_base_path(base_dir)
 
 
-def resolved_call_base_path(call_name: str, base_dir: Path | None = None, model_name: str | None = None) -> Path:
+def _asset_file_name(kind: str) -> str:
+    if kind == "prompt":
+        return "SKILL.md"
+    if kind == "few_shot":
+        return "few_shot.jsonl"
+    raise ValueError(f"Unknown call asset kind: {kind!r}")
+
+
+def _resolved_model_lane_asset(
+    call_name: str, kind: str, base_dir: Path | None, selected_model: str
+) -> Optional[Path]:
+    """The ``models/<slug>/`` asset (or its active variant) for ``selected_model``, if any."""
+    if not selected_model:
+        return None
+    variant = _call_asset_override(call_name, kind, model_asset_slug(selected_model))
+    if variant is not None:
+        return variant
+    candidate = _call_override_dir(call_name, selected_model, base_dir) / _asset_file_name(kind)
+    return candidate if candidate.exists() else None
+
+
+def _resolved_shared_asset(call_name: str, kind: str, base_dir: Path | None) -> Path:
+    """The call's shared asset (or its active shared-scope variant)."""
+    return _call_asset_override(call_name, kind) or (call_dir(call_name, base_dir) / _asset_file_name(kind))
+
+
+def resolve_call_asset_source(
+    call_name: str,
+    kind: str,
+    base_dir: Path | None = None,
+    model_name: str | None = None,
+) -> Tuple[Path, Optional[str]]:
+    """Return ``(path, scope_model)`` of the ``kind`` asset a run for ``model_name`` resolves.
+
+    ``kind`` is ``"prompt"`` (SKILL.md) or ``"few_shot"`` (few_shot.jsonl).
+    ``scope_model`` is the model name when the per-model ``models/<slug>/`` lane
+    (or a variant installed at that scope) is what resolves, else ``None``
+    (shared). Active :func:`call_asset_overrides` are honoured, so a mutation
+    derived from this path builds on the variant currently under evaluation.
+    """
     normalized = normalize_call_name(call_name)
-    override = _call_asset_override(normalized, "prompt")
-    if override is not None:
-        return override
     selected_model = str(model_name or _active_model_name() or "").strip()
-    if selected_model:
-        candidate = _call_override_dir(normalized, selected_model, base_dir) / "SKILL.md"
-        if candidate.exists():
-            return candidate
-    return call_base_path(normalized, base_dir)
+    model_lane = _resolved_model_lane_asset(normalized, kind, base_dir, selected_model)
+    if model_lane is not None:
+        return model_lane, selected_model
+    return _resolved_shared_asset(normalized, kind, base_dir), None
+
+
+def resolved_call_base_path(call_name: str, base_dir: Path | None = None, model_name: str | None = None) -> Path:
+    return resolve_call_asset_source(call_name, "prompt", base_dir, model_name)[0]
 
 
 def resolved_call_few_shot_path(call_name: str, base_dir: Path | None = None, model_name: str | None = None) -> Path:
-    normalized = normalize_call_name(call_name)
-    selected_model = str(model_name or _active_model_name() or "").strip()
-    if selected_model:
-        candidate = _call_override_dir(normalized, selected_model, base_dir) / "few_shot.jsonl"
-        if candidate.exists():
-            return candidate
-    return _call_asset_override(normalized, "few_shot") or call_few_shot_path(normalized, base_dir)
+    return resolve_call_asset_source(call_name, "few_shot", base_dir, model_name)[0]
 
 
 def load_shared_base_prompt(base_dir: Path | None = None, *, model_name: str | None = None) -> str:
@@ -344,10 +388,13 @@ def load_call_few_shot_examples(
     model_name: str | None = None,
 ) -> List[Dict[str, Any]]:
     selected_model = str(model_name or _active_model_name() or "").strip() or None
-    base_path = _call_asset_override(normalize_call_name(call_name), "few_shot") or call_few_shot_path(call_name, base_dir)
+    normalized = normalize_call_name(call_name)
+    base_path = _resolved_shared_asset(normalized, "few_shot", base_dir)
     paths: List[Path] = [base_path]
     if selected_model:
-        override_path = _call_override_dir(normalize_call_name(call_name), selected_model, base_dir) / "few_shot.jsonl"
+        override_path = _resolved_model_lane_asset(normalized, "few_shot", base_dir, selected_model) or (
+            _call_override_dir(normalized, selected_model, base_dir) / "few_shot.jsonl"
+        )
         paths = [override_path, base_path]
 
     rows: List[Dict[str, Any]] = []
