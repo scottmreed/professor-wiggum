@@ -22,7 +22,7 @@ from mechanistic_agent.core.mechanism_moves import (  # noqa: E402
     reaction_bond_deltas,
 )
 from mechanistic_agent.tools import predict_mechanistic_step  # noqa: E402
-from skills.mechanistic.bond_electron_validation.validator import validate_bond_electron  # noqa: E402
+from mechanistic_agent.core.validators import ALL_VALIDATOR_IDS, _run_python_validators  # noqa: E402
 
 from _optional_assets import PROJECT_ROOT  # noqa: E402
 
@@ -79,7 +79,7 @@ def _benchmark_steps() -> List[Tuple[str, Dict[str, Any]]]:
     for relpath in _BENCHMARK_SETS:
         for case in json.loads((PROJECT_ROOT / relpath).read_text()):
             for step in (case.get("verified_mechanism") or {}).get("steps") or []:
-                steps.append((f"{case['id']}:{step.get('step_index')}", step))
+                steps.append((f"{case['id']}:{step.get('step_index')}", {**step, "_set": relpath}))
     return steps
 
 
@@ -132,26 +132,62 @@ def test_reaction_bond_deltas_agrees_with_mech_moves_on_benchmark() -> None:
     assert agree >= 145  # 149 of 160 (was 123 before the fix)
 
 
-def test_bond_electron_validator_outcome_unchanged_on_benchmark_sample() -> None:
-    """``observed_bond_deltas`` is metadata only: the dbe check reads ``valid``,
-    which comes from dbe parsing, not from the observed deltas."""
-    sample = _benchmark_steps()[::8]
-    assert len(sample) >= 20
-    for label, step in sample:
-        payload = json.loads(
-            predict_mechanistic_step(
-                step_index=0,
-                current_state=step["current_state"],
-                target_products=step.get("target_products") or [],
-                electron_pushes=step["electron_pushes"],
-                reaction_smirks=step["reaction_smirks"],
-                predicted_intermediate=step.get("predicted_intermediate"),
-                resulting_state=step.get("resulting_state"),
-            )
+def _validator_sample() -> List[Tuple[str, Dict[str, Any]]]:
+    """Deterministic sample: every 4th eval_set step plus every benchmark step
+    whose SMIRKS changes a bond to mapped H (proton/hydride moves), capped."""
+    eval_steps = [item for item in _benchmark_steps() if item[1]["_set"] == _BENCHMARK_SETS[0]]
+    chosen = {label: step for label, step in eval_steps[::4]}
+    for label, step in _benchmark_steps():
+        smirks = step["reaction_smirks"]
+        if _as_map(reaction_bond_deltas(smirks)) != _default_parse_deltas(smirks):
+            chosen.setdefault(label, step)
+    return sorted(chosen.items())[:150]
+
+
+def _run_step(step: Dict[str, Any]) -> Dict[str, Any]:
+    return json.loads(
+        predict_mechanistic_step(
+            step_index=0,
+            current_state=step["current_state"],
+            target_products=step.get("target_products") or [],
+            electron_pushes=step["electron_pushes"],
+            reaction_smirks=step["reaction_smirks"],
+            predicted_intermediate=step.get("predicted_intermediate"),
+            resulting_state=step.get("resulting_state"),
         )
-        bev = payload["bond_electron_validation"]
-        assert bev["valid"] is True, label
-        assert payload["status"] == "accepted", label
-        check = validate_bond_electron(payload, dbe_policy="strict")
-        assert check.passed is True, label
-        assert _as_map(bev["observed_bond_deltas"]) == _as_map(reaction_bond_deltas(step["reaction_smirks"]))
+    )
+
+
+def _old_reaction_bond_deltas(smirks: str) -> List[Dict[str, Any]]:
+    return [{"pair": p, "delta": d} for p, d in sorted(_default_parse_deltas(smirks).items())]
+
+
+def test_validator_outcome_unchanged_before_after_on_benchmark_sample(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each sampled step goes through predict_mechanistic_step and the step
+    validators twice: with the pre-fix (H-dropping) parser patched in, and
+    with the fix. ``observed_bond_deltas`` is metadata only, so every other
+    payload field and every validator check must be identical."""
+    import mechanistic_agent.tools as tools_mod
+
+    monkeypatch.setenv("MECHANISTIC_CHEMISTRY_BACKEND", "python")  # no rdkit-agent subprocesses
+    sample = _validator_sample()
+    assert len(sample) >= 50
+    changed_metadata = 0
+    for label, step in sample:
+        after = _run_step(step)
+        with monkeypatch.context() as m:
+            m.setattr(tools_mod, "reaction_bond_deltas", _old_reaction_bond_deltas)
+            before = _run_step(step)
+        bev_before = before["bond_electron_validation"]
+        bev_after = after["bond_electron_validation"]
+        if bev_before.get("observed_bond_deltas") != bev_after.get("observed_bond_deltas"):
+            changed_metadata += 1
+        bev_before.pop("observed_bond_deltas", None)
+        bev_after.pop("observed_bond_deltas", None)
+        assert before == after, label
+        assert after["status"] == "accepted" and bev_after["valid"] is True, label
+        for policy in ("strict", "soft"):
+            checks_before = _run_python_validators(before, dbe_policy=policy, active=ALL_VALIDATOR_IDS).checks
+            checks_after = _run_python_validators(after, dbe_policy=policy, active=ALL_VALIDATOR_IDS).checks
+            assert [(c.name, c.passed) for c in checks_before] == [(c.name, c.passed) for c in checks_after], label
+    assert changed_metadata >= 30
