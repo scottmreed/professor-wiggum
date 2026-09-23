@@ -789,6 +789,12 @@ a9  ───────── a9 ───────── a9 ────�
 
 Hovering one lineage highlights that atom in every displayed state.
 
+## 11.4.1 As implemented (2026-09-23)
+
+- `mechanism_step_accepted.atom_identity` (`atom_identity.v1`): built in `RunCoordinator._atom_identity_payload` from the mapped loop state that `_record_smirks_state_agreement` advances for every accepted candidate — `mapped_species` (mapped SMILES), `atoms` (`pid`, `map_number`, `element`, `component`), and the identity counters from the executor record (`preserved_id_count`, `new_ids`, `lost_ids`, `identity_resynced`, `smirks_state_agreement`, `executed`). `identity_source` is `persistent` only when `loop_state_mapping == "mapped"`; in the default `stripped` loop it is `derived`, because the ids come from re-executing the accepted candidate, so per-candidate `a<map>` ids in the ReactionFocus are not guaranteed to coincide with them.
+- `GET /api/runs/{id}/observatory` adds `atom_lineage` (`atom_lineage.v1`): rows are persistent ids with element, columns are the accepted states; each cell is the atom's map number or absent; `new_at_step` / `lost_at_step` come from the counters (falling back to first/last presence); `changed_pids` lists atoms that appeared or disappeared. Accepted-path entries carry an `identity` summary and states carry `mapped_species` / `atoms`. Legacy runs without identity project an empty lineage.
+- UI: an **Atom lineage** `<details>` under the search spine shows the table (changed atoms by default, "show all" toggle) and states the identity source. Hover-linking a lineage row to the structures (§11.4 last paragraph) and the focus-only default (§11.3) remain open; both need the `a<map>` ↔ pid bridge, i.e. the mapped loop.
+
 ## 11.5 Mapping confidence must not be conflated with mapping quality
 
 Potential values include:
@@ -2079,7 +2085,7 @@ Normal users need:
 
 **Exit criterion:** every accepted or rejected candidate has a deterministic focus mask and chemistry-delta payload.
 
-**Status (2026-09-23):** ReactionFocus v1, BE/ΔBE v1 and `candidate_validation_result` delivered (`feature/observatory-m1-reaction-focus`); persistent-identity adapter and mapping-lineage payload still open.
+**Status (2026-09-23):** ReactionFocus v1, BE/ΔBE v1, `candidate_validation_result`, `atom_identity` on accepted steps and the `atom_lineage` projection are delivered. The persistent-id ↔ `a<map>` bridge for candidates requires the mapped loop (`loop_state_mapping: mapped`) and is the remaining M1 item.
 
 ---
 
