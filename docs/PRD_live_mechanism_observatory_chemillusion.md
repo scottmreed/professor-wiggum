@@ -332,6 +332,10 @@ so every deterministic row is stored with the run's LLM model. `mechanistic_agen
 
 `tools.py::propose_mechanism_step` and `select_reaction_type` retry on a `fallback_model` and set `output["model_used"] = fallback_model`, but `IntermediateAgent.run` (and the other LLM agents) build `StepResult(model=<configured>)` and call `_extract_step_cost(output, <configured>)`. Only `_run_jev` propagates `model_used`. The stored `model` and the cost attribution are therefore wrong on every fallback. M0 must resolve `resolved_model` from `output.model_used` first; cost re-attribution is a follow-up.
 
+**Observed live (2026-09-23, M0 branch).** A keyless `agent-bridge` run with no bridge directory configured produced `reaction_type_mapping` with `requested_model: agent-bridge`, `resolved_model: gpt-4o`, `model_fallback: true`: the selector fell back to a hard-coded OpenAI model and spent real tokens on a run the user believed was keyless. Before M0 the stored row said only `model: gpt-4o` with no trace of what was requested.
+
+**Swallowed errors are failed calls.** `tools.py` catches provider exceptions and returns `status: failed|fallback` plus an `error` string while the `StepResult` keeps `source="llm"`. Provenance SHALL emit `inference_call_failed` for that shape; a chat step that never got a model response must not be counted as a completed call. Seven of eight LLM steps in the run above were of this kind and would otherwise have inflated `llm_calls`.
+
 ### 3.7.3 Accepted ≠ validated: soft advance
 
 `harness_versions/default/harness.json` sets `run_config_defaults.proceed_on_validation_failure: true`. When every candidate fails, the loop emits `mechanism_step_soft_advance`, writes a `mechanism_synthesis` row with a failing `soft_advance` check, and then calls `_apply_candidate`, which emits `mechanism_step_accepted` with `validation_summary.passed == false`. A pathway view that draws every accepted edge the same way would show a chemically unvalidated step as accepted. See §16.6.

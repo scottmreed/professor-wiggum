@@ -41,6 +41,8 @@ from mechanistic_agent.core import (
     RunStore,
     select_step_models,
 )
+from mechanistic_agent.core.provenance import build_run_provenance, resolve_step_provenance
+from mechanistic_agent.core.types import StepResult
 from mechanistic_agent.core.job_executor import ThreadJobExecutor
 from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
 from mechanistic_agent.core.storage_interfaces import (
@@ -1576,7 +1578,15 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             store.append_event(
                 run_id,
                 "step_started",
-                {"step_name": node, "tool_name": node, "attempt": attempt, "retry_index": retry_index},
+                {
+                    "step_name": node,
+                    "tool_name": node,
+                    "attempt": attempt,
+                    "retry_index": retry_index,
+                    "planned_engine": "deterministic",
+                    "planned_model": None,
+                    "planned_reasoning": None,
+                },
                 step_name=node,
             )
             store.record_step_output(
@@ -1965,8 +1975,23 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
                 "tool_name": "human_submitted_mechanistic_step",
                 "attempt": attempt,
                 "retry_index": 0,
+                "planned_engine": "human",
+                "planned_model": None,
+                "planned_reasoning": None,
             },
             step_name="mechanism_synthesis",
+        )
+        # Same normalization as RunCoordinator._record_step (PRD §3.7.5).
+        human_provenance = resolve_step_provenance(
+            StepResult(
+                step_name="mechanism_synthesis",
+                tool_name="human_submitted_mechanistic_step",
+                output=output,
+                attempt=attempt,
+                source="human",
+            ),
+            configured_model=None,
+            configured_reasoning=None,
         )
         store.record_step_output(
             run_id=run_id,
@@ -1980,6 +2005,21 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             output=output,
             validation=validation,
             accepted_bool=True if validation.get("passed") else None,
+        )
+        store.append_event(
+            run_id,
+            "step_output",
+            {
+                "step_name": "mechanism_synthesis",
+                "tool_name": "human_submitted_mechanistic_step",
+                "attempt": attempt,
+                "retry_index": 0,
+                "source": "human",
+                "output": output,
+                "validation": validation,
+                "provenance": human_provenance.as_dict(),
+            },
+            step_name="mechanism_synthesis",
         )
         store.add_trace_record(
             run_id=run_id,
@@ -2126,6 +2166,10 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         snapshot["reaction_type_selection"] = _latest_reaction_type_selection(display_snapshot)
         snapshot["template_guidance_state"] = _latest_template_guidance_state(display_snapshot)
         snapshot["cost_summary"] = store.get_run_cost_summary(str(display_snapshot.get("id") or run_id))
+        # Observatory PRD §14.4 / §17: engine + model per step and the run-level
+        # model inventory, derived only from persisted events so a reload
+        # reproduces the same answer. Present in both verbose and compact views.
+        snapshot["provenance"] = build_run_provenance(display_snapshot.get("events") or [])
 
         if verbose:
             return snapshot
@@ -2190,6 +2234,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "ralph_latest_child_status": snapshot.get("ralph_latest_child_status"),
             "step_outputs": display_snapshot.get("step_outputs", []),
             "step_prompts": snapshot.get("step_prompts", []),
+            "provenance": snapshot.get("provenance"),
         }
 
     @app.get("/api/runs/{run_id}/flow")

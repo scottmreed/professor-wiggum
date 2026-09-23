@@ -949,3 +949,23 @@ button:hover:not(:disabled) {
 .api-link:hover {
   text-decoration: underline;
 }
+
+/* Observatory M0: engine/model provenance badge (text primary, colour secondary) */
+.engine-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #eef0f3;
+  color: #2b2f36;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.engine-badge.llm { background: #fff2d8; color: #7a4200; }
+.engine-badge.jev { background: #e8eefb; color: #1a2e70; }
+.engine-badge.deterministic { background: #e7f4ea; color: #1a4d22; }
+.engine-badge.human { background: #f3e8fb; color: #4d1a70; }
+.model-inventory { font-size: 0.78rem; }
