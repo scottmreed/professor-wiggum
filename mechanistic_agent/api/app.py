@@ -2119,6 +2119,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
         snapshot["latest_step_mapping"] = _latest_step_mapping_summary(display_snapshot)
         snapshot["reaction_type_selection"] = _latest_reaction_type_selection(display_snapshot)
         snapshot["template_guidance_state"] = _latest_template_guidance_state(display_snapshot)
+        snapshot["cost_summary"] = store.get_run_cost_summary(str(display_snapshot.get("id") or run_id))
 
         if verbose:
             return snapshot
@@ -2173,6 +2174,7 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
             "latest_step_mapping": snapshot.get("latest_step_mapping"),
             "reaction_type_selection": snapshot.get("reaction_type_selection"),
             "template_guidance_state": snapshot.get("template_guidance_state"),
+            "cost_summary": snapshot.get("cost_summary"),
             "overall_balance": snapshot.get("overall_balance"),
             "pending_verification": snapshot.get("pending_verification", []),
             "latest_pause": snapshot.get("latest_pause"),

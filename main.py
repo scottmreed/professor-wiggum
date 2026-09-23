@@ -445,6 +445,7 @@ def _render_leaderboard_markdown(
     timestamp = generated_at or time.strftime("%Y-%m-%d %H:%M:%S")
     uses_weighted = any(str(item.get("aggregate_weighting") or "") for item in items)
     includes_cost = any("total_cost" in item for item in items)
+    includes_calls = any("llm_calls" in item for item in items)
     ranking_text = (
         "- Ranking order: weighted quality score, then weighted pass rate, then lower total cost."
         if uses_weighted
@@ -505,25 +506,21 @@ def _render_leaderboard_markdown(
             "",
         ]
     )
+    header_cols = ["Rank", "Model", "Thinking", "Type", "Score", "Outcome", "Pass", "Cases"]
     if includes_cost:
-        lines.extend(
-            [
-                "| Rank | Model | Thinking | Type | Score | Outcome | Pass | Cases | Cost | Group |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "| Rank | Model | Thinking | Type | Score | Outcome | Pass | Cases | Group |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-            ]
-        )
+        header_cols.append("Cost")
+    if includes_calls:
+        header_cols.extend(["LLM Calls", "LLM Tokens"])
+    header_cols.append("Group")
+    lines.extend(
+        [
+            "| " + " | ".join(header_cols) + " |",
+            "| " + " | ".join(["---"] * len(header_cols)) + " |",
+        ]
+    )
     if not items:
-        if includes_cost:
-            lines.append("| - | - | - | - | - | - | - | - | - | No completed rows |")
-        else:
-            lines.append("| - | - | - | - | - | - | - | - | No completed rows |")
+        placeholder_cols = ["-"] * (len(header_cols) - 1) + ["No completed rows"]
+        lines.append("| " + " | ".join(placeholder_cols) + " |")
         return "\n".join(lines)
 
     has_bridge_origin = False
@@ -541,16 +538,26 @@ def _render_leaderboard_markdown(
         pass_rate = f"{float(row.get('weighted_pass_rate') or row.get('deterministic_pass_rate') or 0.0) * 100.0:.1f}%"
         case_count = str(row.get("case_count") or 0)
         group = str(row.get("run_group_name") or "n/a")
+        row_cells = [
+            str(index),
+            model_cell,
+            f"`{thinking}`",
+            run_type,
+            score_display,
+            outcome,
+            pass_rate,
+            case_count,
+        ]
         if includes_cost:
             total_cost = float(row.get("total_cost") or 0.0)
-            cost_display = f"${total_cost:.3f}"
-            lines.append(
-                f"| {index} | {model_cell} | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | {cost_display} | `{group}` |"
-            )
-        else:
-            lines.append(
-                f"| {index} | {model_cell} | `{thinking}` | {run_type} | {score_display} | {outcome} | {pass_rate} | {case_count} | `{group}` |"
-            )
+            row_cells.append(f"${total_cost:.3f}")
+        if includes_calls:
+            llm_calls = int(row.get("llm_calls") or 0)
+            llm_tokens = int(row.get("llm_tokens") or 0)
+            row_cells.append(str(llm_calls))
+            row_cells.append(f"{llm_tokens:,}")
+        row_cells.append(f"`{group}`")
+        lines.append("| " + " | ".join(row_cells) + " |")
     if has_bridge_origin:
         lines.extend(
             [
