@@ -458,8 +458,8 @@ def _steps(case: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _explicit_h_bond_deltas(reaction_smirks: str) -> Dict[Tuple[int, int], float]:
-    # reaction_bond_deltas() parses with RDKit defaults, which drop mapped H
-    # atoms; the benchmark's proton moves need them kept.
+    # Independent oracle for reaction_bond_deltas(): keeps mapped H atoms so
+    # the benchmark's proton moves are counted.
     params = Chem.SmilesParserParams()
     params.removeHs = False
     core = reaction_smirks.split("|")[0].strip()
@@ -486,11 +486,13 @@ def _moves_under_specified(step: Dict[str, Any]) -> bool:
     return implied != _explicit_h_bond_deltas(step["reaction_smirks"])
 
 
-def test_reaction_bond_deltas_drops_hydrogen_bonds_on_benchmark_smirks() -> None:
-    """Documents a metadata gap found by the spike (not fixed here)."""
+def test_reaction_bond_deltas_keeps_hydrogen_bonds_on_benchmark_smirks() -> None:
+    """The spike found reaction_bond_deltas dropped mapped H; now fixed
+    (see tests/fast/test_reaction_bond_deltas_hydrogens.py)."""
     smirks = "[O-:1][H:7].[C:3](=[O:4])([O:5][H:6])[H:8]>>[O:1]([H:7])[H:6].[C:3](=[O:4])([O-:5])[H:8]"
-    assert (5, 6) in _explicit_h_bond_deltas(smirks)
-    assert all((5, 6) != tuple(d["pair"]) for d in reaction_bond_deltas(smirks))
+    observed = {tuple(d["pair"]): d["delta"] for d in reaction_bond_deltas(smirks)}
+    assert observed == _explicit_h_bond_deltas(smirks)
+    assert observed[(5, 6)] == -1.0 and observed[(1, 6)] == 1.0
 
 
 def _sweep(relpath: str, route: str, *, policy: str = "auto", every: int = 1) -> Tuple[int, int, List[Dict[str, Any]]]:
