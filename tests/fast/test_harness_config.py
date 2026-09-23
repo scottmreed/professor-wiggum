@@ -242,6 +242,42 @@ class TestNoToolsBaselineHarness:
         assert no_tools_config.loop_module.get("kind") == "text_completion"
 
 
+class TestNoMappingAblationHarness:
+    """Mapping-only ablation: default minus atom_mapping and step_atom_mapping."""
+
+    DISABLED = {"atom_mapping", "step_atom_mapping"}
+
+    @pytest.fixture
+    def no_mapping_config(self, registry: HarnessRegistry) -> HarnessConfig:
+        return registry.load("no_mapping")
+
+    def test_loads_without_error(self, no_mapping_config: HarnessConfig) -> None:
+        assert no_mapping_config.name == "no_mapping"
+        assert no_mapping_config.metadata.get("changelog")
+
+    def test_only_mapping_modules_disabled(self, no_mapping_config: HarnessConfig) -> None:
+        disabled = {m.id for m in no_mapping_config.all_modules() if not m.enabled}
+        assert disabled == self.DISABLED
+
+    def test_module_graph_matches_default(
+        self, no_mapping_config: HarnessConfig, default_config: HarnessConfig
+    ) -> None:
+        def _shape(config: HarnessConfig) -> list:
+            return [
+                (m.id, m.phase, m.kind, m.enabled or m.id in self.DISABLED)
+                for m in config.all_modules()
+            ]
+
+        assert _shape(no_mapping_config) == _shape(default_config)
+        assert no_mapping_config.run_config_defaults == default_config.run_config_defaults
+        assert no_mapping_config.topology_profiles == default_config.topology_profiles
+        assert no_mapping_config.tool_calling_mode == default_config.tool_calling_mode
+
+    def test_mapping_modules_absent_from_enabled_lists(self, no_mapping_config: HarnessConfig) -> None:
+        assert "atom_mapping" not in {m.id for m in no_mapping_config.enabled_pre_loop()}
+        assert "step_atom_mapping" not in {m.id for m in no_mapping_config.enabled_post_step()}
+
+
 # ---------------------------------------------------------------------------
 # Phase 1: serialization round-trip
 # ---------------------------------------------------------------------------
