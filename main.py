@@ -249,6 +249,7 @@ def _build_eval_case_summary(
     case_step_count: Optional[int],
     subagent_scores: Dict[str, Any],
     scored_error: Optional[str] = None,
+    mapping_agreement: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     diagnostics = _extract_eval_run_diagnostics(snapshot)
     summary: Dict[str, Any] = {
@@ -260,6 +261,9 @@ def _build_eval_case_summary(
         "eval_mode": "harness",
         "subagent_scores": subagent_scores,
     }
+    if mapping_agreement is not None:
+        # Recorded metric (benchmark mapping recall); not part of the score.
+        summary["mapping_agreement"] = mapping_agreement
     summary.update(diagnostics)
     summary.update(_extract_chemistry_backend_diagnostics(snapshot))
     return summary
@@ -3600,6 +3604,7 @@ def _execute_harness_eval_run(
                 case_step_count=case_step_count,
                 subagent_scores=subagent_scores,
                 scored_error=graded.get("error"),
+                mapping_agreement=graded.get("mapping_agreement"),
             )
             chemistry = summary.get("chemistry_backend") if isinstance(summary.get("chemistry_backend"), dict) else {}
             if chemistry:

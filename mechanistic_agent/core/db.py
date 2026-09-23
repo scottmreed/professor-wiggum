@@ -3825,3 +3825,29 @@ class RunStore:
             item["result"] = self._json_loads(item.pop("result_json", None), None)
             output.append(item)
         return output
+
+
+class ReadOnlyRunStore(RunStore):
+    """RunStore over an existing database opened with SQLite ``mode=ro``.
+
+    Skips schema initialisation and migrations, so it never creates or alters
+    the file. Any write attempted through it raises ``sqlite3.OperationalError``.
+    Used by audit/backfill tooling that must not touch the maintainer's DB.
+    """
+
+    def __init__(self, db_path: Path) -> None:  # noqa: D107 - see class docstring
+        path = Path(db_path)
+        if not path.is_file():
+            raise FileNotFoundError(str(path))
+        self.db_path = path
+        self._lock = threading.Lock()
+
+    @contextmanager
+    def _connect(self):
+        uri = f"file:{self.db_path.resolve()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()

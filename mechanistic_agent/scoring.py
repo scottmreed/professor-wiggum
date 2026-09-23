@@ -286,12 +286,36 @@ def _known_targets(expected: Mapping[str, Any] | None) -> List[Dict[str, Any]]:
     return []
 
 
+def compute_mapping_agreement(
+    snapshot: Mapping[str, Any],
+    expected: Mapping[str, Any] | None,
+    accepted: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Benchmark mapping agreement for a run (recorded metric; never raises)."""
+    try:
+        from mechanistic_agent.core.mapping_metrics import compute_run_mapping_agreement
+
+        return compute_run_mapping_agreement(
+            snapshot,
+            expected,
+            accepted_steps=accepted if accepted is not None else extract_accepted_path(snapshot),
+        )
+    except Exception as exc:  # pragma: no cover - metric must not break scoring
+        return {"available": False, "reason": "error", "error": str(exc)}
+
+
 def score_snapshot_against_known(
     snapshot: Mapping[str, Any],
     expected: Mapping[str, Any] | None,
 ) -> Dict[str, Any]:
     """Return deterministic score + breakdown for leaderboard/eval use."""
     accepted = extract_accepted_path(snapshot)
+    mapping_agreement = compute_mapping_agreement(snapshot, expected, accepted)
+    agreement_by_step: Dict[int, Dict[str, Any]] = {
+        int(item.get("step_index") or 0): item
+        for item in (mapping_agreement.get("steps") or [])
+        if isinstance(item, Mapping)
+    }
     step_outputs = list(snapshot.get("step_outputs") or [])
     mapping_conf = _build_mapping_confidence_by_attempt(step_outputs)
     known_steps = _known_targets(expected)
@@ -384,6 +408,11 @@ def score_snapshot_against_known(
                 "alignment_label": alignment_label,
                 "mapping_confidence": round(map_conf, 4),
                 "validation_score": round(validation_score, 4),
+                # Recorded only: benchmark mapping agreement does not enter the score.
+                "mapping_agreement": (agreement_by_step.get(step_index) or {}).get("agreement"),
+                "mapping_agreement_status": (agreement_by_step.get(step_index) or {}).get(
+                    "status", "no_benchmark_mapping"
+                ),
                 "resulting_state": resulting_state,
             }
         )
@@ -454,6 +483,7 @@ def score_snapshot_against_known(
         "accepted_path_step_count": len(accepted),
         "known_step_count": len(known_steps),
         "step_breakdown": step_breakdown,
+        "mapping_agreement": mapping_agreement,
     }
 
 
