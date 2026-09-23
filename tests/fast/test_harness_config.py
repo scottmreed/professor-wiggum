@@ -278,6 +278,34 @@ class TestNoMappingAblationHarness:
         assert "step_atom_mapping" not in {m.id for m in no_mapping_config.enabled_post_step()}
 
 
+class TestJevReactionTypeHarness:
+    """M2 variant: default + decision_policy.reaction_type = "jev" (PRD §7.3)."""
+
+    @pytest.fixture
+    def jev_config(self, registry: HarnessRegistry) -> HarnessConfig:
+        return registry.load("jev_reaction_type")
+
+    def test_loads_without_error(self, jev_config: HarnessConfig) -> None:
+        assert jev_config.name == "jev_reaction_type"
+        assert jev_config.metadata.get("changelog")
+
+    def test_reaction_type_is_jev(self, jev_config: HarnessConfig) -> None:
+        assert jev_config.decision_policy.reaction_type == "jev"
+        assert jev_config.as_dict()["decision_policy"] == {"reaction_type": "jev"}
+        # thresholds unset: observational until Phase D calibration
+        assert all(v is None for v in jev_config.jev.thresholds.values())
+
+    def test_only_decision_policy_differs_from_default(
+        self, jev_config: HarnessConfig, default_config: HarnessConfig
+    ) -> None:
+        mine, base = jev_config.as_dict(), default_config.as_dict()
+        for key in ("name", "description", "metadata", "decision_policy"):
+            mine.pop(key, None)
+            base.pop(key, None)
+        assert mine == base
+        assert default_config.decision_policy.reaction_type == "llm"
+
+
 # ---------------------------------------------------------------------------
 # Phase 1: serialization round-trip
 # ---------------------------------------------------------------------------
