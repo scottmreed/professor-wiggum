@@ -67,6 +67,7 @@ class ConditionsAgent:
             state.run_input.starting_materials,
             state.run_input.products,
             state.run_input.ph,
+            functional_groups_enabled=state.run_config.functional_groups_enabled,
         )
         model = state.run_config.step_models.get("initial_conditions", state.run_config.model)
         usage, cost = _extract_step_cost(conditions_output, model)
@@ -107,6 +108,7 @@ class MissingReagentsAgent:
             starting=state.run_input.starting_materials,
             products=state.run_input.products,
             conditions_guidance=conditions_output,
+            functional_groups_enabled=state.run_config.functional_groups_enabled,
         )
         model = state.run_config.step_models.get("missing_reagents", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)
@@ -191,7 +193,11 @@ class MappingAgent:
         return validation
 
     def run(self, state: RunState) -> StepResult:
-        output = self.executor.run_mapping(state.run_input.starting_materials, state.run_input.products)
+        output = self.executor.run_mapping(
+            state.run_input.starting_materials,
+            state.run_input.products,
+            functional_groups_enabled=state.run_config.functional_groups_enabled,
+        )
         model = state.run_config.step_models.get("atom_mapping", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)
         validation = self._validate_mapping(
@@ -324,6 +330,7 @@ class IntermediateAgent:
             mapped_starting_materials=list(mapped_context.get("mapped_starting_materials") or []),
             mapped_products=list(mapped_context.get("mapped_products") or []),
             mapped_current_state=list(mapped_context.get("mapped_current_state") or []),
+            functional_groups_enabled=state.run_config.functional_groups_enabled,
         )
         model = state.run_config.step_models.get("intermediates", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)

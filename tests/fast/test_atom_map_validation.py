@@ -394,8 +394,15 @@ class TestMappingAgentValidation:
     def _make_state(self):
         from types import SimpleNamespace
         return SimpleNamespace(
-            run_input=SimpleNamespace(starting_materials=SAMPLE_REACTANTS, products=SAMPLE_PRODUCTS),
-            run_config=SimpleNamespace(step_models={}, model="test-model"),
+            run_input=SimpleNamespace(
+                starting_materials=SAMPLE_REACTANTS,
+                products=SAMPLE_PRODUCTS,
+            ),
+            run_config=SimpleNamespace(
+                step_models={},
+                model="test-model",
+                functional_groups_enabled=True,
+            ),
         )
 
     def _output(self, confidence: float = 0.9) -> Dict[str, Any]:
