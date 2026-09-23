@@ -721,6 +721,8 @@ with `ΔBE` visually dominant.
 
 Only non-zero or changed cells should have high visual weight.
 
+**Delivered in the Wiggum UI (2026-09-23):** each candidate row in the Mechanism-search panel is a keyboard-accessible `<details>`; expanding it shows the candidate's mapped SMIRKS, the focus summary (changed bonds with orders, charge / lone-pair / H-count atoms, context atoms, unchanged count), the changed entries as text (`a2–a3: 2 → 0 (Δ −2)`, `a3 (non-bonding): 6 → 8 (Δ +2)`), and three tables `BE(t) | ΔBE | BE(t+1)` over `matrix_atom_ids` with row/column headers and captions. Zero cells are dimmed; changed cells are bold with the sign colour-coded, and every value stays numeric (§30). The conservation line shows `Σ ΔBE`, the convention id and `projected/full` atom counts. Expanded rows stay expanded across live refreshes. Spine states carry RDKit structure thumbnails (cached per SMILES, one render call per refresh for new species). Still open: linked hover between matrix cells and structure atoms (§10.3) and the atom-lineage panel (§11.4).
+
 ## 10.3 Linked interaction
 
 Hover/click behavior:
@@ -2093,7 +2095,7 @@ Purpose:
 
 **Exit criterion:** easy/medium/hard test runs can be watched live without inspecting terminal JSON.
 
-**Status (2026-09-23, prototype delivered):** the Wiggum UI now shows a **Mechanism search** panel above the harness diagram, rendered from `/observatory` on every snapshot refresh: reactant → accepted intermediates → product spine, each step's candidates with glyph + text status (◉ accepted, ✓ validated, ○ alternative, × rejected with failed checks, ⊘ abandoned, ⚠ accepted without validation), focus core atoms, `ΣΔBE` with conservation mark, and a neutral proposal-provenance chip per accepted edge. The harness diagram stays available behind a "Harness view" toggle (§8.4). `?run=<id>` re-attaches the page to an existing run (snapshot + projection + live stream when running), which is the §17 reload/replay requirement. Not yet done for M2: molecule structure rendering in the spine (the cards below still render structures), BE matrix cells, and the atom-lineage panel.
+**Status (2026-09-23, prototype delivered):** the Wiggum UI now shows a **Mechanism search** panel above the harness diagram, rendered from `/observatory` on every snapshot refresh: reactant → accepted intermediates → product spine, each step's candidates with glyph + text status (◉ accepted, ✓ validated, ○ alternative, × rejected with failed checks, ⊘ abandoned, ⚠ accepted without validation), focus core atoms, `ΣΔBE` with conservation mark, and a neutral proposal-provenance chip per accepted edge. The harness diagram stays available behind a "Harness view" toggle (§8.4). `?run=<id>` re-attaches the page to an existing run (snapshot + projection + live stream when running), which is the §17 reload/replay requirement. Structure thumbnails in the spine and per-candidate `BE(t) | ΔBE | BE(t+1)` tables landed next (§10.2). Still open for M2: matrix↔structure hover linking (§10.3) and the atom-lineage panel (§11.4).
 
 ---
 

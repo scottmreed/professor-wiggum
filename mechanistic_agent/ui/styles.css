@@ -1000,3 +1000,26 @@ button:hover:not(:disabled) {
 .obs-chip-jev { background: #e8eefb; color: #1a2e70; }
 .obs-chip-deterministic { background: #e7f4ea; color: #1a4d22; }
 .obs-chip-human { background: #f3e8fb; color: #4d1a70; }
+
+/* Observatory M2b: structure thumbnails + bond-electron matrices */
+.obs-thumbs { display: inline-flex; gap: 6px; vertical-align: middle; margin-left: 8px; }
+.obs-thumb { display: inline-block; width: 64px; height: 48px; }
+.obs-thumb img { width: 64px; height: 48px; object-fit: contain; background: #fff; border: 1px solid #e2e6ea; border-radius: 4px; }
+.obs-candidate details summary { cursor: pointer; list-style: none; }
+.obs-candidate details summary::-webkit-details-marker { display: none; }
+.obs-candidate details summary::before { content: "▸ "; color: #6b7280; }
+.obs-candidate details[open] summary::before { content: "▾ "; }
+.obs-be-detail { margin: 4px 0 8px 1.4em; padding: 6px 8px; border-left: 2px solid #e2e6ea; font-size: 0.78rem; }
+.obs-smirks { display: block; font-size: 0.72rem; word-break: break-all; color: #3c4450; margin-bottom: 4px; }
+.obs-focus-line { color: #3c4450; margin-bottom: 4px; }
+.obs-changed-cells { margin: 0 0 6px 0; padding-left: 1.2em; }
+.obs-be-matrices { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.obs-be-table { border-collapse: collapse; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; }
+.obs-be-table caption { caption-side: top; text-align: left; font-weight: 600; color: #2b2f36; padding-bottom: 2px; }
+.obs-be-table th, .obs-be-table td { border: 1px solid #e2e6ea; padding: 1px 6px; text-align: right; min-width: 1.8em; }
+.obs-be-table th { background: #f3f5f7; font-weight: 600; text-align: center; }
+.obs-be-table td.obs-be-zero { color: #b0b7bf; }
+.obs-be-table td.obs-be-changed { font-weight: 700; color: #2b2f36; background: #fff8e6; }
+.obs-be-table td.obs-be-pos { font-weight: 700; color: #1a4d22; background: #e7f4ea; }
+.obs-be-table td.obs-be-neg { font-weight: 700; color: #8b1a1a; background: #fbe9e9; }
+.obs-conservation { margin-top: 6px; color: #3c4450; }

@@ -3786,6 +3786,58 @@ function _obsProvenanceChip(prov) {
   return `<span class="obs-chip obs-chip-${escapeHtml(prov.engine || "unknown")}" title="proposal engine/model">Proposal: ${escapeHtml(label)}${prov.model_fallback ? " · fallback" : ""}</span>`;
 }
 
+const _obsThumbCache = new Map(); // SMILES -> image_data (base64 PNG) or null
+
+function _obsNum(v) {
+  return v === null || v === undefined ? "" : String(v);
+}
+
+function _obsMatrixTable(view, key, title) {
+  const ids = view.atom_ids || [];
+  const m = view[key] || [];
+  const head = ids.map((id) => `<th scope="col">${escapeHtml(id)}</th>`).join("");
+  const rows = ids.map((id, i) => {
+    const cells = ids.map((_, j) => {
+      const v = (m[i] || [])[j];
+      const changed = key === "delta" ? v !== 0 : ((view.delta[i] || [])[j] !== 0);
+      const cls = changed ? (key === "delta" ? (v > 0 ? "obs-be-pos" : "obs-be-neg") : "obs-be-changed") : "obs-be-zero";
+      return `<td class="${cls}">${escapeHtml(_obsNum(v))}</td>`;
+    }).join("");
+    return `<tr><th scope="row">${escapeHtml(id)}</th>${cells}</tr>`;
+  }).join("");
+  return `<table class="obs-be-table" aria-label="${escapeHtml(title)}"><caption>${escapeHtml(title)}</caption><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function _obsBondElectronDetail(cand) {
+  const view = cand.bond_electron_view;
+  if (!view || !Array.isArray(view.atom_ids) || !view.atom_ids.length) {
+    return view && view.error ? `<div class="muted">BE view unavailable: ${escapeHtml(view.error)}</div>` : "";
+  }
+  const cells = (view.changed_cells || []).map((c) => {
+    const pair = c.atom_ids[0] === c.atom_ids[1] ? `${c.atom_ids[0]} (non-bonding)` : `${c.atom_ids[0]}–${c.atom_ids[1]}`;
+    return `<li>${escapeHtml(pair)}: ${escapeHtml(_obsNum(c.before))} → ${escapeHtml(_obsNum(c.after))} (Δ ${c.delta > 0 ? "+" : ""}${escapeHtml(_obsNum(c.delta))})</li>`;
+  }).join("");
+  const focus = cand.reaction_focus || {};
+  const focusLine = [
+    focus.changed_bonds && focus.changed_bonds.length ? `bonds: ${focus.changed_bonds.map((b) => `${b.atom_ids.join("–")} ${b.order_before}→${b.order_after}`).join(", ")}` : "",
+    focus.changed_formal_charges && focus.changed_formal_charges.length ? `charge: ${focus.changed_formal_charges.join(", ")}` : "",
+    focus.changed_lone_pairs && focus.changed_lone_pairs.length ? `lone pairs: ${focus.changed_lone_pairs.join(", ")}` : "",
+    focus.changed_hydrogens && focus.changed_hydrogens.length ? `H count: ${focus.changed_hydrogens.join(", ")}` : "",
+    focus.context_atom_ids && focus.context_atom_ids.length ? `context: ${focus.context_atom_ids.join(", ")}` : "",
+    focus.unchanged_atom_ids && focus.unchanged_atom_ids.length ? `unchanged: ${focus.unchanged_atom_ids.length} atoms` : "",
+  ].filter(Boolean).map(escapeHtml).join(" · ");
+  const conservation = `Σ ΔBE = ${escapeHtml(_obsNum(view.electron_delta_sum))} ${view.conserved ? "✓ conserved" : "✗ not conserved"}`
+    + (view.missing_changed_atom_ids && view.missing_changed_atom_ids.length ? ` (changed atoms outside projection: ${escapeHtml(view.missing_changed_atom_ids.join(", "))})` : "")
+    + ` · ${escapeHtml(view.convention || "")} · ${view.atom_ids.length}/${escapeHtml(_obsNum(view.full_atom_count))} atoms`;
+  return `<div class="obs-be-detail">`
+    + (cand.reaction_smirks ? `<code class="obs-smirks">${escapeHtml(cand.reaction_smirks)}</code>` : "")
+    + (focusLine ? `<div class="obs-focus-line">${focusLine}</div>` : "")
+    + `<ul class="obs-changed-cells" aria-label="changed bond-electron entries">${cells || "<li class='muted'>no changed entries</li>"}</ul>`
+    + `<div class="obs-be-matrices">${_obsMatrixTable(view, "before", "BE(t)")}${_obsMatrixTable(view, "delta", "ΔBE")}${_obsMatrixTable(view, "after", "BE(t+1)")}</div>`
+    + `<div class="obs-conservation">${conservation}</div>`
+    + `</div>`;
+}
+
 function _obsCandidateLine(cand, acceptedId) {
   const status = cand.candidate_id === acceptedId ? "accepted" : (cand.status || "proposed");
   const glyph = OBS_STATUS_GLYPH[status] || "·";
@@ -3795,12 +3847,44 @@ function _obsCandidateLine(cand, acceptedId) {
   const be = cand.bond_electron_view && cand.bond_electron_view.electron_delta_sum !== undefined && cand.bond_electron_view.electron_delta_sum !== null
     ? ` <span class="obs-be" title="Σ ΔBE over the focus projection">ΣΔBE=${escapeHtml(String(cand.bond_electron_view.electron_delta_sum))}${cand.bond_electron_view.conserved ? " ✓" : " ✗"}</span>` : "";
   const attempts = cand.validation_attempts > 1 ? ` <span class="muted">(${cand.validation_attempts} attempts)</span>` : "";
-  return `<li class="obs-candidate obs-status-${escapeHtml(status)}">`
-    + `<span class="obs-glyph" aria-label="${escapeHtml(status)}">${glyph}</span> `
+  const detail = _obsBondElectronDetail(cand);
+  const summary = `<span class="obs-glyph" aria-label="${escapeHtml(status)}">${glyph}</span> `
     + `<span class="obs-status-text">${escapeHtml(status.replace(/_/g, " "))}</span> `
     + `<span class="obs-rank muted">r${escapeHtml(String(cand.rank ?? "?"))}</span> `
     + `<code class="obs-smiles">${_obsSpecies(cand.resulting_state && cand.resulting_state.length ? cand.resulting_state : [cand.intermediate_smiles])}</code>`
-    + `${checks}${focus}${be}${attempts}</li>`;
+    + `${checks}${focus}${be}${attempts}`;
+  if (!detail) return `<li class="obs-candidate obs-status-${escapeHtml(status)}">${summary}</li>`;
+  const open = _obsOpenDetails.has(cand.candidate_id) ? " open" : "";
+  return `<li class="obs-candidate obs-status-${escapeHtml(status)}"><details data-candidate-id="${escapeHtml(cand.candidate_id || "")}"${open}>`
+    + `<summary>${summary}</summary>${detail}</details></li>`;
+}
+
+const _obsOpenDetails = new Set(); // candidate ids whose ΔBE detail the user expanded (survives refresh)
+
+function _obsThumbs(species) {
+  const list = Array.isArray(species) ? species : [];
+  return `<span class="obs-thumbs">${list.map((smi) => {
+    const cached = _obsThumbCache.get(smi);
+    const img = cached ? `<img src="data:image/png;base64,${cached}" alt="${escapeHtml(smi)}" />` : "";
+    return `<span class="obs-thumb" data-smiles="${escapeHtml(smi)}">${img}</span>`;
+  }).join("")}</span>`;
+}
+
+async function _obsFillThumbnails() {
+  const spine = document.getElementById("observatorySpine");
+  if (!spine) return;
+  const pending = [...new Set([...spine.querySelectorAll(".obs-thumb")].map((el) => el.dataset.smiles).filter((smi) => smi && !_obsThumbCache.has(smi)))];
+  if (!pending.length) return;
+  try {
+    const cards = await renderMoleculeCardsFromSmiles(pending, { showAtomNumbers: false });
+    pending.forEach((smi, i) => _obsThumbCache.set(smi, (cards[i] && cards[i].image_data) || null));
+  } catch (_) {
+    pending.forEach((smi) => _obsThumbCache.set(smi, null));
+  }
+  spine.querySelectorAll(".obs-thumb").forEach((el) => {
+    const data = _obsThumbCache.get(el.dataset.smiles);
+    if (data && !el.querySelector("img")) el.innerHTML = `<img src="data:image/png;base64,${data}" alt="${escapeHtml(el.dataset.smiles)}" />`;
+  });
 }
 
 function renderObservatory(obs) {
@@ -3835,14 +3919,14 @@ function renderObservatory(obs) {
     return `<ul class="obs-candidates" aria-label="candidates${round}">${items || '<li class="muted">no candidates</li>'}</ul>`;
   }).join("");
 
-  rows.push(`<li class="obs-state obs-state-initial"><span class="obs-state-label">Reactants</span> <code>${_obsSpecies(initial.species)}</code>${renderSets("s0")}</li>`);
+  rows.push(`<li class="obs-state obs-state-initial"><span class="obs-state-label">Reactants</span> <code>${_obsSpecies(initial.species)}</code>${_obsThumbs(initial.species)}${renderSets("s0")}</li>`);
   path.forEach((step) => {
     const kindClass = step.acceptance_kind === "soft_advance" ? "obs-edge-soft" : "obs-edge-validated";
     const kindText = step.acceptance_kind === "soft_advance" ? "⚠ accepted without validation"
       : step.acceptance_kind === "backtrack_alternative" ? "◉ accepted (branch alternative)" : "◉ accepted · validated";
     rows.push(`<li class="obs-edge ${kindClass}"><span class="obs-edge-arrow">↓</span> step ${escapeHtml(String(step.step_index))} · ${kindText} ${_obsProvenanceChip(step.proposal_provenance)}</li>`);
     const st = states[step.to_state_id] || { species: step.resulting_state };
-    rows.push(`<li class="obs-state ${step.contains_target_product ? "obs-state-target" : ""}"><span class="obs-state-label">${step.contains_target_product ? "Product" : "I" + step.step_index}</span> <code>${_obsSpecies(st.species)}</code>${renderSets(step.to_state_id)}</li>`);
+    rows.push(`<li class="obs-state ${step.contains_target_product ? "obs-state-target" : ""}"><span class="obs-state-label">${step.contains_target_product ? "Product" : "I" + step.step_index}</span> <code>${_obsSpecies(st.species)}</code>${_obsThumbs(st.species)}${renderSets(step.to_state_id)}</li>`);
     fromStateId = step.to_state_id;
   });
   // candidate sets hanging off abandoned states (explored, then backtracked)
@@ -3852,6 +3936,12 @@ function renderObservatory(obs) {
       + `<ul class="obs-candidates">${(set.candidates || []).map((c) => _obsCandidateLine(c, null)).join("")}</ul></li>`);
   });
   spine.innerHTML = rows.join("");
+  spine.querySelectorAll("details[data-candidate-id]").forEach((el) => {
+    el.addEventListener("toggle", () => {
+      if (el.open) _obsOpenDetails.add(el.dataset.candidateId); else _obsOpenDetails.delete(el.dataset.candidateId);
+    });
+  });
+  _obsFillThumbnails();
 }
 
 async function refreshObservatory() {
