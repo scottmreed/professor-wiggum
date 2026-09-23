@@ -57,6 +57,7 @@ from .types import (
     TemplateGuidanceState,
     TopologyProfile,
     StepValidationCheck,
+    normalize_loop_state_mapping,
     StepValidationResult,
 )
 from .validators import ALL_VALIDATOR_IDS, validate_mechanism_step_output
@@ -353,6 +354,8 @@ class RunCoordinator:
             run_config=run_config,
         )
         state.initialise()
+        boundary = payload.get("input_boundary") if isinstance(payload.get("input_boundary"), dict) else {}
+        state.mapped_seed_species = [str(s) for s in (boundary.get("original_starting_materials") or [])]
         self._hydrate_state_from_outputs(state)
         return state
 
@@ -3271,9 +3274,68 @@ class RunCoordinator:
             "mechanism_output": last_mechanism_output,
         }
 
+    @staticmethod
+    def _configure_loop_state_mapping(state: RunState, harness: Optional[HarnessConfig]) -> None:
+        """Copy the persistent-identity harness flags onto the run state (PRD §9)."""
+        cfg = harness if harness is not None else HarnessConfig()
+        state.loop_state_mapping = normalize_loop_state_mapping(getattr(cfg, "loop_state_mapping", "stripped"))
+        state.record_smirks_state_agreement = bool(getattr(cfg, "record_smirks_state_agreement", True))
+
+    def _record_smirks_state_agreement(
+        self,
+        state: RunState,
+        candidate: BranchCandidate,
+        previous_state: List[str],
+    ) -> None:
+        """Execute the chosen candidate on the mapped loop state and record the
+        SMIRKS-vs-stated-state agreement in its validation summary.
+
+        Recording only: acceptance, retries and branching are unaffected, and
+        any executor error is captured in the record instead of raised.
+        """
+        if not (state.record_smirks_state_agreement or state.loop_state_mapping == "mapped"):
+            return
+        resulting = candidate.resulting_state
+        if not isinstance(resulting, list) or not resulting:
+            return
+        mechanism_output = candidate.mechanism_output or {}
+        intermediate_output = candidate.intermediate_output or {}
+        reaction_smirks = str(
+            mechanism_output.get("reaction_smirks") or intermediate_output.get("reaction_smirks") or ""
+        ).strip()
+        electron_pushes = mechanism_output.get("electron_pushes") or intermediate_output.get("electron_pushes")
+        try:
+            from .mapped_state import advance_mapped_loop_state
+
+            snapshot, record = advance_mapped_loop_state(
+                state.mapped_loop_state,
+                previous_state=previous_state,
+                stated_resulting_state=[str(s) for s in resulting],
+                reaction_smirks=reaction_smirks or None,
+                electron_pushes=electron_pushes,
+                history=state.mapped_state_history,
+                step_index=state.step_index,
+                seed_species=state.mapped_seed_species if state.step_index == 0 else None,
+            )
+            state.mapped_loop_state = snapshot
+        except Exception as exc:  # pragma: no cover - defensive, never blocks a step
+            state.mapped_loop_state = None
+            record = {
+                "smirks_state_agreement": None,
+                "executed": False,
+                "failure_category": "executor_exception",
+                "error": f"{type(exc).__name__}: {exc}",
+                "blocking": False,
+            }
+        record["loop_state_mapping"] = state.loop_state_mapping
+        summary = dict(candidate.validation_summary or {})
+        summary["smirks_state_agreement"] = record
+        candidate.validation_summary = summary
+
     def _apply_candidate(self, state: RunState, candidate: BranchCandidate) -> None:
         """Apply a validated candidate to the run state."""
         previous_state = list(state.current_state)
+        self._record_smirks_state_agreement(state, candidate, previous_state)
         resulting = candidate.resulting_state
         if isinstance(resulting, list) and resulting:
             state.current_state = [str(s) for s in resulting]
@@ -4155,6 +4217,7 @@ class RunCoordinator:
         max_steps = max(1, state.run_config.max_steps)
         reproposals_by_step: Dict[int, int] = {}
         reproposal_hints: Dict[int, Dict[str, Any]] = {}
+        self._configure_loop_state_mapping(state, harness)
 
         while state.step_index < max_steps:
             if stop_event.is_set() or state.stop_requested:

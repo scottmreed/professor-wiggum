@@ -264,6 +264,29 @@ class ReactionTypeAgent:
         )
 
 
+def _mapped_loop_current_state(state: RunState) -> Optional[List[str]]:
+    """Mapped current_state for the proposal prompt under loop_state_mapping="mapped".
+
+    Returns None in the default "stripped" mode (production behaviour).
+    """
+    if getattr(state, "loop_state_mapping", "stripped") != "mapped":
+        return None
+    try:
+        from .mapped_state import sync_mapped_loop_state
+
+        mapped, _origin = sync_mapped_loop_state(
+            state.mapped_loop_state,
+            current_state=state.current_state,
+            history=state.mapped_state_history,
+            step_index=state.step_index,
+            seed_species=state.mapped_seed_species if state.step_index == 0 else None,
+        )
+    except Exception:
+        return None
+    state.mapped_loop_state = mapped.snapshot()
+    return list(mapped.species)
+
+
 @dataclass(slots=True)
 class IntermediateAgent:
     executor: ToolExecutor
@@ -284,6 +307,7 @@ class IntermediateAgent:
             step_index=state.step_index,
             step_mapping_context=state.latest_step_mapping,
             template_guidance=template_guidance,
+            mapped_loop_current_state=_mapped_loop_current_state(state),
         )
         model = state.run_config.step_models.get("intermediates", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)

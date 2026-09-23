@@ -309,6 +309,30 @@ Hydrogens: the benchmark is explicit-H mapped; the runtime is heavy-atom with `[
 
 Do **not** use `Atom.GetIdx()`. Use atom-map numbers as the serialization bridge and a sidecar `PersistentAtomId → {component, current_index, provenance, original_map}` as the canonical internal identity, allocated monotonically, never reused. Custom RDKit atom properties do not survive SMILES round-trips and must not be relied on.
 
+### 9.4 Spike result (2026-09-23)
+
+Code: `mechanistic_agent/core/mapped_state.py`. Tests: `tests/fast/test_persistent_atom_identity.py`.
+
+- **`persistent_identity_viable: true`**. Identity is carried through RDKit's `react_atom_idx` (Route A) or through in-place `RWMol` edits (Route B), never through template map numbers or `GetIdx()`.
+- **§10.14 pass rate, Route A (SMIRKS):** 580/580 (100%). That is eval_set 100/100, flower multistep 420/420 and practice 60/60. It also holds under the heavy-atom policy (deterministic 1-in-4 sample, 40/40), and on map-stripped states with fresh numbering (unconstrained match, 580/580, measured offline). There are no failures in any category: H handling, charges, aromaticity, multi-component, SMIRKS syntax.
+- **§10.11:** every 3–8 step benchmark chain (practice 12, multistep 80) runs step to step with zero new, lost, duplicate or reused ids. The final mapping equals the benchmark mapping.
+- **Route B (moves):** 569/580 (98.1%). All 11 misses are peracid N-oxidation steps. Their `mech:` block (`lp:N>O` only) implies fewer bond changes than their SMIRKS: the O–O cleavage and proton shift are missing. This is benchmark data, not an executor defect.
+- **Recommendation: Route A primary, Route B as a cross-check.** Route A takes charges, H counts, atom creation and deletion, and stereo (`[C@]>>[C@@]` inversion) from the SMIRKS. It also works when the LLM invents its own numbering. Route B needs map numbers that match the state and a complete move block. Its moves carry no stereo information. Where the two routes disagree, that is useful evidence of mech-block/SMIRKS inconsistency.
+- **Executor-level pitfalls (resolved in code, keep in mind):**
+  - RDKit reaction SMARTS keep a reactant's charge when the product atom states none. The executor applies SMILES-semantics deltas instead.
+  - `useSmiles=True` ignores product charges.
+  - RDKit drops fragments the template does not touch.
+  - Deleted atoms are invisible unless ghosted.
+  - Hand-built reactions need `UpdateProductsStereochemistry`.
+  - `MolFromSmiles` defaults drop mapped H.
+- **Blockers before any variant ships:**
+  1. The executor has only been validated on ground truth. LLM SMIRKS agreement is unmeasured. The coordinator now records `validation_summary.smirks_state_agreement` for every accepted step (non-blocking, harness `record_smirks_state_agreement`, default on). Collect a baseline from real runs before making it a validator.
+  2. `loop_state_mapping: "mapped"` (opt-in; default `"stripped"`) changes proposal-prompt inputs. It needs eval-tier evidence per `docs/change_evidence_policy.md`.
+  3. Branch alternatives and `RunState.mapped_loop_state` are not persisted across resume (`coordinator.py` branch-point hydration). A resumed run re-seeds identity. §10.12 and §10.13 pass at the `mapped_state` level only; coordinator integration is follow-up work.
+  4. Unconstrained matches on stripped states can bind any of several symmetry-equivalent atoms. The chemistry is identical, but the id assignment among equivalent atoms is arbitrary (`distinct_outcomes` is recorded).
+  5. `reaction_bond_deltas` (`mechanism_moves.py`) parses with RDKit defaults and drops bonds to mapped H. As a result, `observed_bond_deltas` metadata omits proton moves.
+  6. §11's scoring redefinition is still required before `step_atom_mapping` is downgraded.
+
 ---
 
 ## 10. Required atom-identity tests (`tests/fast/test_persistent_atom_identity.py`)
