@@ -292,18 +292,23 @@ class TestJevReactionTypeHarness:
     def test_reaction_type_is_jev(self, jev_config: HarnessConfig) -> None:
         assert jev_config.decision_policy.reaction_type == "jev"
         assert jev_config.as_dict()["decision_policy"] == {"reaction_type": "jev"}
-        # thresholds unset: observational until Phase D calibration
-        assert all(v is None for v in jev_config.jev.thresholds.values())
+        # Phase D calibration (docs/calibration/jev_reaction_type_2026-09-23.md, n=72,
+        # acc 0.917, ECE 0.056) set the reaction-type gates; the rest stay observational.
+        thresholds = jev_config.jev.thresholds
+        assert thresholds["reaction_type_active_probability"] == 0.65
+        assert thresholds["reaction_type_min_margin"] == 0.1
+        assert all(v is None for k, v in thresholds.items() if not k.startswith("reaction_type_"))
 
     def test_only_decision_policy_differs_from_default(
         self, jev_config: HarnessConfig, default_config: HarnessConfig
     ) -> None:
         mine, base = jev_config.as_dict(), default_config.as_dict()
-        for key in ("name", "description", "metadata", "decision_policy"):
+        for key in ("name", "description", "metadata", "decision_policy", "jev"):
             mine.pop(key, None)
             base.pop(key, None)
         assert mine == base
         assert default_config.decision_policy.reaction_type == "llm"
+        assert "jev" not in default_config.as_dict()  # default carries no Jev thresholds
 
 
 # ---------------------------------------------------------------------------

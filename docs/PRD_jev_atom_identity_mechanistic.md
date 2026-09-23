@@ -240,6 +240,8 @@ Output contract preserved for the coordinator: `selected_type_id`, `selected_lab
 
 Thresholds: reuse the existing confidence/margin gates (`_guidance_mode_for_selection`) but move `reaction_template_confidence_threshold` and `reaction_template_margin_threshold` from RunConfig into the harness `decision_policy` (§17) so the evolver can tune them, and recalibrate them for Jev probabilities rather than LLM self-reports.
 
+**Calibration (2026-09-23):** 72 curated cases, top-1 accuracy 0.917, ECE 0.056, 60/62 correct at ≥0.65; see `docs/calibration/jev_reaction_type_2026-09-23.md`. The 0.65 threshold is set on the `jev_reaction_type` variant.
+
 **Evaluation hazard:** the `example_id` lookup (`_build_example_mapping_output`) bypasses the LLM on 72 curated cases at confidence 0.99. Any Jev-vs-LLM comparison must run with that path disabled, and the metric must be reaction-type accuracy against the curated label on cases where it exists.
 
 ---
