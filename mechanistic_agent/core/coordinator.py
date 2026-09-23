@@ -50,6 +50,7 @@ from .subagents import (
     ReflectionAgent,
 )
 from .tool_executor import ToolExecutor
+from .call_recorder import close_call_context, current_call_context, open_call_context
 from .provenance import (
     assign_candidate_ids,
     new_candidate_set_id,
@@ -896,13 +897,20 @@ class RunCoordinator:
         # deterministic/human steps never inherit the run's fallback model, and
         # ``output.model_used`` (provider fallback inside tools.py) wins over
         # the configured model.
+        live_ctx = current_call_context()
+        live_calls = None
+        if live_ctx is not None and live_ctx.step_name == result.step_name and live_ctx.run_id == state.run_id:
+            live_calls = list(live_ctx.calls)
+            close_call_context()
         provenance = resolve_step_provenance(
             result,
             configured_model=self._step_model(state, result.step_name),
             configured_reasoning=self._step_reasoning(state, result.step_name),
+            live_calls=live_calls,
         )
         resolved_model = provenance.resolved_model
         resolved_reasoning = provenance.resolved_reasoning
+        live_call_ids = {c.call_id for c in (live_calls or [])}
         self.store.record_step_output(
             run_id=state.run_id,
             step_name=result.step_name,
@@ -921,6 +929,8 @@ class RunCoordinator:
         # Call-level events first so the step_output summary can point at them
         # (PRD §13, derived "M0a" path).
         for call in provenance.calls:
+            if call.call_id in live_call_ids:
+                continue  # already emitted live by the RecordingChatAdapter
             self.store.append_event(
                 state.run_id,
                 "inference_call_completed" if call.status == "completed" else "inference_call_failed",
@@ -1070,6 +1080,23 @@ class RunCoordinator:
                 **planned,
             },
             step_name=step_name,
+        )
+        # Live call recording for this step (Observatory PRD §13 M0b): any chat
+        # adapter obtained until _record_step() closes the context emits
+        # inference_call_started/completed/failed with measured latency.
+        run_id = state.run_id
+
+        def _sink(event_type: str, payload: Dict[str, Any], *, step_name: Optional[str] = None) -> None:
+            self.store.append_event(run_id, event_type, payload, step_name=step_name)
+
+        open_call_context(
+            run_id=run_id,
+            step_name=step_name,
+            attempt=attempt,
+            retry_index=retry_index,
+            sink=_sink,
+            planned_model=planned.get("planned_model"),
+            planned_reasoning=planned.get("planned_reasoning"),
         )
         context_parts = [f"START tool={tool_name}"]
         if step_name in {"mechanism_step_proposal", "mechanism_synthesis"}:
@@ -5841,6 +5868,16 @@ class RunCoordinator:
             )
 
     def execute_run(self, run_id: str, stop_event: threading.Event) -> None:
+        # A step that raised before _record_step() would leave its live
+        # call-recording context open on this thread; never let it outlive
+        # the run (Observatory PRD §13 M0b).
+        close_call_context()
+        try:
+            self._execute_run_inner(run_id, stop_event)
+        finally:
+            close_call_context()
+
+    def _execute_run_inner(self, run_id: str, stop_event: threading.Event) -> None:
         run_row = self.store.get_run_row(run_id)
         if run_row is None:
             return

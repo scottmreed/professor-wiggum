@@ -716,6 +716,12 @@ function updateEngineBadge(event) {
       `${formatEngineLabel(payload.planned_engine, payload.planned_model, payload.planned_reasoning)} · running ${step}`,
       "Planned engine/model for the step that just started",
     );
+  } else if (kind === "inference_call_started") {
+    setEngineBadge(
+      payload.engine,
+      `${formatEngineLabel(payload.engine, payload.requested_model, payload.reasoning_level)} · calling ${payload.role || step}…${payload.fallback_from_call_id ? " (fallback)" : ""}`,
+      `call ${payload.call_id || ""}`,
+    );
   } else if (kind === "inference_call_completed") {
     setEngineBadge(
       payload.engine,
@@ -2354,6 +2360,7 @@ function openEventStream() {
     "peer_round_complete",
     "consensus_merge_result",
     "step_mapping_generated",
+    "inference_call_started",
     "inference_call_completed",
     "inference_call_failed",
     "stream_end",

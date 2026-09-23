@@ -231,8 +231,15 @@ def resolve_step_provenance(
     *,
     configured_model: Optional[str],
     configured_reasoning: Optional[str],
+    live_calls: Optional[List[InferenceCall]] = None,
 ) -> StepProvenance:
-    """Normalize a ``StepResult`` into engine + model + call records."""
+    """Normalize a ``StepResult`` into engine + model + call records.
+
+    ``live_calls`` are records captured by ``core.call_recorder`` while the
+    step ran ("M0b"). When present for an LLM step they replace the derived
+    call, so nothing is counted twice; Jev calls still come from
+    ``output.decision_trace``.
+    """
     source = str(result.source or ENGINE_LLM)
     output = result.output if isinstance(result.output, dict) else {}
     model_used = output.get("model_used")
@@ -265,6 +272,29 @@ def resolve_step_provenance(
     requested = configured_model or result.model
     resolved = model_used or result.model or configured_model
     failed_jev = [c for c in decision_calls if c.status == "failed"]
+    live = [c for c in (live_calls or []) if c.engine == ENGINE_LLM]
+    if live:
+        # Link each completed call to the most recent failed call before it
+        # (provider fallback inside tools.py) or to a failed Jev decision.
+        previous_failed: Optional[str] = failed_jev[-1].call_id if failed_jev else None
+        for call in live:
+            if call.status == "completed" and call.fallback_from_call_id is None and previous_failed:
+                call.fallback_from_call_id = previous_failed
+            if call.status == "failed":
+                previous_failed = call.call_id
+            call.model_fallback = call.model_fallback or bool(requested and call.requested_model and call.requested_model != requested)
+        completed_live = [c for c in live if c.status == "completed"]
+        if completed_live and not model_used:
+            resolved = completed_live[-1].resolved_model or resolved
+        return StepProvenance(
+            engine=ENGINE_LLM,
+            step_name=result.step_name,
+            resolved_model=resolved,
+            resolved_reasoning=result.reasoning_level or configured_reasoning,
+            requested_model=requested,
+            tool=result.tool_name,
+            calls=[*decision_calls, *live],
+        )
     # tools.py swallows provider errors and returns ``status: failed|fallback``
     # plus an ``error`` string instead of raising; that is a failed call, not a
     # completed one (PRD §13.2 ``inference_call_failed``).

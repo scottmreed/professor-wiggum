@@ -13,7 +13,12 @@ def _extract_step_cost(
     output: Dict[str, Any],
     model: Optional[str],
 ) -> Tuple[Optional[Dict[str, int]], Optional[Dict[str, float]]]:
-    """Pop ``_llm_usage`` from *output*, normalise, and compute cost."""
+    """Pop ``_llm_usage`` from *output*, normalise, and compute cost.
+
+    Cost is attributed to ``output["model_used"]`` when the tool reports it
+    (``tools.py`` sets it to the fallback model after a provider fallback,
+    Observatory PRD §3.7.2), falling back to the configured *model*.
+    """
     raw_usage = output.pop("_llm_usage", None)
     if not raw_usage or not isinstance(raw_usage, dict):
         return None, None
@@ -21,11 +26,14 @@ def _extract_step_cost(
 
     usage = normalise_token_usage(raw_usage)
     cost = None
-    if model:
+    model_used = output.get("model_used")
+    candidates = [m for m in (model_used if isinstance(model_used, str) else None, model) if m]
+    for candidate in candidates:
         try:
-            cost = calculate_cost(model, usage)
+            cost = calculate_cost(candidate, usage)
+            break
         except Exception:
-            pass
+            continue
     return usage, cost
 
 
