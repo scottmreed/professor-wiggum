@@ -737,7 +737,7 @@ class RunCoordinator:
         duration_human = None
         if duration_seconds is not None:
             if duration_seconds < 60:
-                duration_human = ".1fs"
+                duration_human = f"{duration_seconds:.1f}s"
             elif duration_seconds < 3600:
                 minutes = int(duration_seconds // 60)
                 seconds = duration_seconds % 60

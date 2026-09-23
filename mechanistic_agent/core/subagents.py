@@ -401,7 +401,11 @@ class MechanismAgent:
             tool_name="predict_mechanistic_step",
             output=output,
             attempt=state.step_index + 1,
-            source="llm",
+            # predict_mechanistic_step performs purely deterministic RDKit
+            # validation of the LLM-proposed candidate; it makes no model
+            # call of its own, so it must not be counted as an "llm" step
+            # (see PRD_jev_atom_identity_mechanistic.md §5, §18).
+            source="deterministic",
         )
 
 
