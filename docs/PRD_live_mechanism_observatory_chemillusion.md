@@ -8,13 +8,24 @@
 **ChemIllusion baseline inspected:** `main` at `8f8e89e841eadac703197012fcee2fb37a4671ff`  
 **Related Wiggum work:** PRs #27, #28, #29, #31, #32, #33, #35, #36 and `docs/PRD_jev_atom_identity_mechanistic.md`  
 **Related ChemIllusion work:** Mechanism Explorer stack and commit `dc70d22ae141add4025a849028d7621fe78cddc2` (`typesafe/jev-latest` pricing/catalog stub)  
-**Re-audited against Wiggum `main`:** `c9248b8` (2026-09-23, includes PRs #37–#41) — corrections in §0 and §3.7
+**Re-audited against Wiggum `main`:** `c9248b8` (2026-09-23, includes PRs #37–#41) — corrections in §0 and §3.7  
+**Rev 3 (2026-09-24):** deployment on the existing Railway services (§2.3) and the ChemIllusion product surface — standalone URL, Generator right dock, mobile, beta labeling, Jev-vs-LLM labeling (§8.5). Checked against ChemIllusion `origin/main` `f7a0f57d6` (includes Adaptive Right Dock PR #3390) and the Railway project `triumphant-elegance` / `production`.
 
 ---
 
 ## 0. Revision log
 
-### 2026-09-23 (rev 2) — re-audit against `c9248b8`
+### 2026-09-24 (rev 3) — no new Railway service; ChemIllusion surface
+
+| Section | Change |
+|---|---|
+| §1, §2.1 | The Mechanism Runtime is a **pinned Wiggum release embedded in the existing ChemIllusion API service**, not a new Railway service. |
+| §2.3 (new) | Service-by-service review of the five services in `triumphant-elegance/production` and the chosen placement: in-process in the API, run through the existing `async_jobs` lease ledger, events in the existing Postgres. |
+| §8.5 (new) | Product surface: standalone URL `/mechanism-predictor` + shareable `/mechanism-predictor/runs/:runId`; Generator right-dock entry as a tool tile now and a context card later; mobile "answer" layout on the web page (not in the MyMol native wrapper); Beta · In development labeling with a link to this repo; three disclosure levels (Answer / Steps / Details); explicit Jev-vs-LLM-vs-deterministic chips on every step. |
+| §21–§24 | Re-scoped: `runtime_app.py` (PR #50) stays as the Wiggum-side contract and dev surface; production consumption is in-process. Storage is a `RunStateStore` adapter on ChemIllusion's Postgres. |
+| §33 M3/M4 | Updated to the embedded plan and the surface in §8.5. |
+| §37 | Decisions 15 and 18–22 added/changed. |
+
 
 The first draft inspected `bf56e43`. Five PRs landed before implementation started, and a line-level re-read of the runtime changed several premises. Corrections applied in this revision:
 
@@ -46,7 +57,7 @@ Build a **Live Mechanism Observatory** whose visual center is the **chemical pat
 5. typed candidate probabilities or confidence signals when available; and
 6. **explicit model/engine provenance for every computational step**.
 
-The product architecture should **not copy the full Professor Wiggum repository into ChemIllusion**. Professor Wiggum remains the research, evaluation, curriculum, and evolution environment. A stripped, immutable **Mechanism Runtime** is deployed as a private Railway service. ChemIllusion owns the React visualization and user-facing authorization/billing layer.
+The product architecture should **not copy the full Professor Wiggum repository into ChemIllusion**. Professor Wiggum remains the research, evaluation, curriculum, and evolution environment. An immutable, tagged **Mechanism Runtime** release of this repository is pinned by ChemIllusion and **runs inside the existing ChemIllusion API service** (rev 3, §2.3) — no new Railway service. ChemIllusion owns the React visualization, the product URL, the Generator right-dock entry, and the user-facing authorization/billing layer (§8.5).
 
 The existing ChemIllusion **Mechanism Explorer** is already the correct deterministic chemistry/display foundation. It has stable atom IDs, semantic electron actions, deterministic state transitions, state diffs, validator findings, path-graph schemas, SVG rendering, and a React interactive workspace. The Observatory should extend and reuse that system rather than create a second molecule-state representation.
 
@@ -89,6 +100,10 @@ The immediate prerequisite is **M0: live provenance**. The current Wiggum runtim
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
+## 2.1.1 Rev 3 note
+
+The middle layer in the diagram above is a **release artifact, not a service**: a git tag of this repository (`runtime-vX.Y.Z`) that ChemIllusion's API image checks out at build time and imports. Its boundary (what is included and excluded, §21.2–§21.3) and its contract (events, `/observatory` projection, manifest) are unchanged; only its deployment moves (§2.3).
+
 ## 2.2 Do not merge the full Wiggum codebase into ChemIllusion
 
 The two repositories have different responsibilities.
@@ -119,6 +134,43 @@ The two repositories have different responsibilities.
 This boundary allows Professor Wiggum to continue changing rapidly while ChemIllusion consumes a stable, versioned runtime contract.
 
 ---
+
+## 2.3 Deployment on the existing Railway services (rev 3)
+
+**Requirement:** do not add a Railway service for the Mechanism Runtime.
+
+### 2.3.1 The five services in `triumphant-elegance` / `production` (read 2026-09-24 via `railway status --json`)
+
+| Service | Source | What it is | Host the runtime? |
+|---|---|---|---|
+| `spirited-liberation` | `scottmreed/chem-art-generator`, `railway.json` → `backend/Dockerfile.api` | The ChemIllusion API (FastAPI, `python minimal_start.py`, port 8080, public domain). Already has RDKit 2023.9.1, OpenAI/Anthropic/Gemini SDKs, the Postgres connection and the `async_jobs` lease ledger. | **Yes — chosen.** |
+| `ts-worker-spike` | same repo, `railway.ts-worker.json` → `Dockerfile.ts-worker` | Transition-state compute worker; claims work from the API over `ts_worker_internal.py` (`claim_job`) with `TS_WORKER_TOKEN`, reached at `ts-worker-spike.railway.internal`. | Fallback only (§2.3.4). It is a spike with a slim TS-specific image and its own watch patterns. |
+| `steel-man-args` | image `ghcr.io/steel-dev/steel-browser` | Headless browser for Local Assist. | No. |
+| `privatemode-proxy` | image `ghcr.io/edgelesssys/privatemode-proxy` | Confidential-inference proxy (latest deploy FAILED). | No. |
+| `oscar-blues-scan` | no source connected | Unconnected service (latest deploy FAILED). | No — not ours to repurpose without an owner decision. |
+
+### 2.3.2 Placement: in-process in the API, through the job ledger
+
+1. **Code.** `backend/Dockerfile.api` checks out this repository at a pinned tag (build arg `WIGGUM_RUNTIME_REF=runtime-v0.1.0`) into `/opt/wiggum` and runs `pip install --no-deps /opt/wiggum`, adding `dimorphite-dl` to `requirements-railway.txt`. A tagged checkout, not a bare wheel, because prompts (`skills/mechanistic/`), harnesses (`harness_versions/`) and reaction templates live outside the Python package; the runtime is constructed with `base_dir=/opt/wiggum`. The repository is public, so no token is needed; ChemIllusion already pins `xyzrender @ git+https://…@v0.3.1` the same way. The image copies no `training_data/leaderboard_holdout/`, `traces/` or `data/` (same exclusion list as `.dockerignore` from PR #50).
+2. **Execution.** A mechanism run is an `async_jobs` row (`job_type = "mechanism_run"`) leased by the API's existing job worker (`FOR UPDATE SKIP LOCKED`, `lease_expires_at`, `heartbeat_at`). The worker calls the embedded runtime on a thread (runs are dominated by model latency, not CPU; RDKit validation is milliseconds per candidate). Concurrency is capped (default **1**, env `MECHANISM_RUNTIME_MAX_CONCURRENT`), watched with the existing `event_loop_lag_monitor`. No request thread ever runs a mechanism loop.
+3. **Storage.** A `RunStateStore` adapter (the seam named in §24) writes runs, step outputs and ordered events to ChemIllusion's existing Postgres (new tables `mechanism_runs`, `mechanism_run_events`; alembic migration run by the existing `preDeployCommand`). No SQLite file on Railway's ephemeral disk.
+4. **Transport.** The API serves `GET /api/mechanism-predictor/runs/{id}/events` (SSE, `after_seq` resume) and `/observatory` directly from that store — the same projection code as Wiggum's `build_observatory`. The browser talks only to the API it already uses; there is no second host, no service token and no private-network hop.
+5. **Keys and cost.** Model calls use the API's existing provider keys; every `inference_call_*` event is metered into the existing AI-action ledger. Jev pricing stays a placeholder until confirmed (§26).
+
+### 2.3.3 Why not a separate service now
+
+- The runtime is a Python library whose dependencies are already in the API image (RDKit, FastAPI, pydantic, the three provider SDKs); the only addition is `dimorphite-dl`.
+- The durable job ledger, Postgres, auth, entitlements and billing already live in the API. A separate service would duplicate all five and add a service token, a private-network client and a second deploy for a **beta, in-training** tool with low expected traffic.
+- The HTTP runtime from PR #50 (`runtime_app.py`) stays useful: it is the Wiggum-side contract test for the product surface and a dev host, and it keeps the option to split later without redesign.
+
+### 2.3.4 Risks and the fallback
+
+| Risk | Check before enabling | Fallback |
+|---|---|---|
+| `openai` SDK major version: API pins `openai==3.16.0`; Wiggum declares `openai>=1.40` and calls `client.chat.completions.create` | Import test + one live `agent-bridge`-free call in a ChemIllusion CI job against the pinned tag | Wiggum adapter shim; do not bump ChemIllusion's pin |
+| Memory/latency pressure on the API | `event_loop_lag_monitor` and container memory during a 3-case smoke run | Keep concurrency 1; if still hot, let the existing `ts-worker-spike` claim `mechanism_run` jobs through the same internal claim endpoint (a job type on an existing service, still no new service) — requires an explicit owner decision because that service is a spike |
+| Prompt/harness drift between Wiggum `main` and the pinned tag | Runtime manifest (`/v1/mechanism/version` fields) recorded on every product run | Bump only after Wiggum eval evidence (§8.5.8) |
+| Hard-coded fallback to `gpt-4o` inside `tools.py` spends tokens silently (found in rev 2) | Provenance shows `model_fallback`; product surfaces it | Disable provider fallback in the production harness |
 
 # 3. Codebase audit: what exists now
 
@@ -578,6 +630,72 @@ Keep the current harness topology as:
 Do not delete it. It answers a different question.
 
 ---
+
+## 8.5 ChemIllusion product surface (rev 3)
+
+Facts this section relies on (ChemIllusion `origin/main` `f7a0f57d6`):
+
+- There is **no** mechanism page URL today; mechanism features are an LMS activity workspace (`MechanismExplorerRenderer`), a chat capability (`mechanism` in `config/capabilities/visual-capabilities.json`, adapter `chemed.predict_mechanism`), and the paid `/api/mechanisms/predict-full-mechanism` route (5 AI actions) backed by the simplified `mechanism_prediction_service.py`.
+- Standalone tool pages are lazy `<Route>`s in `frontend/src/App.tsx` (e.g. `/drawing-tools/ocsr`, `/drawing-tools/symmetry`, `/generator/tool/:capabilityId`).
+- The Adaptive Right Dock (PR #3390) is **desktop-only**, behind `VITE_GENERATOR_RIGHT_DOCK` (on in previews/dev, **off in production**). Its Phase 1 non-goals forbid new panes, new flags and more than two context cards. Tools are tiles in `features/generatorDock/dockToolGroups.ts`; a "Mechanism & resonance" tile already exists (`resonance_explorer`).
+- Jev is labeled only in Suggestions ("Legacy engine" subtitle, "Jev (recommended)" setting). There is **no shared model/engine badge component**.
+- Beta patterns exist: `Badge` "Admin · Beta", the orange `role="note"` "Experimental — not a validated transition state" box (`TSCreatorNotice.tsx`), `in_development: "In development"`, fail-closed per-tool flags (`toolFeatureFlags.ts::isToolFlagEnabled`), and registry `status: experimental` (hidden from the creation hub).
+- MyMol is a host-gated section of the same web app (`/mymol…`) plus a Capacitor native wrapper.
+
+### 8.5.1 One tool, one URL
+
+- **`/mechanism-predictor`** — standalone page: reactants + products input (SMILES or drawn), optional conditions, Run, and the live result.
+- **`/mechanism-predictor/runs/:runId`** — shareable, reloadable replay of a run (owner-scoped; same data as the live view, from `/observatory`). Every entry point below lands on these URLs, so there is exactly one implementation of the tool UI.
+- Registered in `visual-capabilities.json` as `mechanism_predictor` with `status: experimental` (kept out of the creation hub until promoted), distinct from the existing `mechanism` chat capability and `resonance_explorer` tile so users never confuse the three.
+
+### 8.5.2 Generator right-dock entry
+
+- **Now (dock Phase 1 constraints respected):** a tile **"Mechanism predictor · Beta"** in the *AI tools* group of `dockToolGroups.ts`. It opens `/mechanism-predictor` in a new tab, prefilled from the canvas (reactant/product species of the current reaction or selection; nothing sent until the user presses Run). No new pane, card or dock flag. The tile is hidden unless the tool flag (§8.5.5) is on.
+- **Later (when the dock PRD allows a third card type, and the tool leaves beta):** a `GeneratorDockContextCard` "Mechanism" in the contextual stack showing the *Answer* level (§8.5.4) for the canvas reaction, with "Open full view" linking to `/mechanism-predictor/runs/:runId`. This is where the tool is expected to live once it is a real predictor.
+- Because the dock is off in production, **the standalone URL is the only production entry point during beta.** That is intended: training-stage output should not appear inside Generator's main workflow by default.
+
+### 8.5.3 Mobile
+
+- The standalone page is responsive. At `max-width: 767px` (the existing `mobileEntryEligibility` breakpoint) it shows the **Answer** level only: final status, the accepted path as a vertical list of structures with one-line step labels and engine chips, and a "Show steps" expander. BE matrices, candidate trees and atom lineage are desktop-only (they need width).
+- Input on mobile is SMILES / example picker only (no Ketcher).
+- **Not** added to the MyMol Capacitor app; the mobile web page is the mobile surface. MyMol hosts may link to it later.
+
+### 8.5.4 Three disclosure levels ("just the answer" vs "show me the steps")
+
+| Level | Who | Shows | Default |
+|---|---|---|---|
+| **Answer** | "just tell me" | Overall status (completed / stopped / failed; **target reached** or not), the accepted path as structures, count of steps accepted **without validation** (never hidden), total engines used | yes, and always on mobile |
+| **Steps** | students, instructors | Per step: structures before/after, electron-push arrows, deterministic validation result (✓ / × with check names), engine chips, Jev probability with calibration status | one click |
+| **Details** | researchers | Candidate sets with rejected/abandoned branches, focus mask, `BE(t) | ΔBE | BE(t+1)`, atom lineage, the full call chain per step (model, latency, fallbacks) | one click; remembered per user |
+
+The level is a view preference, never a different computation: all three render from the same `/observatory` payload.
+
+### 8.5.5 Beta · In development labeling
+
+- Header badge **"Beta · In development"** (orange, the `in_development` style) next to the tool name, on the page and on the dock tile.
+- A persistent `role="note"` box (the `TSCreatorNotice` pattern): *"Research preview. Predictions come from Professor Wiggum, a mechanism harness that is still being trained and evaluated. Steps are checked by deterministic chemistry validators, but the mechanism is not guaranteed. [How it works](https://github.com/scottmreed/professor-wiggum)"*. The link points to this repository.
+- Footer on every result: runtime release (`runtime_version`, `git_sha` short, harness name) from the manifest, so a user report can be traced to the exact Wiggum release.
+- Gating: backend `MECHANISM_PREDICTOR_ENABLED` (config.py boolean, default false) and a fail-closed tool flag `mechanism_predictor` in `toolFeatureFlags.ts`; beta audience = admins + an allow-list of testers. Registry `status: experimental`. Promotion out of beta is a flag and label change, not a rebuild.
+
+### 8.5.6 Jev vs LLM vs deterministic, on every step
+
+- New shared component **`EngineBadge`** (ChemIllusion has none): text-first chip, neutral colors (§14.1), one per call in the step's chain, built from `step_output.provenance` / `inference_call_*`:
+  - **"Jev · Choice"** (decision model; revision on hover, e.g. `typesafe/jev-1.13-20260917`; "calibrated" or "not calibrated" per §15.2);
+  - **"LLM · <model>"** (e.g. `LLM · claude-opus-5.5 · high`; "fallback from X" when `model_fallback` is set);
+  - **"Deterministic · RDKit"** for validators and the mapped-state executor;
+  - **"Human"** for verified submissions.
+- A Jev→LLM fallback shows both chips in order, the Jev chip marked "failed → fell back". The run header lists the inventory ("Models used: Jev 1.13 · Claude Opus 5.5 · Deterministic: RDKit").
+- At the **Answer** level the chips collapse to a per-step summary ("LLM proposed · RDKit validated", "Jev chose · LLM proposed"), never hidden.
+
+### 8.5.7 Relationship to the existing paid predictor
+
+`/api/mechanisms/predict-full-mechanism` and the `mechanism` chat capability keep their current behavior during beta. §20's `MECHANISM_RUNTIME_V2_ENABLED` adapter is the later migration path; the new page does not reuse the old service.
+
+### 8.5.8 Harness evolution stays in this repository
+
+- ChemIllusion never edits prompts, few-shots, harnesses, validators or topology. It consumes a tag.
+- Promotion: a Wiggum maintainer tags `runtime-vX.Y.Z` after the change clears the evidence policy here (`docs/change_evidence_policy.md`, eval tiers). ChemIllusion bumps `WIGGUM_RUNTIME_REF` in one PR; the manifest makes the bump visible on every run.
+- Product runs are **not** fed back into evolution automatically. If product traces are later used for training, that is a separate, consented export into this repository's evidence flow — never an in-product mutation loop.
 
 # 9. ReactionFocus: one deterministic active-region definition
 
@@ -1544,6 +1662,8 @@ After parity and adoption, the simplified predictor can be deprecated rather tha
 
 # 21. Production Mechanism Runtime service
 
+> **Rev 3:** read "service" in this section as "release artifact". Production runs the runtime in-process in the ChemIllusion API (§2.3). §21.2–§21.4 (include/exclude lists, assets, manifest) apply unchanged to the tagged checkout.
+
 ## 21.1 First deployment can remain in the Wiggum repo
 
 Do not split repositories prematurely.
@@ -1642,6 +1762,8 @@ Every run records this manifest identity.
 
 # 22. Runtime API
 
+> **Rev 3:** in production these routes are served by the ChemIllusion API under `/api/mechanism-predictor/…` (owner-scoped, user-authenticated), backed by the embedded runtime. Wiggum's `runtime_app.py` exposes the same shapes for dev and contract tests.
+
 Suggested product-oriented API:
 
 ```text
@@ -1677,6 +1799,8 @@ The browser should not need a permanent credential for the Railway service.
 ---
 
 # 23. ChemIllusion backend integration
+
+> **Rev 3:** `mechanism_runtime_client.py` becomes an in-process adapter (`mechanism_runtime_service.py`: enqueue `async_jobs` row, worker handler calls the embedded runtime, SSE/observatory read from the Postgres store). No server-to-server token.
 
 Recommended new files:
 
@@ -1720,6 +1844,8 @@ Responsibilities:
 ---
 
 # 24. Storage
+
+> **Rev 3:** the store is ChemIllusion's existing Postgres, via a `RunStateStore` adapter shipped in the Wiggum release (§2.3.2 item 3).
 
 The Wiggum local runtime currently uses SQLite through the `RunStateStore` abstraction.
 
@@ -2113,7 +2239,11 @@ Purpose:
 
 ---
 
-## Phase M3 — Runtime-only Railway build
+## Phase M3 — Runtime release embedded in the ChemIllusion API (rev 3; formerly "Runtime-only Railway build")
+
+Rev 3 scope: tag `runtime-vX.Y.Z`; embeddable entry point that runs one mechanism job against a supplied `RunStateStore`; Postgres `RunStateStore` adapter; asset manifest so the checkout needs no general `training_data/` access; `Dockerfile.api` checkout + `dimorphite-dl`; `async_jobs` handler; `openai` SDK compatibility check. No new Railway service.
+
+Original list (still the capability checklist):
 
 - runtime-specific app/build;
 - runtime asset manifest;
@@ -2143,6 +2273,8 @@ Purpose:
 - accessibility.
 
 **Exit criterion:** authenticated ChemIllusion users can run and inspect a live mechanism prediction.
+
+**Rev 3 surface:** `/mechanism-predictor` + `/mechanism-predictor/runs/:runId`, Generator dock tile, mobile Answer layout, Beta · In development labeling with the repo link, `EngineBadge` Jev/LLM/deterministic chips, three disclosure levels (§8.5). Beta audience only.
 
 ---
 
@@ -2354,9 +2486,14 @@ Test:
 12. **Observatory metadata lives in a parallel schema.**
 13. **Existing ChemIllusion Mechanism Explorer rendering/state infrastructure is reused.**
 14. **The existing simplified ChemIllusion full-mechanism loop is not expanded into a second Wiggum implementation.**
-15. **Professor Wiggum remains the lab; an evaluated runtime artifact is promoted to Railway.**
+15. **Professor Wiggum remains the lab; an evaluated, tagged runtime release is promoted into the existing ChemIllusion API — no new Railway service (rev 3).**
 16. **The production runtime excludes training/eval/evolution machinery.**
 17. **SSE is the primary live transport; snapshots provide recovery/replay.**
+18. **The tool has its own URL (`/mechanism-predictor`, `/mechanism-predictor/runs/:runId`); every entry point, including the Generator right dock, lands there (rev 3).**
+19. **While in training it is labeled "Beta · In development", links to this repository, and is gated to a beta audience (rev 3).**
+20. **Every step labels Jev, LLM, deterministic and human work explicitly, at every disclosure level (rev 3).**
+21. **One payload, three views: Answer, Steps, Details (rev 3).**
+22. **Harness evolution happens only in this repository; ChemIllusion consumes tags (rev 3).**
 
 ---
 
