@@ -57,6 +57,8 @@ Every step's engine and model are recorded by the actual engine, not the run's c
 
 `mechanistic_agent/api/runtime_app.py::create_runtime_app` re-mounts only the product routes from `create_app` (`RUNTIME_ALLOWED_PATHS`: `/api/runs` create/start/stop/resume/get, `/events`, `/flow`, `/observatory`, `/mechanism_steps`, `/steps/{step_name}/verify`, `/api/molecules/render`) plus two runtime-only routes, `/healthz` (open) and `/v1/mechanism/version` (release manifest). Everything else — evals, leaderboard, examples, traces, curation, memory, harness editing, RAlph, the UI — is not mounted. All routes except `/healthz` require `Authorization: Bearer $MECHANISTIC_RUNTIME_TOKEN`; with the token unset the app returns 503 (fail closed). Build/run with `Dockerfile.runtime` (`uvicorn mechanistic_agent.api.runtime_app:create_runtime_app --factory`); `.dockerignore` keeps `training_data/leaderboard_holdout/`, local data, traces and `.env*` out of the image. Adding a product route means adding it to the allow-list; renaming a research route the allow-list references fails at import.
 
+Embedding (no HTTP): `mechanistic_agent.runtime.EmbeddedMechanismRuntime(base_dir, work_dir, event_sink)` — `create_run(dict)`, blocking `execute(run_id, stop_event=)`, `observatory(run_id)`, `manifest()`. `RunStore(db_path, event_sink=callable)` mirrors every event (after commit, `list_events` row shape) so a host product can keep the durable log; `create_app(base, db_path=, event_sink=)` passes both through and exposes `app.state.store/coordinator/run_manager/registry`.
+
 ## Leaderboard Holdout Isolation
 
 - The train-derived eval/sample artifacts remain the user-facing development surface:

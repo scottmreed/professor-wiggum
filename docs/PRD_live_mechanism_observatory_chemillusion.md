@@ -157,6 +157,21 @@ This boundary allows Professor Wiggum to continue changing rapidly while ChemIll
 4. **Transport.** The API serves `GET /api/mechanism-predictor/runs/{id}/events` (SSE, `after_seq` resume) and `/observatory` directly from that store — the same projection code as Wiggum's `build_observatory`. The browser talks only to the API it already uses; there is no second host, no service token and no private-network hop.
 5. **Keys and cost.** Model calls use the API's existing provider keys; every `inference_call_*` event is metered into the existing AI-action ledger. Jev pricing stays a placeholder until confirmed (§26).
 
+### 2.3.2.1 Embedding API (delivered 2026-09-24, `mechanistic_agent/runtime/embedded.py`)
+
+```python
+from mechanistic_agent.runtime import EmbeddedMechanismRuntime
+rt = EmbeddedMechanismRuntime(base_dir="/opt/wiggum", work_dir=job_tmp, event_sink=mirror_event_to_postgres)
+run_id = rt.create_run(request_dict)        # CreateRunRequest shape; ValueError on bad input
+rt.execute(run_id, stop_event=stop)         # blocking on the job-worker thread; returns final status
+rt.observatory(run_id)                      # mechanism_observatory.v1 + {"runtime": {...}}
+rt.manifest()                               # runtime_manifest.v1 with deployment="embedded"
+```
+
+- It drives the research app's own `POST /api/runs` handler and `RunCoordinator.execute_run`, so validation, normalization and the mechanism loop are the evaluated ones.
+- `RunStore(db_path, event_sink=...)` mirrors every event, after commit and with the `list_events` row shape, to the caller. The SQLite file in `work_dir` is scratch. Because `build_observatory` needs only events, `build_observatory(<mirrored rows>)` equals the live projection (tested), so the durable store in ChemIllusion is one append-only table (`mechanism_run_events(run_id, seq, ts, event_type, step_name, payload jsonb)`), not a port of `RunStore`. A mirror failure never breaks a run.
+- Not yet covered: resuming a run interrupted by a container restart (the lease expires, the job is marked failed, the mirrored events still replay). Acceptable for beta.
+
 ### 2.3.3 Why not a separate service now
 
 - The runtime is a Python library whose dependencies are already in the API image (RDKit, FastAPI, pydantic, the three provider SDKs); the only addition is `dimorphite-dl`.
@@ -167,7 +182,7 @@ This boundary allows Professor Wiggum to continue changing rapidly while ChemIll
 
 | Risk | Check before enabling | Fallback |
 |---|---|---|
-| `openai` SDK major version: API pins `openai==3.16.0`; Wiggum declares `openai>=1.40` and calls `client.chat.completions.create` | Import test + one live `agent-bridge`-free call in a ChemIllusion CI job against the pinned tag | Wiggum adapter shim; do not bump ChemIllusion's pin |
+| `openai` SDK major version: API pins `openai==3.16.0`; Wiggum declares `openai>=1.40` and calls `client.chat.completions.create` | **Checked 2026-09-24:** in a venv with ChemIllusion's pins (openai 3.16.0, rdkit 2023.9.1, numpy 1.26.4, fastapi 0.141.1, httpx 0.28.1) Wiggum's full fast suite passed (853/853) and the OpenAI adapter completed a forced tool call against a local mock server with usage parsed and live `inference_call_*` recorded. Keep this as a ChemIllusion CI job on every tag bump. | Wiggum adapter shim; do not bump ChemIllusion's pin |
 | Memory/latency pressure on the API | `event_loop_lag_monitor` and container memory during a 3-case smoke run | Keep concurrency 1; if still hot, let the existing `ts-worker-spike` claim `mechanism_run` jobs through the same internal claim endpoint (a job type on an existing service, still no new service) — requires an explicit owner decision because that service is a spike |
 | Prompt/harness drift between Wiggum `main` and the pinned tag | Runtime manifest (`/v1/mechanism/version` fields) recorded on every product run | Bump only after Wiggum eval evidence (§8.5.8) |
 | Hard-coded fallback to `gpt-4o` inside `tools.py` spends tokens silently (found in rev 2) | Provenance shows `model_fallback`; product surfaces it | Disable provider fallback in the production harness |
@@ -2255,7 +2270,7 @@ Original list (still the capability checklist):
 
 **Exit criterion:** ChemIllusion backend can create a run, stream it, recover it after reconnect, and retrieve final accepted path without the Wiggum research app.
 
-**Status (2026-09-23):** runtime-only app, bearer auth, version manifest, `Dockerfile.runtime` and `.dockerignore` delivered (§21.1.1); durable store and `runtime_assets/` bundle open.
+**Status (2026-09-24):** runtime-only app, bearer auth, version manifest, `Dockerfile.runtime` and `.dockerignore` delivered (§21.1.1); embedding API with event mirroring delivered (§2.3.2.1); ChemIllusion-pinned dependency compatibility verified (§2.3.4). Open: tag `runtime-v0.1.0`, the ChemIllusion side (Dockerfile checkout, `async_jobs` handler, `mechanism_run_events` table, page and dock tile).
 
 ---
 

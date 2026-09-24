@@ -1289,13 +1289,24 @@ def _prepare_example_record(item: Dict[str, Any], source_label: str) -> Optional
     return prepared
 
 
-def create_app(base_dir: Path | None = None) -> FastAPI:
+def create_app(
+    base_dir: Path | None = None,
+    *,
+    db_path: Path | None = None,
+    event_sink: Any = None,
+) -> FastAPI:
+    """Build the research API.
+
+    ``db_path`` and ``event_sink`` are for embedding (Observatory PRD rev 3
+    §2.3.2): a product passes a scratch database path and a callable that
+    mirrors every event to its durable store.
+    """
     base = (base_dir or Path.cwd()).resolve()
     ui_dir = base / "mechanistic_agent" / "ui"
-    db_path = resolve_db_path(base)
+    db_path = Path(db_path) if db_path is not None else resolve_db_path(base)
 
     registry = RegistrySet(base)
-    store: RunStateStore = SQLiteRunStore(db_path)
+    store: RunStateStore = SQLiteRunStore(db_path, event_sink=event_sink)
     artifact_store = LocalArtifactStore(base, db_path=db_path)
     store.record_assets(
         [
@@ -4511,6 +4522,12 @@ def create_app(base_dir: Path | None = None) -> FastAPI:
     def health() -> JSONResponse:
         return JSONResponse({"ok": True, "db_path": str(db_path)})
 
+    # Handles for embedding (runtime/embedded.py); not part of the HTTP surface.
+    app.state.store = store
+    app.state.coordinator = coordinator
+    app.state.run_manager = manager
+    app.state.registry = registry
+    app.state.db_path = db_path
     return app
 
 

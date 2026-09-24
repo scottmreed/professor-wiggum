@@ -10,7 +10,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Any, Dict, Iterable, List, Optional, Tuple
 
 from mechanistic_agent.model_registry import get_model_family, get_model_provider, resolve_model_key
 from mechanistic_agent.prompt_assets import resolve_call_name_from_step, traces_root
@@ -102,10 +102,16 @@ def _subtract_totals(totals: Dict[str, Any], part: Any) -> None:
 class RunStore:
     """Repository wrapper over a local SQLite database."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, event_sink: Optional[Callable[[Dict[str, Any]], None]] = None) -> None:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
+        # Optional durable mirror of the event log (Observatory PRD rev 3 §2.3.2):
+        # an embedding product (ChemIllusion) persists every event to its own
+        # store; the SQLite file is then scratch. Called after commit, outside
+        # the lock, with the same row shape ``list_events`` returns. Failures
+        # are swallowed — mirroring must never break a run.
+        self.event_sink = event_sink
         self.init_db()
 
     @contextmanager
@@ -841,6 +847,20 @@ class RunStore:
                 ),
             )
             conn.commit()
+        sink = self.event_sink
+        if sink is not None:
+            try:
+                sink({
+                    "id": event_id,
+                    "run_id": run_id,
+                    "ts": now,
+                    "event_type": event_type,
+                    "step_name": step_name,
+                    "payload": self._json_loads(self._json_dumps(payload), {}),
+                    "seq": seq,
+                })
+            except Exception:  # pragma: no cover - mirror failures never break a run
+                pass
         return seq
 
     def list_events(self, run_id: str, *, after_seq: int = 0, limit: int = 500) -> List[Dict[str, Any]]:
