@@ -234,12 +234,21 @@ class _OpenAIChatAdapter:
     def invoke(
         self,
         messages: Any,
+        config: Any = None,
+        *,
+        tools: Any = None,
+        tool_choice: Any = None,
+    ) -> Any:
+        return invoke_with_tool_push(self, messages, config, tools=tools, tool_choice=tool_choice)
+
+    def _invoke_once(
+        self,
+        messages: Any,
         config: Any = None,  # noqa: ARG002
         *,
         tools: Any = None,
         tool_choice: Any = None,
     ) -> Any:
-        tool_choice, messages = steer_forced_tool_choice(self._model, messages, tool_choice)
         serialised = serialise_chat_messages(messages)
 
         params: Dict[str, Any] = {"model": self._model, "messages": serialised}
@@ -334,6 +343,96 @@ def _openai_tools_to_anthropic(tools: Any) -> Optional[list[dict[str, Any]]]:
     return converted or None
 
 
+class ForcedToolCallUnavailableError(RuntimeError):
+    """A model that cannot be forced to call a tool answered in prose twice.
+
+    Raised after the harder second attempt. ``str(exc)`` is the human-readable
+    message a product can show; ``error_code`` is stable for log mining
+    (``tool_call_missing``). The call recorder logs it as a failed call.
+    """
+
+    error_code = "tool_call_missing"
+
+    def __init__(self, model: str, tool_name: str, *, attempts: int, preview: str = "") -> None:
+        self.model = model
+        self.tool_name = tool_name
+        self.attempts = attempts
+        self.preview = preview
+        snippet = f' It replied in plain text instead: "{preview[:160]}"' if preview else " It replied in plain text instead."
+        super().__init__(
+            f"[{self.error_code}] {model} did not call the required `{tool_name}` tool after {attempts} attempts, "
+            f"even when told it must.{snippet} This model rejects forced tool choice, so the harness can only "
+            "ask; the step was not completed. The prompt may need adjusting for this model."
+        )
+
+
+_HARD_PUSH = (
+    "IMPORTANT: your previous reply was plain text and was discarded. You MUST respond by calling the "
+    "`{name}` tool exactly once with your complete result. Do not write any prose, explanation or "
+    "markdown; the only acceptable response is that tool call."
+)
+
+
+def _steering_target(model_name: Optional[str], tool_choice: Any) -> Optional[str]:
+    """The tool the caller wants forced, when the model cannot be forced; else None."""
+    from .model_registry import model_supports_forced_tool_choice
+
+    if not isinstance(tool_choice, dict) or tool_choice.get("type") != "function":
+        return None
+    if model_supports_forced_tool_choice(model_name or ""):
+        return None
+    name = str((tool_choice.get("function") or {}).get("name") or "").strip()
+    return name or None
+
+
+def _append_user_instruction(messages: Any, instruction: str) -> Any:
+    steered = [dict(m) if isinstance(m, dict) else m for m in messages]
+    for index in range(len(steered) - 1, -1, -1):
+        message = steered[index]
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            message["content"] = f"{content.rstrip()}\n\n{instruction}"
+        elif isinstance(content, list):
+            message["content"] = [*content, {"type": "text", "text": instruction}]
+        else:
+            message["content"] = instruction
+        return steered
+    steered.append({"role": "user", "content": instruction})
+    return steered
+
+
+def _has_tool_call(response: Any, name: str) -> bool:
+    calls = getattr(response, "tool_calls", None) or []
+    return any(isinstance(c, dict) and c.get("name") == name for c in calls)
+
+
+def invoke_with_tool_push(adapter: Any, messages: Any, config: Any = None, *, tools: Any = None, tool_choice: Any = None) -> Any:
+    """Provider call with the forced-tool contract kept on models that reject forced tool_choice.
+
+    Models that accept forced ``tool_choice`` go straight through. Otherwise:
+    attempt 1 sends ``tool_choice: auto`` plus an instruction naming the tool;
+    if the reply has no call to that tool, attempt 2 repeats with a much harder
+    instruction; if that also fails, :class:`ForcedToolCallUnavailableError` is
+    raised (human-readable, logged by the call recorder as a failed call).
+    """
+    name = _steering_target(getattr(adapter, "_model", None), tool_choice)
+    if name is None:
+        choice, steered = steer_forced_tool_choice(getattr(adapter, "_model", None), messages, tool_choice)
+        return adapter._invoke_once(steered, config, tools=tools, tool_choice=choice)
+    choice, steered = steer_forced_tool_choice(adapter._model, messages, tool_choice)
+    response = adapter._invoke_once(steered, config, tools=tools, tool_choice=choice)
+    if _has_tool_call(response, name):
+        return response
+    harder = _append_user_instruction(messages, _HARD_PUSH.format(name=name))
+    response = adapter._invoke_once(harder, config, tools=tools, tool_choice="auto")
+    if _has_tool_call(response, name):
+        return response
+    preview = str(getattr(response, "content", "") or "").strip()
+    raise ForcedToolCallUnavailableError(str(adapter._model), name, attempts=2, preview=preview)
+
+
 def steer_forced_tool_choice(
     model_name: Optional[str],
     messages: Any,
@@ -414,6 +513,16 @@ class _AnthropicChatAdapter:
     def invoke(
         self,
         messages: Any,
+        config: Any = None,
+        *,
+        tools: Any = None,
+        tool_choice: Any = None,
+    ) -> Any:
+        return invoke_with_tool_push(self, messages, config, tools=tools, tool_choice=tool_choice)
+
+    def _invoke_once(
+        self,
+        messages: Any,
         config: Any = None,  # noqa: ARG002
         *,
         tools: Any = None,
@@ -421,7 +530,6 @@ class _AnthropicChatAdapter:
     ) -> Any:
         import json as _json
 
-        tool_choice, messages = steer_forced_tool_choice(self._model, messages, tool_choice)
         system_prompt, converted_messages = _openai_messages_to_anthropic(messages)
         params: Dict[str, Any] = {
             "model": self._model,

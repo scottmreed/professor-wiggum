@@ -114,3 +114,105 @@ def test_openai_adapter_keeps_forced_choice_for_opus_46() -> None:
     adapter.invoke([{"role": "user", "content": "propose"}], tools=[MECHANISM_STEP_PROPOSAL_TOOL], tool_choice=build_tool_choice("mechanism_step_proposal_result"))
     assert fake.params["tool_choice"] == build_tool_choice("mechanism_step_proposal_result")
     assert fake.params["messages"][-1]["content"] == "propose"
+
+
+# ---------------------------------------------------------------------------
+# Retry with a harder push, then a human-readable error (Scott, 2026-09-29):
+# on models that reject forced tool_choice the prompt must push hard for the
+# tool; if the model still answers in prose, retry once with a stronger
+# instruction, and if that fails raise an error the product can show and the
+# logs can be mined for.
+# ---------------------------------------------------------------------------
+
+from mechanistic_agent.llm import ForcedToolCallUnavailableError  # noqa: E402
+
+
+class _ScriptedCompletions:
+    """Returns scripted responses in order: 'text' → prose only, 'tool' → the tool call."""
+
+    def __init__(self, script: List[str]) -> None:
+        self.script = list(script)
+        self.requests: List[Dict[str, Any]] = []
+
+    def create(self, **params: Any) -> Any:
+        self.requests.append(params)
+        kind = self.script.pop(0)
+        if kind == "tool":
+            msg = SimpleNamespace(content=None, tool_calls=[SimpleNamespace(id="c1", function=SimpleNamespace(name="mechanism_step_proposal_result", arguments="{}"))])
+        else:
+            msg = SimpleNamespace(content="Here is my answer in prose.", tool_calls=[])
+        return SimpleNamespace(choices=[SimpleNamespace(message=msg)], usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
+
+
+def _scripted(model: str, script: List[str]) -> tuple[_OpenAIChatAdapter, _ScriptedCompletions]:
+    adapter = object.__new__(_OpenAIChatAdapter)
+    fake = _ScriptedCompletions(script)
+    adapter._client = SimpleNamespace(chat=SimpleNamespace(completions=fake))
+    adapter._model = model
+    adapter._temperature = None
+    adapter._model_kwargs = {}
+    adapter._timeout = 30
+    return adapter, fake
+
+
+def test_prose_answer_triggers_one_harder_retry_that_succeeds() -> None:
+    adapter, fake = _scripted(OPUS55, ["text", "tool"])
+    result = adapter.invoke([{"role": "user", "content": "propose"}], tools=[MECHANISM_STEP_PROPOSAL_TOOL], tool_choice=build_tool_choice("mechanism_step_proposal_result"))
+    assert result.tool_calls[0]["name"] == "mechanism_step_proposal_result"
+    assert len(fake.requests) == 2
+    first, second = fake.requests
+    assert first["tool_choice"] == "auto" and second["tool_choice"] == "auto"
+    assert "mechanism_step_proposal_result" in second["messages"][-1]["content"]
+    assert "must" in second["messages"][-1]["content"].lower()
+    assert second["messages"][-1]["content"] != first["messages"][-1]["content"], "retry must push harder"
+
+
+def test_prose_twice_raises_human_readable_error() -> None:
+    adapter, fake = _scripted(OPUS55, ["text", "text"])
+    with pytest.raises(ForcedToolCallUnavailableError) as info:
+        adapter.invoke([{"role": "user", "content": "propose"}], tools=[MECHANISM_STEP_PROPOSAL_TOOL], tool_choice=build_tool_choice("mechanism_step_proposal_result"))
+    err = info.value
+    assert len(fake.requests) == 2
+    assert err.model == OPUS55 and err.tool_name == "mechanism_step_proposal_result" and err.attempts == 2
+    text = str(err)
+    assert OPUS55 in text and "mechanism_step_proposal_result" in text and "did not call" in text
+    assert "prose" in text.lower() or "plain text" in text.lower()
+    assert err.error_code == "tool_call_missing"
+
+
+def test_wrong_tool_name_counts_as_missing() -> None:
+    class _WrongTool(_ScriptedCompletions):
+        def create(self, **params: Any) -> Any:
+            self.requests.append(params)
+            msg = SimpleNamespace(content=None, tool_calls=[SimpleNamespace(id="c1", function=SimpleNamespace(name="other_tool", arguments="{}"))])
+            return SimpleNamespace(choices=[SimpleNamespace(message=msg)], usage=None)
+
+    adapter = object.__new__(_OpenAIChatAdapter)
+    fake = _WrongTool([])
+    adapter._client = SimpleNamespace(chat=SimpleNamespace(completions=fake))
+    adapter._model = OPUS55
+    adapter._temperature = None
+    adapter._model_kwargs = {}
+    adapter._timeout = 30
+    with pytest.raises(ForcedToolCallUnavailableError):
+        adapter.invoke([{"role": "user", "content": "propose"}], tools=[MECHANISM_STEP_PROPOSAL_TOOL], tool_choice=build_tool_choice("mechanism_step_proposal_result"))
+    assert len(fake.requests) == 2
+
+
+def test_models_with_forced_tool_choice_never_retry_on_prose() -> None:
+    adapter, fake = _scripted(OPUS46, ["text"])
+    result = adapter.invoke([{"role": "user", "content": "propose"}], tools=[MECHANISM_STEP_PROPOSAL_TOOL], tool_choice=build_tool_choice("mechanism_step_proposal_result"))
+    assert result.tool_calls == [] and len(fake.requests) == 1
+
+
+def test_recorder_logs_the_missing_tool_call_as_a_failed_call() -> None:
+    from mechanistic_agent.core.call_recorder import RecordingChatAdapter, call_context
+
+    events: List[Dict[str, Any]] = []
+    adapter, _ = _scripted(OPUS55, ["text", "text"])
+    with call_context(run_id="r", step_name="mechanism_step_proposal", sink=lambda t, p, step_name=None: events.append({"type": t, **p})):
+        with pytest.raises(ForcedToolCallUnavailableError):
+            RecordingChatAdapter(adapter, OPUS55).invoke([{"role": "user", "content": "propose"}], tools=[MECHANISM_STEP_PROPOSAL_TOOL], tool_choice=build_tool_choice("mechanism_step_proposal_result"))
+    failed = [e for e in events if e["type"] == "inference_call_failed"]
+    assert len(failed) == 1
+    assert "ForcedToolCallUnavailableError" in failed[0]["error"] and "tool_call_missing" in failed[0]["error"]
