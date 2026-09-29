@@ -43,7 +43,16 @@ mechanistic-agent = "main:app"
 Repository = "https://github.com/scottreed/Mechanistic"
 
 [tool.setuptools.packages.find]
-include = ["mechanistic_agent*"]
+# `skills` ships with the package: `core/validators.py` imports the ground-truth
+# validators as `skills.mechanistic.<name>.validator`, and the prompt/harness
+# registries read `skills/**/SKILL.md`. Namespace discovery covers the skill
+# directories that have no __init__.py. Without this an installed (or editable)
+# copy imports only when the repo root happens to be on sys.path.
+include = ["mechanistic_agent*", "skills*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+skills = ["**/*.md", "**/*.jsonl", "**/*.json", "**/*.py"]
 
 [tool.typer]
 pretty_exceptions_show_locals = false
