@@ -172,6 +172,10 @@ rt.manifest()                               # runtime_manifest.v1 with deploymen
 - `RunStore(db_path, event_sink=...)` mirrors every event, after commit and with the `list_events` row shape, to the caller. The SQLite file in `work_dir` is scratch. Because `build_observatory` needs only events, `build_observatory(<mirrored rows>)` equals the live projection (tested), so the durable store in ChemIllusion is one append-only table (`mechanism_run_events(run_id, seq, ts, event_type, step_name, payload jsonb)`), not a port of `RunStore`. A mirror failure never breaks a run.
 - Not yet covered: resuming a run interrupted by a container restart (the lease expires, the job is marked failed, the mirrored events still replay). Acceptable for beta.
 
+### 2.3.2.2 Packaging (2026-09-29)
+
+The first Railway build of the ChemIllusion image failed with `ModuleNotFoundError: No module named 'skills'`: `core/validators.py` imports the ground-truth validators as a top-level `skills` package, which only resolved when the repo root happened to be on `sys.path`. `pyproject.toml` now discovers `skills*` as a namespace package with its markdown/jsonl/py data, so `pip install -e /opt/wiggum` imports from any working directory (regression test `tests/fast/test_packaging_includes_skills.py`).
+
 ### 2.3.3 Why not a separate service now
 
 - The runtime is a Python library whose dependencies are already in the API image (RDKit, FastAPI, pydantic, the three provider SDKs); the only addition is `dimorphite-dl`.
