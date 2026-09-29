@@ -360,6 +360,58 @@
       "output": 25.0
     }
   },
+  "anthropic/claude-opus-5.5": {
+    "id": "anthropic/claude-opus-5.5",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "forced_tool_choice": false,
+    "best_in_class": true,
+    "label": "Claude Opus 5.5",
+    "description": "Anthropic Claude Opus 5.5 (claude-opus-5-5) via OpenRouter. Forced tool_choice is rejected by this model, so the adapter sends tool_choice=auto plus an explicit instruction naming the tool; thinking cannot be disabled (effort only, default medium).",
+    "reasoning": {
+      "parameter": "thinking",
+      "merge_levels": true,
+      "default": "medium",
+      "levels": {
+        "low": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "low"
+        },
+        "medium": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "medium"
+        },
+        "high": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "high"
+        },
+        "highest": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "xhigh"
+        },
+        "max": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "max"
+        }
+      }
+    },
+    "pricing_per_million": {
+      "input": 4.0,
+      "cached_input": 0.2,
+      "output": 20.0
+    }
+  },
   "anthropic/claude-3.5-haiku": {
     "id": "anthropic/claude-3.5-haiku",
     "family": "claude",
