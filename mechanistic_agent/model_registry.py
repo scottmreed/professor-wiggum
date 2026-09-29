@@ -134,6 +134,20 @@ def get_default_decision_model() -> Optional[str]:
     return models[0] if models else None
 
 
+def model_supports_forced_tool_choice(model_id: str) -> bool:
+    """Whether the provider accepts a forced ``tool_choice`` (named tool / ``any``).
+
+    Claude Opus 5.5 and later reject it with a 400 (catalog ``forced_tool_choice:
+    false``); the adapters then send ``auto`` plus an instruction naming the tool
+    (``llm.steer_forced_tool_choice``). Defaults to True.
+    """
+    try:
+        spec = get_model_spec(model_id)
+    except Exception:
+        return True
+    return bool(spec.get("forced_tool_choice", True))
+
+
 def model_supports_tools(model_id: str) -> bool:
     """Return True when the model natively supports tool/function calling."""
     resolved = _resolve_catalog_key(model_id)
@@ -510,6 +524,7 @@ __all__ = [
     "is_decision_model",
     "get_decision_models",
     "get_default_decision_model",
+    "model_supports_forced_tool_choice",
     "model_supports_tools",
     "get_family_models",
     "get_cheapest_family_model",

@@ -176,6 +176,10 @@ rt.manifest()                               # runtime_manifest.v1 with deploymen
 
 The first Railway build of the ChemIllusion image failed with `ModuleNotFoundError: No module named 'skills'`: `core/validators.py` imports the ground-truth validators as a top-level `skills` package, which only resolved when the repo root happened to be on `sys.path`. `pyproject.toml` now discovers `skills*` as a namespace package with its markdown/jsonl/py data, so `pip install -e /opt/wiggum` imports from any working directory (regression test `tests/fast/test_packaging_includes_skills.py`).
 
+### 2.3.2.3 Product default model: Claude Opus 5.5 (decision 2026-09-29)
+
+`claude-opus-5-5`; OpenRouter `anthropic/claude-opus-5.5`; $4 / $20 per MTok, cache reads $0.20; 1M context. Two API differences from the 4.x line: forced `tool_choice` (`any` / a named tool) is rejected with a 400, and thinking cannot be disabled (`effort` only, default `medium`). The catalog entry carries `forced_tool_choice: false` and no `disabled` level; `llm.steer_forced_tool_choice` sends `tool_choice: auto` plus an explicit instruction naming the tool in both the OpenRouter and direct-Anthropic adapters, and the harness's downstream tool-call-name validation and text fallback are unchanged. Verified through the real adapter against a local mock OpenRouter server. **Not yet evaluated on the eval tiers** — per `docs/change_evidence_policy.md` a model-catalog/adapter change needs the `easy` tier for its cost class before it is a supported default; until then ChemIllusion's `/status` reports the model as unavailable if the pinned runtime lacks the entry.
+
 ### 2.3.3 Why not a separate service now
 
 - The runtime is a Python library whose dependencies are already in the API image (RDKit, FastAPI, pydantic, the three provider SDKs); the only addition is `dimorphite-dl`.

@@ -239,6 +239,7 @@ class _OpenAIChatAdapter:
         tools: Any = None,
         tool_choice: Any = None,
     ) -> Any:
+        tool_choice, messages = steer_forced_tool_choice(self._model, messages, tool_choice)
         serialised = serialise_chat_messages(messages)
 
         params: Dict[str, Any] = {"model": self._model, "messages": serialised}
@@ -333,6 +334,49 @@ def _openai_tools_to_anthropic(tools: Any) -> Optional[list[dict[str, Any]]]:
     return converted or None
 
 
+def steer_forced_tool_choice(
+    model_name: Optional[str],
+    messages: Any,
+    tool_choice: Any,
+) -> tuple[Any, Any]:
+    """Keep the harness's forced-tool contract on models that reject forced ``tool_choice``.
+
+    Claude Opus 5.5+ returns 400 for ``tool_choice`` ``any`` / a named tool. For
+    those models (catalog ``forced_tool_choice: false``) this returns
+    ``("auto", messages')`` where the last user message carries an explicit
+    instruction to answer by calling the named tool; every other model gets its
+    inputs back unchanged. The caller still validates the returned tool-call
+    name, and the text fallback path stays available. Inputs are never mutated.
+    """
+    from .model_registry import model_supports_forced_tool_choice
+
+    if tool_choice is None or model_supports_forced_tool_choice(model_name or ""):
+        return tool_choice, messages
+    if isinstance(tool_choice, str):
+        return ("auto" if tool_choice == "required" else tool_choice), messages
+    if not (isinstance(tool_choice, dict) and tool_choice.get("type") == "function"):
+        return tool_choice, messages
+    name = str((tool_choice.get("function") or {}).get("name") or "").strip()
+    if not name or not isinstance(messages, list) or not messages:
+        return "auto", messages
+    instruction = f"Answer only by calling the `{name}` tool with your complete result; do not reply in plain text."
+    steered = [dict(m) if isinstance(m, dict) else m for m in messages]
+    for index in range(len(steered) - 1, -1, -1):
+        message = steered[index]
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            message["content"] = f"{content.rstrip()}\n\n{instruction}"
+        elif isinstance(content, list):
+            message["content"] = [*content, {"type": "text", "text": instruction}]
+        else:
+            message["content"] = instruction
+        return "auto", steered
+    steered.append({"role": "user", "content": instruction})
+    return "auto", steered
+
+
 def _openai_tool_choice_to_anthropic(tool_choice: Any) -> Optional[dict[str, Any]]:
     if tool_choice is None:
         return {"type": "auto"}
@@ -377,6 +421,7 @@ class _AnthropicChatAdapter:
     ) -> Any:
         import json as _json
 
+        tool_choice, messages = steer_forced_tool_choice(self._model, messages, tool_choice)
         system_prompt, converted_messages = _openai_messages_to_anthropic(messages)
         params: Dict[str, Any] = {
             "model": self._model,
