@@ -134,3 +134,37 @@ def test_heavy_atom_residual_is_never_proton_reconciled() -> None:
     )
     assert audit["grade"] == "approximate"
     assert audit["proton_reconciled"] is False
+
+
+def test_flagged_step_that_drops_a_leaving_water_is_resolved() -> None:
+    # Deferred rerun of flower_002647: step 4 eliminated water but never carried it,
+    # and the product then shows up with H3O+ instead of the water target.
+    hydrazide = "CC(=O)NN"
+    acid = "O=C(O)c1ccc2occc2c1"
+    product = "CC(=O)NNC(=O)c1ccc2occc2c1"
+    tetra = "CC(=O)NNC(O)(O)c1ccc2occc2c1"
+    oxonium = "CC(=O)NNC(O)([OH2+])c1ccc2occc2c1"
+    protonated = "CC(=O)NNC(=[OH+])c1ccc2occc2c1"
+    audit = audit_mechanism(
+        starting=[hydrazide, acid],
+        targets=[product, "O"],
+        steps=[
+            _step(1, [hydrazide, acid], [tetra]),
+            _step(2, [tetra], [oxonium, "O"], adds=["[OH3+]"]),  # acid catalyst added by rescue
+            _step(3, [oxonium, "O"], [protonated, "O"], flag=True),  # leaving water not carried
+            _step(4, [protonated, "O"], [product, "[OH3+]"]),
+        ],
+    )
+    assert audit["grade"] == "reconciled"
+    assert audit["dropped_species"] == [{"species": "O", "count": 1}]
+    assert audit["flags"][0]["resolution"] == "resolved_dropped_species"
+
+
+def test_dropped_organic_fragment_is_not_excused() -> None:
+    audit = audit_mechanism(
+        starting=["CCOC(C)=O", "N"],
+        targets=["CC(N)=O"],
+        steps=[_step(1, ["CCOC(C)=O", "N"], ["CC(N)=O"], flag=True)],  # ethanol vanished
+    )
+    assert audit["grade"] == "approximate"
+    assert audit["unresolved_steps"] == [1]

@@ -29,3 +29,15 @@ def test_unrelated_extra_species_still_blocks_completion() -> None:
     result = _check([PRODUCT, "CCCC"])
     assert result["contains_target_product"] is False
     assert result["tolerated_species"] == []
+
+
+def test_water_target_present_as_hydronium_counts_as_reached() -> None:
+    result = assess_target_product_state(
+        current_state=["CC(=O)NNC(=[OH+])c1ccccc1", "O"],
+        resulting_state=["CC(=O)NNC(=O)c1ccccc1", "[OH3+]"],
+        target_products=["CC(=O)NNC(=O)c1ccccc1", "O"],
+        starting_materials=["CC(=O)NN", "O=C(O)c1ccccc1"],
+    )
+    assert result["contains_target_product"] is True
+    assert result["targets_as_conjugate"] == ["O"]
+    assert result["missing_target_products"] == []
