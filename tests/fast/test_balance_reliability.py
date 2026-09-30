@@ -40,8 +40,13 @@ class _MemoryStore:
                 "event_type": event_type,
                 "payload": payload,
                 "step_name": step_name,
+                "seq": len(self.events) + 1,
             }
         )
+
+    def list_events(self, run_id: str, *, after_seq: int = 0, limit: int = 500) -> List[Dict[str, Any]]:
+        rows = [ev for ev in self.events if ev.get("run_id") == run_id and int(ev.get("seq") or 0) > after_seq]
+        return rows[:limit]
 
     def create_run_pause(self, *, run_id: str, reason: str, details: Dict[str, Any]) -> str:
         self.events.append(
@@ -514,3 +519,158 @@ def test_overall_balance_reconciliation_emits_reconciled_payload() -> None:
     assert payload["grade"] == "reconciled"
     assert payload["final_balance"]["balanced"] is True
     assert payload["add_products"] == ["O"]
+
+
+def _balance_only_failure(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+    return {
+        "status": "failed",
+        "last_validation": {
+            "passed": False,
+            "checks": [
+                {"name": "atom_balance", "passed": False, "details": {"error": "Atom imbalance detected: O: 0->1"}},
+                {"name": "bond_electron", "passed": True, "details": {}},
+                {"name": "state_progress", "passed": True, "details": {}},
+            ],
+        },
+        "failed_checks": ["atom_balance"],
+        "validation_signature": "atom-balance",
+        "candidate_rank": 1,
+        "rescue_attempted": True,
+        "rescue_outcome": "no_changes",
+        "mechanism_output": {
+            "current_state": ["CCBr", "[Cl-]"],
+            "resulting_state": ["CCCl", "[Br-]", "O"],
+            "contains_target_product": True,
+            "reaction_smirks": "[CH3:1][CH2:2][Br:3].[Cl-:4]>>[CH3:1][CH2:2][Cl:4].[Br-:3]",
+        },
+    }
+
+
+class _OneCandidateAgent:
+    def run(self, _state: RunState, template_guidance: Optional[Dict[str, Any]] = None) -> StepResult:
+        return StepResult(
+            step_name="mechanism_step_proposal",
+            tool_name="propose_mechanism_step",
+            output={
+                "classification": "intermediate_step",
+                "candidates": [{"rank": 1, "intermediate_smiles": "CCCl", "resulting_state": ["CCCl", "[Br-]", "O"]}],
+            },
+            source="llm",
+        )
+
+
+def test_deferred_balance_mode_accepts_balance_only_failure_with_flag() -> None:
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(mode="unverified")
+    state.run_config.balance_mode = "deferred"
+    assert state.run_config.proceed_on_validation_failure is False
+    coordinator.intermediate_agent = _OneCandidateAgent()  # type: ignore[assignment]
+    coordinator._try_candidate_with_retries = _balance_only_failure  # type: ignore[method-assign]
+
+    coordinator._run_mechanism_loop(state, threading.Event())
+
+    soft = [ev for ev in store.events if ev["event_type"] == "mechanism_step_soft_advance"]
+    assert soft and soft[-1]["payload"]["reason"] == "balance_pending"
+    accepted = [ev for ev in store.events if ev["event_type"] == "mechanism_step_accepted"]
+    payload = accepted[-1]["payload"]
+    assert payload["acceptance_kind"] == "soft_advance"
+    assert payload["balance_flag"]["reason"] == "balance_pending"
+    assert payload["balance_flag"]["error"].startswith("Atom imbalance")
+    assert payload["reaction_smirks"].startswith("[CH3:1]")
+
+
+def test_deferred_balance_mode_never_defers_other_failures() -> None:
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(mode="unverified")
+    state.run_config.balance_mode = "deferred"
+    coordinator.intermediate_agent = _OneCandidateAgent()  # type: ignore[assignment]
+
+    def _bond_electron_failure(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+        result = _balance_only_failure()
+        result["failed_checks"] = ["atom_balance", "bond_electron"]
+        result["last_validation"]["checks"][1]["passed"] = False
+        return result
+
+    coordinator._try_candidate_with_retries = _bond_electron_failure  # type: ignore[method-assign]
+    with pytest.raises(_RunPaused):
+        coordinator._run_mechanism_loop(state, threading.Event())
+    assert not [ev for ev in store.events if ev["event_type"] == "mechanism_step_soft_advance"]
+
+
+def test_reconciliation_uses_chosen_path_and_counts_catalyst_equivalents() -> None:
+    """flower_025913: a second AcOH (added by rescue) is a regenerated catalyst, and the
+    rank-2 alternative accepted-then-abandoned never becomes the final state."""
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    acid, hydrazine = "CC(=O)O", "NNc1ccc([N+](=O)[O-])cc1"
+    product = "CC(=O)NNc1ccc([N+](=O)[O-])cc1"
+    state = _state(starting_materials=[acid, hydrazine], products=[product], mode="unverified")
+
+    def accept(step: int, current: List[str], resulting: List[str], **extra: Any) -> None:
+        store.append_event(
+            state.run_id,
+            "mechanism_step_accepted",
+            {"step_index": step, "current_state": current, "resulting_state": resulting, **extra},
+            step_name="mechanism_synthesis",
+        )
+
+    tetra = "CC(O)(O)NNc1ccc([N+](=O)[O-])cc1"
+    accept(1, [acid, hydrazine], [tetra])
+    accept(2, [tetra], ["CC(O)([OH2+])NNc1ccc([N+](=O)[O-])cc1", "CC(=O)[O-]"],
+           rescue_additions={"add_reactants": [acid], "add_products": []})
+    # Abandoned branch: accepted at step 3, then the run backtracked and re-accepted step 3.
+    accept(3, ["CC(O)([OH2+])NNc1ccc([N+](=O)[O-])cc1", "CC(=O)[O-]"], [product, "[OH3+]", "CC(=O)[O-]", "C"])
+    accept(3, ["CC(O)([OH2+])NNc1ccc([N+](=O)[O-])cc1", "CC(=O)[O-]"], [product, "O", acid])
+    state.current_state = [product, "O", acid]
+
+    class _NoLLM:
+        @staticmethod
+        def run_missing_reagents(**_kwargs: Any) -> Dict[str, Any]:
+            raise AssertionError("audit should reconcile without the LLM rescue")
+
+    coordinator.missing_reagents_agent.executor = _NoLLM()  # type: ignore[assignment]
+    coordinator._run_overall_balance_reconciliation(state)
+
+    audit = [ev for ev in store.events if ev["event_type"] == "mechanism_audit"][-1]["payload"]
+    assert audit["grade"] == "reconciled"
+    assert audit["catalysts"] == [acid]
+    payload = [ev for ev in store.events if ev["event_type"] == "overall_balance_reconciled"][-1]["payload"]
+    assert payload["grade"] == "reconciled"
+    assert payload["final_state"] == [product, "O", acid]
+    assert payload["accepted_step_count"] == 3
+
+
+def test_reconciliation_accepts_catalytic_proton_without_llm() -> None:
+    """Deferred rerun of flower_025913: product + stray H3O+ (acid catalyst not drawn)."""
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    acid, hydrazine = "CC(=O)O", "NNc1ccc([N+](=O)[O-])cc1"
+    product = "CC(=O)NNc1ccc([N+](=O)[O-])cc1"
+    oxonium = "CC(=[OH+])NNc1ccc([N+](=O)[O-])cc1"
+    state = _state(starting_materials=[acid, hydrazine], products=[product], mode="unverified")
+    for step, current, resulting in (
+        (1, [acid, hydrazine], ["CC(O)(O)NNc1ccc([N+](=O)[O-])cc1"]),
+        (2, ["CC(O)(O)NNc1ccc([N+](=O)[O-])cc1"], [oxonium, "O"]),
+        (3, [oxonium, "O"], [product, "[OH3+]"]),
+    ):
+        store.append_event(
+            state.run_id,
+            "mechanism_step_accepted",
+            {"step_index": step, "current_state": current, "resulting_state": resulting},
+            step_name="mechanism_synthesis",
+        )
+    state.current_state = [product, "[OH3+]"]
+
+    class _NoLLM:
+        @staticmethod
+        def run_missing_reagents(**_kwargs: Any) -> Dict[str, Any]:
+            raise AssertionError("a proton-only residual must not call the LLM rescue")
+
+    coordinator.missing_reagents_agent.executor = _NoLLM()  # type: ignore[assignment]
+    coordinator._run_overall_balance_reconciliation(state)
+
+    payload = [ev for ev in store.events if ev["event_type"] == "overall_balance_reconciled"][-1]["payload"]
+    assert payload["grade"] == "reconciled"
+    assert payload["audit"]["proton_reconciled"] is True

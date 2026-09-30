@@ -351,6 +351,9 @@ class RunCoordinator:
                 config.get("proceed_only_on_arrow_push_failure", True),
                 True,
             ),
+            balance_mode=(
+                "deferred" if str(config.get("balance_mode") or "").strip().lower() == "deferred" else "strict"
+            ),
             runtime_trace_enabled=self._coerce_bool(
                 config.get("runtime_trace_enabled", False),
                 False,
@@ -1634,6 +1637,7 @@ class RunCoordinator:
         {
             "proceed_on_validation_failure",
             "proceed_only_on_arrow_push_failure",
+            "balance_mode",
             "candidate_rescue_enabled",
             "retry_same_candidate_max",
             "max_reproposals_per_step",
@@ -1664,8 +1668,10 @@ class RunCoordinator:
             if key in explicit and explicit.get(key) is not None:
                 continue
             current = getattr(state.run_config, key, None)
-            if isinstance(current, bool):
-                coerced: Any = self._coerce_bool(value, current)
+            if key == "balance_mode":
+                coerced: Any = "deferred" if str(value or "").strip().lower() == "deferred" else "strict"
+            elif isinstance(current, bool):
+                coerced = self._coerce_bool(value, current)
             elif isinstance(current, int):
                 coerced = self._coerce_int(value, current)
             else:
@@ -2664,6 +2670,26 @@ class RunCoordinator:
                 "checks": [],
             },
         )
+
+    @staticmethod
+    def _balance_flag_for_candidate(candidate: BranchCandidate) -> Optional[Dict[str, Any]]:
+        """Flag payload for a step accepted with a deferred atom-balance failure."""
+        output = candidate.mechanism_output or {}
+        if str(output.get("soft_advance_reason") or "") != "balance_pending":
+            return None
+        validation = output.get("balance_pending_validation")
+        error: Optional[str] = None
+        if isinstance(validation, dict):
+            for check in validation.get("checks") or []:
+                if isinstance(check, dict) and check.get("name") == "atom_balance" and not check.get("passed"):
+                    details = check.get("details") if isinstance(check.get("details"), dict) else {}
+                    error = str(details.get("error") or check.get("message") or "") or None
+                    break
+        return {
+            "reason": "balance_pending",
+            "failed_checks": ["atom_balance"],
+            "error": error,
+        }
 
     @staticmethod
     def _validation_check_passed(validation: Dict[str, Any], check_name: str) -> bool:
@@ -3831,6 +3857,10 @@ class RunCoordinator:
                 "predicted_intermediate": candidate.intermediate_smiles,
                 "contains_target_product": bool((candidate.mechanism_output or {}).get("contains_target_product")),
                 "validation_summary": dict(candidate.validation_summary or {}),
+                "reaction_smirks": (candidate.mechanism_output or {}).get("reaction_smirks"),
+                "electron_pushes": list((candidate.mechanism_output or {}).get("electron_pushes") or []),
+                "rescue_additions": dict((candidate.mechanism_output or {}).get("rescue_additions") or {}),
+                "balance_flag": self._balance_flag_for_candidate(candidate),
             },
             step_name="mechanism_synthesis",
         )
@@ -5341,10 +5371,17 @@ class RunCoordinator:
                             return
                         continue
                     # ── Deferred atom-balance soft-advance (unverified only) ─────
-                    # Gated on proceed_on_validation_failure: with the flag off
-                    # (default harness), a candidate that fails atom balance is
-                    # never accepted, so deterministic validation stays the arbiter.
-                    if state.mode == "unverified" and state.run_config.proceed_on_validation_failure:
+                    # With balance_mode == "deferred" (or the broader
+                    # proceed_on_validation_failure), a candidate whose ONLY failed
+                    # check is atom balance — bond/electron and state progress pass —
+                    # is accepted as a flagged step. The post-loop mechanism audit
+                    # then resolves the flag from the whole mechanism (catalysts,
+                    # conjugate pairs, missing reagents) or fails the run. Any other
+                    # failure is never deferred, so validation stays the arbiter.
+                    if state.mode == "unverified" and (
+                        state.run_config.proceed_on_validation_failure
+                        or state.run_config.balance_mode == "deferred"
+                    ):
                         balance_pending_candidate = self._best_balance_pending_candidate(
                             candidate_attempts=candidate_attempts,
                         )
@@ -5590,29 +5627,70 @@ class RunCoordinator:
         rows.sort(key=lambda item: (int(item.get("attempt") or 0), int(item.get("retry_index") or 0)))
         return rows
 
+    def _chosen_path_steps(self, run_id: str) -> List[Dict[str, Any]]:
+        """The accepted path the run actually took (not untaken branch alternatives),
+        as audit steps. Rescue additions come from the accepted event, or — for runs
+        recorded before events carried them — from the matching synthesis row."""
+        from mechanistic_agent.core.mechanism_audit import chosen_path_from_events, step_for_audit
+
+        events: List[Dict[str, Any]] = []
+        after_seq = 0
+        while True:
+            batch = self.store.list_events(run_id, after_seq=after_seq, limit=500)
+            events.extend(batch)
+            if len(batch) < 500:
+                break
+            after_seq = int(batch[-1].get("seq") or after_seq)
+
+        rows = self._accepted_mechanism_rows(run_id)
+        steps: List[Dict[str, Any]] = []
+        for payload in chosen_path_from_events(events):
+            fallback: Dict[str, Any] = {}
+            if not payload.get("rescue_additions"):
+                wanted = sorted(str(item) for item in payload.get("resulting_state") or [])
+                for row in rows:
+                    output = row.get("output") if isinstance(row.get("output"), dict) else {}
+                    if (
+                        int(row.get("attempt") or 0) == int(payload.get("step_index") or 0)
+                        and sorted(str(item) for item in output.get("resulting_state") or []) == wanted
+                        and isinstance(output.get("rescue_additions"), dict)
+                    ):
+                        fallback = dict(output["rescue_additions"])
+                        break
+            steps.append(step_for_audit(payload, fallback_additions=fallback))
+        return steps
+
     def _run_overall_balance_reconciliation(self, state: RunState) -> None:
         from mechanistic_agent.balance import assess_balance_diagnostics
+        from mechanistic_agent.core.mechanism_audit import audit_mechanism
 
-        accepted_rows = self._accepted_mechanism_rows(state.run_id)
+        path_steps = self._chosen_path_steps(state.run_id)
         final_state = list(state.current_state or [])
-        if accepted_rows:
-            final_output = accepted_rows[-1].get("output") if isinstance(accepted_rows[-1].get("output"), dict) else {}
-            if isinstance(final_output, dict):
-                resulting_state = [str(item) for item in final_output.get("resulting_state") or []]
-                if resulting_state:
-                    final_state = resulting_state
+        if path_steps and path_steps[-1].get("resulting_state"):
+            final_state = [str(item) for item in path_steps[-1]["resulting_state"]]
 
+        # Count-preserving: a catalyst added mid-path that is the same species as a
+        # starting material (a second AcOH) is a second equivalent, not a duplicate.
         left_species = [str(item) for item in state.run_input.starting_materials or []]
         right_species = list(final_state)
-        for row in accepted_rows:
-            output = row.get("output") if isinstance(row.get("output"), dict) else {}
-            if not isinstance(output, dict):
-                continue
-            rescue_additions = output.get("rescue_additions") if isinstance(output.get("rescue_additions"), dict) else {}
-            add_reactants = [str(item) for item in rescue_additions.get("add_reactants") or []]
-            add_products = [str(item) for item in rescue_additions.get("add_products") or []]
-            left_species = self._merge_unique_species(left_species, add_reactants)
-            right_species = self._merge_unique_species(right_species, add_products)
+        for step in path_steps:
+            additions = step.get("rescue_additions") or {}
+            left_species.extend(str(item) for item in additions.get("add_reactants") or [])
+            right_species.extend(str(item) for item in additions.get("add_products") or [])
+
+        audit = audit_mechanism(
+            starting=[str(item) for item in state.run_input.starting_materials or []],
+            targets=[str(item) for item in state.run_input.products or []],
+            steps=path_steps,
+            final_state=final_state,
+        )
+        self.store.append_event(
+            state.run_id,
+            "mechanism_audit",
+            audit,
+            step_name="overall_balance_reconciliation",
+        )
+        accepted_rows = path_steps
 
         initial_diagnostics = assess_balance_diagnostics(
             left_species,
@@ -5634,9 +5712,18 @@ class RunCoordinator:
         }
         final_diagnostics = dict(initial_diagnostics)
         grade = "exact" if bool(initial_diagnostics.get("balanced")) else str(initial_diagnostics.get("classification") or "approximate")
+        if bool(initial_diagnostics.get("balanced")) and audit.get("grade") == "reconciled":
+            # Balanced only because of catalysts / recorded additions / resolved flags.
+            grade = "reconciled"
+        proton_only = bool(audit.get("proton_reconciled")) and audit.get("grade") == "reconciled"
+        if proton_only:
+            # The residual is exactly n protons from an acid/base catalyst whose
+            # conjugate was not carried in the state: reconciled by the audit, no LLM.
+            grade = "reconciled"
 
         if (
             state.mode == "unverified"
+            and not proton_only
             and not bool(initial_diagnostics.get("balanced"))
             and str(initial_diagnostics.get("classification") or "") != "invalid_species"
         ):
@@ -5661,8 +5748,8 @@ class RunCoordinator:
             )
             add_reactants = [str(item) for item in rescue_output.get("missing_reactants") or rescue_output.get("suggested_reactants") or []]
             add_products = [str(item) for item in rescue_output.get("missing_products") or rescue_output.get("suggested_products") or []]
-            reconciled_left = self._merge_unique_species(left_species, add_reactants)
-            reconciled_right = self._merge_unique_species(right_species, add_products)
+            reconciled_left = list(left_species) + add_reactants
+            reconciled_right = list(right_species) + add_products
             final_diagnostics = assess_balance_diagnostics(
                 reconciled_left,
                 reconciled_right,
@@ -5697,18 +5784,19 @@ class RunCoordinator:
             self._record_step(state, reconciliation_step)
         elif str(initial_diagnostics.get("classification") or "") == "invalid_species":
             grade = "invalid_species"
-        elif not bool(initial_diagnostics.get("balanced")):
+        elif not bool(initial_diagnostics.get("balanced")) and not proton_only:
             grade = "approximate"
 
         overall_balance = {
             "grade": grade,
-            "balanced": bool(final_diagnostics.get("balanced")),
+            "balanced": bool(final_diagnostics.get("balanced")) or proton_only,
             "accepted_step_count": len(accepted_rows),
             "initial_balance": initial_diagnostics,
             "final_balance": final_diagnostics,
             "add_reactants": add_reactants,
             "add_products": add_products,
             "final_state": final_state,
+            "audit": audit,
         }
         self.store.append_event(
             state.run_id,

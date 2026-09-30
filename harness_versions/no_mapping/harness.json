@@ -355,7 +355,8 @@
   ],
   "run_config_defaults": {
     "proceed_on_validation_failure": false,
-    "proceed_only_on_arrow_push_failure": false
+    "proceed_only_on_arrow_push_failure": false,
+    "balance_mode": "deferred"
   },
   "topology_profiles": {
     "sas": {
@@ -397,6 +398,10 @@
         "version": 1,
         "date": "2026-09-23",
         "description": "Created from default v5 as the mapping-only ablation: atom_mapping and step_atom_mapping set to enabled: false; everything else (missing_reagents, run_config_defaults, topology_profiles, post_loop_modules) identical to default. Unlike no_mapping_no_reagents (schema 2.0, predates run_config_defaults and post_loop_modules, keeps step_atom_mapping on), this isolates the mapping modules."
+      },
+      {
+        "date": "2026-09-30",
+        "note": "Tracks default v6: run_config_defaults.balance_mode = 'deferred' (ablation keeps the default's run_config_defaults)."
       }
     ]
   }

@@ -360,7 +360,7 @@
       "config_gate": null,
       "prompt_call_name": null,
       "group_key": "validators",
-      "description": "RDKit verifies that every atom in the current state appears in the resulting state \u2014 no atoms created or destroyed. Part of the mechanism step validation; re-runs on each retry attempt. Ground truth in skills/mechanistic/atom_balance_validation/validator.py.",
+      "description": "RDKit verifies that every atom in the current state appears in the resulting state — no atoms created or destroyed. Part of the mechanism step validation; re-runs on each retry attempt. Ground truth in skills/mechanistic/atom_balance_validation/validator.py.",
       "io_schema": {
         "inputs": [
           "current_state (SMILES[])",
@@ -427,7 +427,7 @@
       "config_gate": null,
       "prompt_call_name": null,
       "group_key": null,
-      "description": "Deterministic aggregation of validation warnings from the accepted mechanism step. Runs once per loop iteration after a step passes validation checks. Does not feed back into the current step \u2014 it records critique for observability.",
+      "description": "Deterministic aggregation of validation warnings from the accepted mechanism step. Runs once per loop iteration after a step passes validation checks. Does not feed back into the current step — it records critique for observability.",
       "io_schema": {
         "inputs": [
           "mechanism_step_output",
@@ -500,7 +500,8 @@
   ],
   "run_config_defaults": {
     "proceed_on_validation_failure": false,
-    "proceed_only_on_arrow_push_failure": false
+    "proceed_only_on_arrow_push_failure": false,
+    "balance_mode": "deferred"
   },
   "topology_profiles": {
     "sas": {
@@ -571,6 +572,11 @@
       {
         "date": "2026-09-23",
         "note": "Set reaction_type_active_probability=0.65 and min_margin=0.10 from docs/calibration/jev_reaction_type_2026-09-23.md (n=72, acc 0.917, ECE 0.056)."
+      },
+      {
+        "version": 7,
+        "date": "2026-09-30",
+        "description": "run_config_defaults.balance_mode = 'deferred': a step whose only failed check is atom balance (bond/electron and state progress pass) is accepted with a balance_flag instead of rejected; the post-loop mechanism audit (core/mechanism_audit.py) resolves flags from the chosen path's net equation (catalysts regenerated, conjugate acid/base pairs, recorded reagent additions) or leaves the run 'approximate'. Overall reconciliation now uses the chosen path and count-preserving additions."
       }
     ]
   },
