@@ -147,6 +147,34 @@ def heavy_atom_count_for_matching(smiles: str) -> int:
     return len(re.findall(r"[A-Z][a-z]?", signature))
 
 
+# Species that only carry a proton between steps; leftover copies never block completion.
+_PROTON_CARRIERS = frozenset({"O", "[OH3+]", "[OH-]", "[H+]"})
+
+
+def neutral_parent_signature(smiles: str) -> str:
+    """Signature after neutralising charges by proton transfer (AcO- -> AcOH, H3O+ -> H2O)."""
+    signature = species_match_signature(smiles)
+    if not signature or MolFromSmiles is None:
+        return signature
+    try:
+        from rdkit.Chem.MolStandardize import rdMolStandardize
+
+        with redirect_stderr(StringIO()):
+            mol = MolFromSmiles(signature)
+            if mol is None:
+                return signature
+            return MolToSmiles(rdMolStandardize.Uncharger().uncharge(mol))
+    except Exception:
+        return signature
+
+
+def _tolerated_extra(signature: str, reference_parents: set[str]) -> bool:
+    """A leftover that is a proton carrier or a conjugate acid/base form of a known species."""
+    if signature in _PROTON_CARRIERS:
+        return True
+    return neutral_parent_signature(signature) in reference_parents
+
+
 def assess_target_product_state(
     *,
     current_state: List[str],
@@ -164,7 +192,9 @@ def assess_target_product_state(
     ``contains_target_product`` (the run-completion flag) is true only when
     **every** productive target is present in the resulting state and nothing
     extra remains beyond the declared targets, the starting materials, and
-    ``allowed_extra_species`` (declared spectators / persistent species).
+    ``allowed_extra_species`` (declared spectators / persistent species). Leftover
+    proton carriers and conjugate acid/base forms of those species are tolerated
+    (reported in ``tolerated_species``) rather than blocking completion.
     ``contains_primary_target_product`` keeps the older, lenient semantics
     (heaviest product present) for partial-credit scoring.
     """
@@ -200,14 +230,24 @@ def assess_target_product_state(
         and item not in starting_signatures
         and item not in allowed_signatures
     ]
+    # Leftover proton carriers (H3O+, H2O, OH-) and conjugate acid/base forms of
+    # targets, starting materials or allowed species do not block completion: the
+    # end-of-mechanism audit accounts for them from the whole path.
+    reference_parents = {
+        neutral_parent_signature(item)
+        for item in (*target_signatures, *starting_signatures, *allowed_signatures)
+    }
+    tolerated_species = [item for item in unexpected_species if _tolerated_extra(item, reference_parents)]
+    blocking_species = [item for item in unexpected_species if item not in tolerated_species]
 
     return {
-        "contains_target_product": bool(all_targets_reached and not unexpected_species),
+        "contains_target_product": bool(all_targets_reached and not blocking_species),
         "contains_primary_target_product": bool(matched_primary_targets),
         "all_targets_reached": all_targets_reached,
         "matched_target_products": matched_targets,
         "missing_target_products": missing_targets,
         "unexpected_species": unexpected_species,
+        "tolerated_species": tolerated_species,
         "matched_primary_target_products": matched_primary_targets,
         "primary_target_products": primary_targets,
         "productive_target_products": productive_targets,

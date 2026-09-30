@@ -106,3 +106,31 @@ def test_chosen_path_drops_steps_abandoned_by_backtrack() -> None:
     events = [ev(1, 1, "a"), ev(2, 2, "a"), ev(3, 3, "a"), ev(4, 2, "b"), ev(5, 3, "b"), ev(6, 4, "b")]
     path = chosen_path_from_events(events)
     assert [(p["step_index"], p["tag"]) for p in path] == [(1, "a"), (2, "b"), (3, "b"), (4, "b")]
+
+
+def test_unaccounted_catalytic_proton_is_reconciled_and_reported() -> None:
+    # Deferred hard rerun of flower_025913: acid catalysis drawn without the acid, so the
+    # product arrives with a stray H3O+ (net residual = exactly one proton).
+    audit = audit_mechanism(
+        starting=[ACID, HYDRAZINE],
+        targets=[PRODUCT],
+        steps=[
+            _step(1, [ACID, HYDRAZINE], [TETRA]),
+            _step(2, [TETRA], ["CC(=[OH+])NNc1ccc([N+](=O)[O-])cc1", "O"]),
+            _step(3, ["CC(=[OH+])NNc1ccc([N+](=O)[O-])cc1", "O"], [PRODUCT, "[OH3+]"]),
+        ],
+    )
+    assert audit["grade"] == "reconciled"
+    assert audit["proton_reconciled"] is True
+    assert audit["net_delta"] == {"+": 1, "H": 1}
+    assert any(f["type"] == "unaccounted_proton" for f in audit["findings"])
+
+
+def test_heavy_atom_residual_is_never_proton_reconciled() -> None:
+    audit = audit_mechanism(
+        starting=["CCO"],
+        targets=["CCOC"],
+        steps=[_step(1, ["CCO"], ["CCOC"])],
+    )
+    assert audit["grade"] == "approximate"
+    assert audit["proton_reconciled"] is False

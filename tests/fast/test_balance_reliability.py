@@ -640,3 +640,37 @@ def test_reconciliation_uses_chosen_path_and_counts_catalyst_equivalents() -> No
     assert payload["grade"] == "reconciled"
     assert payload["final_state"] == [product, "O", acid]
     assert payload["accepted_step_count"] == 3
+
+
+def test_reconciliation_accepts_catalytic_proton_without_llm() -> None:
+    """Deferred rerun of flower_025913: product + stray H3O+ (acid catalyst not drawn)."""
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    acid, hydrazine = "CC(=O)O", "NNc1ccc([N+](=O)[O-])cc1"
+    product = "CC(=O)NNc1ccc([N+](=O)[O-])cc1"
+    oxonium = "CC(=[OH+])NNc1ccc([N+](=O)[O-])cc1"
+    state = _state(starting_materials=[acid, hydrazine], products=[product], mode="unverified")
+    for step, current, resulting in (
+        (1, [acid, hydrazine], ["CC(O)(O)NNc1ccc([N+](=O)[O-])cc1"]),
+        (2, ["CC(O)(O)NNc1ccc([N+](=O)[O-])cc1"], [oxonium, "O"]),
+        (3, [oxonium, "O"], [product, "[OH3+]"]),
+    ):
+        store.append_event(
+            state.run_id,
+            "mechanism_step_accepted",
+            {"step_index": step, "current_state": current, "resulting_state": resulting},
+            step_name="mechanism_synthesis",
+        )
+    state.current_state = [product, "[OH3+]"]
+
+    class _NoLLM:
+        @staticmethod
+        def run_missing_reagents(**_kwargs: Any) -> Dict[str, Any]:
+            raise AssertionError("a proton-only residual must not call the LLM rescue")
+
+    coordinator.missing_reagents_agent.executor = _NoLLM()  # type: ignore[assignment]
+    coordinator._run_overall_balance_reconciliation(state)
+
+    payload = [ev for ev in store.events if ev["event_type"] == "overall_balance_reconciled"][-1]["payload"]
+    assert payload["grade"] == "reconciled"
+    assert payload["audit"]["proton_reconciled"] is True

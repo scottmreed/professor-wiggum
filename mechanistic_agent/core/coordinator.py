@@ -5715,9 +5715,15 @@ class RunCoordinator:
         if bool(initial_diagnostics.get("balanced")) and audit.get("grade") == "reconciled":
             # Balanced only because of catalysts / recorded additions / resolved flags.
             grade = "reconciled"
+        proton_only = bool(audit.get("proton_reconciled")) and audit.get("grade") == "reconciled"
+        if proton_only:
+            # The residual is exactly n protons from an acid/base catalyst whose
+            # conjugate was not carried in the state: reconciled by the audit, no LLM.
+            grade = "reconciled"
 
         if (
             state.mode == "unverified"
+            and not proton_only
             and not bool(initial_diagnostics.get("balanced"))
             and str(initial_diagnostics.get("classification") or "") != "invalid_species"
         ):
@@ -5778,12 +5784,12 @@ class RunCoordinator:
             self._record_step(state, reconciliation_step)
         elif str(initial_diagnostics.get("classification") or "") == "invalid_species":
             grade = "invalid_species"
-        elif not bool(initial_diagnostics.get("balanced")):
+        elif not bool(initial_diagnostics.get("balanced")) and not proton_only:
             grade = "approximate"
 
         overall_balance = {
             "grade": grade,
-            "balanced": bool(final_diagnostics.get("balanced")),
+            "balanced": bool(final_diagnostics.get("balanced")) or proton_only,
             "accepted_step_count": len(accepted_rows),
             "initial_balance": initial_diagnostics,
             "final_balance": final_diagnostics,
