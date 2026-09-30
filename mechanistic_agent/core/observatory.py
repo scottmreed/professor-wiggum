@@ -75,6 +75,7 @@ def build_observatory(
     open_steps: Dict[str, Dict[str, Any]] = {}
     current_state_id = INITIAL_STATE_ID
     completed = False
+    mechanism_audit: Optional[Dict[str, Any]] = None
     last_seq = 0
 
     def _ensure_candidate(cid: str, *, step_index: int, rank: Any = None, smiles: Any = None, resulting: Any = None) -> Dict[str, Any]:
@@ -247,6 +248,7 @@ def build_observatory(
                 "resulting_state": _species(payload.get("resulting_state")),
                 "contains_target_product": bool(payload.get("contains_target_product")),
                 "validation_passed": passed,
+                "balance_flag": payload.get("balance_flag"),
                 "proposal_provenance": latest_proposal_provenance.get(step_number),
                 "identity": (
                     {
@@ -285,6 +287,8 @@ def build_observatory(
             current_state_id = accepted_path[-1]["to_state_id"] if accepted_path else INITIAL_STATE_ID
         elif kind in {"run_completed", "target_products_detected"}:
             completed = True
+        elif kind == "mechanism_audit":
+            mechanism_audit = dict(payload)
 
     active_step: Optional[Dict[str, Any]] = None
     if open_steps:
@@ -306,6 +310,7 @@ def build_observatory(
         "completed": completed,
         "active_step": active_step,
         "atom_lineage": _build_atom_lineage(accepted_path, states),
+        "mechanism_audit": mechanism_audit,
         "provenance": build_run_provenance(ordered),
         "event_count": len(ordered),
         "last_seq": last_seq,

@@ -80,7 +80,7 @@ def test_coordinator_applies_harness_defaults_only_for_unset_keys() -> None:
 
 
 def test_balance_pending_soft_advance_is_gated_by_flag() -> None:
-    """With the flag off, a candidate failing only atom_balance is never soft-accepted."""
+    """With both flags off (strict balance), a candidate failing only atom_balance is never soft-accepted."""
     store = _EventStore()
     coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
     attempts = [
@@ -99,4 +99,5 @@ def test_balance_pending_soft_advance_is_gated_by_flag() -> None:
     import inspect
 
     src = inspect.getsource(RunCoordinator._run_mechanism_loop)
-    assert 'state.mode == "unverified" and state.run_config.proceed_on_validation_failure' in src
+    assert "state.run_config.proceed_on_validation_failure" in src
+    assert 'or state.run_config.balance_mode == "deferred"' in src

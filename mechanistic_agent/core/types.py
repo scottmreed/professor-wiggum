@@ -851,6 +851,10 @@ class RunConfig:
     # fails validation is not accepted unless the run or harness opts in.
     proceed_on_validation_failure: bool = False
     proceed_only_on_arrow_push_failure: bool = False
+    # "strict": an atom-balance failure rejects the step. "deferred": a step whose
+    # only failed check is atom balance is accepted with a balance flag and resolved
+    # (or failed) by the post-loop mechanism audit once the whole path is known.
+    balance_mode: str = "strict"
     runtime_trace_enabled: bool = False
     runtime_trace_label: Optional[str] = None
     # Per-run override of the harness decision_policy.example_reaction_type_bypass
