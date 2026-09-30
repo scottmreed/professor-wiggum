@@ -53,7 +53,7 @@ ARENA_REACTIONS   = REPO_ROOT / "clawdiators-submission" / "easy" / "workspace_r
 GROUND_TRUTH      = REPO_ROOT / "clawdiators-test" / "easy" / "test_ground_truth.json"
 SCORING_SCRIPT    = REPO_ROOT / "clawdiators-test" / "scoring" / "score_submission.py"
 RUNS_DIR          = REPO_ROOT / "local_contributions" / "runs"
-LEADERBOARD_MD    = REPO_ROOT / "LEADERBOARD.md"
+LEADERBOARD_MD    = REPO_ROOT / "docs" / "legacy" / "clawdiators_leaderboard.md"
 
 DEFAULT_VALIDATOR = "http://localhost:8080"
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -21,9 +22,9 @@ OPUS_MODEL = "anthropic/claude-opus-4.6"
 COURSE_PATH = Path("curriculum/course.yaml")
 CHECKPOINTS_DIR = Path("curriculum/checkpoints")
 GENERATED_DIR = Path("curriculum/generated")
-# When README.md contains both markers, render-readme rewrites only the block between them.
-README_STATUS_START = "<!-- curriculum-status:start -->"
-README_STATUS_END = "<!-- curriculum-status:end -->"
+# render-readme writes the curriculum status page here; README.md is hand-maintained
+# (its leaderboard block comes from ``publish-results``).
+CURRICULUM_STATUS_PATH = Path("curriculum/STATUS.md")
 
 
 def _leaderboard_filename_for_model(model_name: str) -> str:
@@ -561,7 +562,7 @@ def refresh_curriculum_generated_artifacts(
     eval_set_id: str | None = None,
     now: datetime | None = None,
 ) -> Dict[str, Any]:
-    """Refresh curriculum/generated JSON artifacts without overwriting README.md."""
+    """Refresh curriculum/generated JSON artifacts without rewriting curriculum/STATUS.md."""
     config = load_course_config(base_dir)
     context = build_readme_context(base_dir, store, model_name=model_name, now=now)
 
@@ -601,6 +602,18 @@ def refresh_curriculum_generated_artifacts(
         )
 
     return context
+
+
+def _rebase_links(markdown: str, prefix: str) -> str:
+    """Prefix repo-relative link/image targets so the page works from a subdirectory."""
+
+    def _fix(target: str) -> str:
+        if not target or target.startswith(("http://", "https://", "#", "/", "../", "mailto:")):
+            return target
+        return prefix + target
+
+    markdown = re.sub(r"\]\(([^)\s]+)\)", lambda m: "](" + _fix(m.group(1)) + ")", markdown)
+    return re.sub(r'src="([^"]+)"', lambda m: 'src="' + _fix(m.group(1)) + '"', markdown)
 
 
 def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str = OPUS_MODEL, now: datetime | None = None) -> str:
@@ -731,17 +744,9 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
         ]
     )
     content = "\n".join(lines)
-    readme_path = base_dir / "README.md"
-    existing = readme_path.read_text(encoding="utf-8") if readme_path.exists() else ""
-    if README_STATUS_START in existing and README_STATUS_END in existing:
-        # Hand-maintained README: refresh only the generated curriculum status block.
-        start = content.index("## Program Status")
-        end = content.index("## How to Inspect Any Past Milestone")
-        block = content[start:end].rstrip()
-        head, rest = existing.split(README_STATUS_START, 1)
-        _, tail = rest.split(README_STATUS_END, 1)
-        content = f"{head}{README_STATUS_START}\n{block}\n{README_STATUS_END}{tail}"
-    readme_path.write_text(content.rstrip() + "\n", encoding="utf-8")
+    status_path = base_dir / CURRICULUM_STATUS_PATH
+    status_path.parent.mkdir(parents=True, exist_ok=True)
+    status_path.write_text(_rebase_links(content, "../").rstrip() + "\n", encoding="utf-8")
     return content
 
 
@@ -1008,7 +1013,7 @@ def publish_curriculum_release(
         str(CHECKPOINTS_DIR / release_date[:4] / f"{release_date}.json"),
         str(GENERATED_DIR / _leaderboard_filename_for_model(_model_name_pub)),
         str(README_CONTEXT_PATH),
-        "README.md",
+        str(CURRICULUM_STATUS_PATH),
     ]
     model_slug = str(queue_row.get("model_name") or OPUS_MODEL).replace("/", "__")
     skills_root = base_dir / "skills" / "mechanistic"

@@ -59,6 +59,13 @@ Every step's engine and model are recorded by the actual engine, not the run's c
 
 Embedding (no HTTP): `mechanistic_agent.runtime.EmbeddedMechanismRuntime(base_dir, work_dir, event_sink)` — `create_run(dict)`, blocking `execute(run_id, stop_event=)`, `observatory(run_id)`, `manifest()`. `RunStore(db_path, event_sink=callable)` mirrors every event (after commit, `list_events` row shape) so a host product can keep the durable log; `create_app(base, db_path=, event_sink=)` passes both through and exposes `app.state.store/coordinator/run_manager/registry`.
 
+## Published Results and the Public Leaderboard
+
+- Eval runs stay in the local SQLite store until published. `python main.py publish-results --eval-run-id <id> [--open-pr]` (or `eval ... --publish [--open-pr]`) exports one run to `results/runs/<date>_<run_group>.json` (`wiggum.published_eval_run@1`: model, declared bridge origin, harness, tier, 1000-pt rubric from `scoring.graded_to_points`, per-case rows, hardest solved mechanism) plus `results/mechanisms/*.png` (`flower_rendering.render_mechanism_png`), then regenerates `LEADERBOARD.md` and the README `<!-- leaderboard:start/end -->` block from every committed record (`mechanistic_agent/results_publish.py`). `--regenerate-only` rebuilds the boards without the DB.
+- Ground-truth replays are refused; `leaderboard_holdout` runs publish aggregates only (no per-case rows or mechanisms).
+- `--open-pr` branches from `origin/main`, commits only `results/`, `LEADERBOARD.md`, `README.md`, pushes, and opens a PR; it never merges.
+- Legacy Clawdiators material and the official-holdout Arena table live in `docs/legacy/clawdiators_leaderboard.md` (`update-leaderboard-artifacts`). Curriculum status is generated into `curriculum/STATUS.md` (`curriculum render-readme`), not the README.
+
 ## Leaderboard Holdout Isolation
 
 - The train-derived eval/sample artifacts remain the user-facing development surface:

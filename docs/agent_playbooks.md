@@ -19,8 +19,8 @@ Steps:
 6. Run the no-harness baseline for comparison:
    `python main.py baseline --tier easy --model <new_model_id> --thinking-level <level>`
 7. Check the leaderboard: `python main.py leaderboard --eval-set-id <eval_set_id>`
-8. If the new model beats the current easy-tier SOTA for its cost class, regenerate LEADERBOARD.md:
-   `python main.py leaderboard --eval-set-id <eval_set_id> --limit 20 --markdown --output LEADERBOARD.md`
+8. If the new model beats the current easy-tier SOTA for its cost class, publish the result (writes `results/`, regenerates LEADERBOARD.md and the README board, and opens a results PR):
+   `python main.py publish-results --eval-run-id <eval_run_id> --open-pr`
 9. Open a PR using .github/pull_request_template.md. Mark it behavior-changing and include the before/after leaderboard delta, price, provider, reasoning support, and whether forced tools are supported.
 
 Model to test: <model_id, e.g. openai/gpt-5-mini or google/gemini-2.5-flash>
@@ -97,7 +97,7 @@ Steps:
 6. Validate the evidence: `PYTHONPATH=. python scripts/validate_prompt_trace_evidence.py --call <call_name>`
 7. Run the medium-tier eval to confirm improvement (prompt changes require medium-tier improvement):
    `python main.py eval --tier medium --model anthropic/claude-opus-4.6 --thinking-level high`
-8. If it improves, regenerate LEADERBOARD.md and open a PR. Mark it behavior-changing and link the evidence trace under traces/evidence/<call_name>/.
+8. If it improves, publish the eval run (`python main.py publish-results --eval-run-id <id>`) and open a PR. Mark it behavior-changing and link the evidence trace under traces/evidence/<call_name>/.
 
 Failing reaction type: <e.g. "ester hydrolysis under acidic conditions" or "Mitsunobu reaction">
 ```
@@ -119,7 +119,7 @@ Steps:
    `python main.py eval-runset-official --model anthropic/claude-opus-4.6 --thinking-level high`
 5. View the official leaderboard:
    `python main.py leaderboard-official`
-6. Refresh LEADERBOARD.md and curriculum artifacts:
+6. Refresh the official-holdout Arena table (docs/legacy/clawdiators_leaderboard.md) and curriculum artifacts:
    `python main.py update-leaderboard-artifacts`
 7. Compare harness vs baseline:
    `python local_contributions/compare_harness_vs_baseline_samples.py`
