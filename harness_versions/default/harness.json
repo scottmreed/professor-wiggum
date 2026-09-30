@@ -355,7 +355,8 @@
   ],
   "run_config_defaults": {
     "proceed_on_validation_failure": false,
-    "proceed_only_on_arrow_push_failure": false
+    "proceed_only_on_arrow_push_failure": false,
+    "balance_mode": "deferred"
   },
   "topology_profiles": {
     "sas": {
@@ -417,6 +418,11 @@
         "version": 5,
         "date": "2026-09-16",
         "description": "run_config_defaults.proceed_on_validation_failure set to false so deterministic validation is the arbiter (SOUL Guardrail 1). The coordinator now actually applies run_config_defaults and gates the balance_pending soft-advance on the same flag. The previous permissive behaviour lives on as harness_versions/permissive_default for A/B comparison."
+      },
+      {
+        "version": 6,
+        "date": "2026-09-30",
+        "description": "run_config_defaults.balance_mode = 'deferred': a step whose only failed check is atom balance (bond/electron and state progress pass) is accepted with a balance_flag instead of rejected; the post-loop mechanism audit (core/mechanism_audit.py) resolves flags from the chosen path's net equation (catalysts regenerated, conjugate acid/base pairs, recorded reagent additions) or leaves the run 'approximate'. Overall reconciliation now uses the chosen path and count-preserving additions."
       }
     ]
   }
