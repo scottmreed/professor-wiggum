@@ -367,7 +367,9 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
         "# Leaderboard",
         "",
         "Blind mechanism prediction on FlowER-derived development tiers (easy = 1–2 steps, medium = 3, hard = 4–8), "
-        "10 cases per tier. A step is accepted only when deterministic RDKit validators pass it. Score is the "
+        "10 cases per tier. Deterministic RDKit validators decide every step; a step whose only failure is atom "
+        "balance can be accepted with a flag, and the end-of-mechanism audit must then resolve it (a regenerated "
+        "catalyst, a conjugate acid/base pair, a recorded reagent) or the case fails. Score is the "
         "1000-point eval rubric: product 300, pathway 300, electron pushes 200, speed 100, methodology 100 "
         "(WIN ≥ 700).",
         "",
