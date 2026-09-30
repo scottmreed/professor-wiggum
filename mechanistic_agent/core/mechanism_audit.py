@@ -98,6 +98,18 @@ def _is_proton_only(delta: Mapping[str, int]) -> bool:
     return bool(delta) and set(delta) <= {"H", "+"} and delta.get("H", 0) == delta.get("+", 0)
 
 
+def _has_proton_donor_or_acceptor(pool: Counter) -> bool:
+    """True when some species can give or take a proton (O/N with H, a lone pair, or a charge)."""
+    for smiles in pool:
+        mol = _mol(smiles)
+        for atom in mol.GetAtoms():
+            if atom.GetFormalCharge() != 0:
+                return True
+            if atom.GetSymbol() in {"O", "N", "S"} and (atom.GetTotalNumHs() > 0 or atom.GetFormalCharge() == 0):
+                return True
+    return False
+
+
 def _divides(delta: Mapping[str, int], formula: Mapping[str, int]) -> bool:
     """True when ``delta`` is a nonzero integer multiple of ``formula`` (ignoring charge)."""
     d = {k: v for k, v in delta.items() if k != "+" and v}
@@ -161,6 +173,13 @@ def _audit(
     right_comp = _composition_of(residual_right)
     net_delta = _delta(left_comp, right_comp)
     balanced = not net_delta
+    # A residual of exactly n protons (H and charge move together) is proton
+    # bookkeeping: an acid/base catalyst in the pool (e.g. AcOH -> AcO- + H+)
+    # whose conjugate was not carried in the state. Reconcile it, but report it.
+    proton_reconciled = False
+    if not balanced and _is_proton_only(net_delta) and _has_proton_donor_or_acceptor(left):
+        balanced = True
+        proton_reconciled = True
 
     # Conjugate acid/base pairs left in the residual (e.g. AcO- vs AcOH, H3O+ vs H2O).
     conjugate_pairs: List[Dict[str, str]] = []
@@ -201,10 +220,12 @@ def _audit(
         flags.append({"step_index": int(step.get("step_index") or 0), "step_delta": step_delta, "resolution": resolution})
 
     findings = _efficiency_findings(ordered, added_left, final_state)
+    if proton_reconciled:
+        findings.append({"type": "unaccounted_proton", "net_delta": dict(net_delta)})
 
     if not balanced:
         grade = "approximate"
-    elif flags or added_left or added_right:
+    elif flags or added_left or added_right or proton_reconciled:
         grade = "reconciled"
     else:
         grade = "exact"
@@ -216,6 +237,7 @@ def _audit(
         "net_left": dict(sorted(residual_left.items())),
         "net_right": dict(sorted(residual_right.items())),
         "net_delta": net_delta,
+        "proton_reconciled": proton_reconciled,
         "catalysts": catalysts,
         "spectators": spectators,
         "reagents_added": reagents_added,
