@@ -21,6 +21,9 @@ OPUS_MODEL = "anthropic/claude-opus-4.6"
 COURSE_PATH = Path("curriculum/course.yaml")
 CHECKPOINTS_DIR = Path("curriculum/checkpoints")
 GENERATED_DIR = Path("curriculum/generated")
+# When README.md contains both markers, render-readme rewrites only the block between them.
+README_STATUS_START = "<!-- curriculum-status:start -->"
+README_STATUS_END = "<!-- curriculum-status:end -->"
 
 
 def _leaderboard_filename_for_model(model_name: str) -> str:
@@ -627,7 +630,17 @@ def render_curriculum_readme(base_dir: Path, store: RunStore, *, model_name: str
         ]
     )
     content = "\n".join(lines)
-    (base_dir / "README.md").write_text(content.rstrip() + "\n", encoding="utf-8")
+    readme_path = base_dir / "README.md"
+    existing = readme_path.read_text(encoding="utf-8") if readme_path.exists() else ""
+    if README_STATUS_START in existing and README_STATUS_END in existing:
+        # Hand-maintained README: refresh only the generated curriculum status block.
+        start = content.index("## Program Status")
+        end = content.index("## How to Inspect Any Past Milestone")
+        block = content[start:end].rstrip()
+        head, rest = existing.split(README_STATUS_START, 1)
+        _, tail = rest.split(README_STATUS_END, 1)
+        content = f"{head}{README_STATUS_START}\n{block}\n{README_STATUS_END}{tail}"
+    readme_path.write_text(content.rstrip() + "\n", encoding="utf-8")
     return content
 
 

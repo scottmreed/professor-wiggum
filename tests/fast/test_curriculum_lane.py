@@ -96,6 +96,27 @@ def test_curriculum_status_and_readme_render_include_queued_release(tmp_path: Pa
     assert "Current Two-Week Calendar" not in content
 
 
+def test_readme_render_only_replaces_marked_status_block(tmp_path: Path) -> None:
+    base = _seed_curriculum_base(tmp_path)
+    store = RunStore(base / "data" / "mechanistic.db")
+    (base / "README.md").write_text(
+        "# Hand-written title\n\nIntro stays.\n\n"
+        "<!-- curriculum-status:start -->\nstale status\n<!-- curriculum-status:end -->\n\n"
+        "## Contributing\n\nFooter stays.\n",
+        encoding="utf-8",
+    )
+
+    render_curriculum_readme(base, store, model_name="anthropic/claude-opus-4.6")
+    written = (base / "README.md").read_text(encoding="utf-8")
+
+    assert written.startswith("# Hand-written title\n\nIntro stays.")
+    assert written.rstrip().endswith("Footer stays.")
+    assert "stale status" not in written
+    assert "## Program Status" in written
+    assert "# Mechanistic Curriculum" not in written
+    assert "How to Inspect Any Past Milestone" not in written
+
+
 def test_curriculum_before_launch_weekday_slots(tmp_path: Path) -> None:
     base = _seed_curriculum_base(tmp_path)
     store = RunStore(base / "data" / "mechanistic.db")
