@@ -29,8 +29,8 @@ Origin provenance recorded on every run's stored `config.origin`:
 ```
 
 Per the bridge contract these runs are attributed to `agent-bridge` (never
-misattributed to a hosted model) and are **not** eligible for a Track 3 cost-class
-SOTA claim (`budget_observability: opaque`).
+misattributed to a hosted model) and are **not** eligible for a hosted-model
+cost-class SOTA claim (`budget_observability: opaque`).
 
 ## Runs (FlowER easy tier — SN2 / Menshutkin quaternizations)
 
@@ -62,9 +62,10 @@ become few-shot examples for later work on the previously-empty lane.
 
 ## Scope / honesty
 
-- Evidence tier is **easy** (1-step SN2 / Menshutkin). The CONTRIBUTING Track 1 medium-tier
-  gate run is the recommended maintainer follow-up; the deterministic validators (the
-  real arbiter) passed on every step here.
+- Evidence tier is **easy** (1-step SN2 / Menshutkin). A maintainer medium-tier eval
+  (see `docs/change_evidence_policy.md`) is the recommended follow-up before merging
+  few-shot changes; the deterministic validators (the real arbiter) passed on every
+  step here.
 - The lane is a **first seed** of one reaction class; broadening to more classes
   (cycloaddition, carbonyl addition, reduction) is a natural next contribution.
 

@@ -1,6 +1,8 @@
-## Track 5: Single Reaction Submission
+## Chemistry failure report (local draft)
 
-Save this file under `local_contributions/single_reactions/`. Do not commit it.
+Save drafts under `local_contributions/single_reactions/` or open a **Chemistry failure**
+issue (`.github/ISSUE_TEMPLATE/chemistry_failure.md`). Do not commit local drafts unless
+you intend them as maintainer evidence notes.
 
 ### Classification
 - Outcome: `success`

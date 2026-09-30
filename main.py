@@ -22,6 +22,7 @@ from mechanistic_agent.curriculum import (
     curriculum_history,
     publish_curriculum_release,
     publish_due_curriculum_releases,
+    refresh_curriculum_generated_artifacts,
     render_curriculum_readme,
     render_launchd_plist,
     submit_curriculum_release,
@@ -3213,10 +3214,69 @@ def leaderboard_official(
     )
 
 
+_ARENA_TABLE_HEADER = "| Date | Model | Score | Outcome | Pass Rate | Avg Latency | Run Group |"
+_ARENA_SECTION_HEADING_PREFIX = "## Arena Submissions"
+
+
+def _is_arena_table_separator(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return False
+    cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+    return bool(cells) and all(set(cell) <= {"-", ":"} and cell for cell in cells)
+
+
+def _find_arena_table_span(content: str) -> tuple[int, int] | None:
+    """Return (start, end) indices for the Arena table header through its last data row."""
+    section_idx = content.find(_ARENA_SECTION_HEADING_PREFIX)
+    search_from = section_idx if section_idx >= 0 else 0
+    header_idx = content.find(_ARENA_TABLE_HEADER, search_from)
+    if header_idx < 0:
+        return None
+
+    header_end = content.find("\n", header_idx)
+    if header_end < 0:
+        return None
+    separator_start = header_end + 1
+    separator_end = content.find("\n", separator_start)
+    if separator_end < 0:
+        return None
+    separator_line = content[separator_start:separator_end]
+    if not _is_arena_table_separator(separator_line):
+        return None
+
+    end = separator_end + 1
+    while True:
+        line_end = content.find("\n", end)
+        if line_end < 0:
+            line = content[end:]
+            next_end = len(content)
+        else:
+            line = content[end:line_end]
+            next_end = line_end + 1
+        if not line.startswith("|"):
+            break
+        end = next_end
+    return header_idx, end
+
+
+def _replace_arena_table_in_markdown(content: str, new_table: str) -> str | None:
+    """Replace only the Arena Submissions table body; preserve surrounding prose and footnotes."""
+    span = _find_arena_table_span(content)
+    if span is None:
+        return None
+    start, end = span
+    prefix = content[:start] + new_table.rstrip()
+    suffix = content[end:]
+    if suffix and not suffix.startswith("\n"):
+        prefix += "\n"
+    return prefix + suffix
+
+
 def _arena_table_from_leaderboard_items(items: List[Dict[str, Any]]) -> str:
     """Build Arena Submissions table rows for LEADERBOARD.md."""
     lines = [
-        "| Date | Model | Score | Outcome | Pass Rate | Avg Latency | Run Group |",
+        _ARENA_TABLE_HEADER,
         "|---|---|---|---|---|---|---|",
     ]
     if not items:
@@ -3247,12 +3307,12 @@ def update_leaderboard_artifacts_cmd(
     refresh_curriculum: bool = typer.Option(
         True,
         "--refresh-curriculum/--no-refresh-curriculum",
-        help="Also run curriculum render-readme to refresh curriculum/generated/leaderboard_*.json",
+        help="Also refresh curriculum/generated/leaderboard_*.json and readme_context.json",
     ),
     curriculum_model_name: str = typer.Option(
         OPUS_MODEL,
         "--curriculum-model-name",
-        help="Model passed to curriculum render-readme when --refresh-curriculum is enabled",
+        help="Primary model lane for readme_context.json when --refresh-curriculum is enabled",
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print changes without writing files"),
 ) -> None:
@@ -3284,27 +3344,27 @@ def update_leaderboard_artifacts_cmd(
         raise typer.Exit(1)
 
     content = leaderboard_md.read_text(encoding="utf-8")
-    # Replace Arena Submissions table (from | Date | header through last row before ### Speed)
-    import re
-    pattern = r"\| Date \| Model \| Score \| Outcome \| Pass Rate \| Avg Latency \| Run Group \|\n\|[-|]+\|\n(?:\|[^\n]+\n)*(\n### Speed Calibration)"
-    match = re.search(pattern, content)
-    if match:
-        new_content = content[: match.start()] + arena_table + "\n" + content[match.start(1) :]
-        if dry_run:
-            typer.echo("LEADERBOARD.md Arena table (dry-run):")
-            typer.echo(arena_table)
-        else:
-            leaderboard_md.write_text(new_content, encoding="utf-8")
-            typer.echo(f"Updated {leaderboard_md}")
-    else:
+    new_content = _replace_arena_table_in_markdown(content, arena_table)
+    if new_content is None:
         typer.echo("Could not find Arena Submissions table in LEADERBOARD.md", err=True)
         raise typer.Exit(1)
+    if dry_run:
+        typer.echo("LEADERBOARD.md Arena table (dry-run):")
+        typer.echo(arena_table)
+    else:
+        leaderboard_md.write_text(new_content, encoding="utf-8")
+        typer.echo(f"Updated {leaderboard_md}")
 
     if refresh_curriculum and not dry_run:
         typer.echo(
             f"Refreshing curriculum/generated/ (leaderboard_*.json, readme_context.json) for {curriculum_model_name}..."
         )
-        render_curriculum_readme(base, store, model_name=curriculum_model_name)
+        refresh_curriculum_generated_artifacts(
+            base,
+            store,
+            model_name=curriculum_model_name,
+            eval_set_id=str(resolved.eval_set_id),
+        )
         gen_dir = base / "curriculum" / "generated"
         if gen_dir.is_dir():
             typer.echo(f"Updated {gen_dir}/")
