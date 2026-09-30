@@ -40,7 +40,9 @@ except Exception:  # pragma: no cover
     rdMolStandardize = None  # type: ignore[assignment]
 
 AUDIT_SCHEMA = "mechanism_audit.v1"
-RESOLVED = frozenset({"resolved_catalyst", "resolved_conjugate_pair", "resolved_by_path"})
+RESOLVED = frozenset(
+    {"resolved_catalyst", "resolved_conjugate_pair", "resolved_dropped_species", "resolved_by_path"}
+)
 
 
 class _InvalidSpecies(ValueError):
@@ -102,6 +104,29 @@ def _species(values: Iterable[str]) -> Counter:
 
 def _is_proton_only(delta: Mapping[str, int]) -> bool:
     return bool(delta) and set(delta) <= {"H", "+"} and delta.get("H", 0) == delta.get("+", 0)
+
+
+def _heavy_atoms(smiles: str) -> int:
+    return _mol(smiles).GetNumHeavyAtoms()
+
+
+def _dropped_carrier_candidates(steps: Sequence[Mapping[str, Any]]) -> List[Tuple[str, int]]:
+    """(species, copies) for small species (<= 1 heavy atom) that a flagged step stopped carrying."""
+    out: List[Tuple[str, int]] = []
+    for step in steps:
+        if not step.get("balance_flag"):
+            continue
+        for species in sorted(_species(step.get("current_state") or [])):
+            if _heavy_atoms(species) <= 1:
+                for copies in (1, 2, 3):
+                    if (species, copies) not in out:
+                        out.append((species, copies))
+        # A carrier can also be lost as a leaving group that never appears (e.g. H2O).
+        for species in ("O",):
+            for copies in (1, 2):
+                if (species, copies) not in out:
+                    out.append((species, copies))
+    return out
 
 
 def _has_proton_donor_or_acceptor(pool: Counter) -> bool:
@@ -273,6 +298,21 @@ def _audit(
         if excess_reagent is not None and excess_reagent["count"] < 0:
             excess_reagent = None
         balanced = excess_reagent is not None
+    # A flagged step that simply stopped carrying a small species (a water, a
+    # hydroxide, a halide: at most one heavy atom) leaves exactly that species
+    # missing from the net equation, possibly plus proton bookkeeping.
+    dropped_species: List[Dict[str, Any]] = []
+    if not balanced:
+        for species, copies in _dropped_carrier_candidates(ordered):
+            remainder = dict(net_delta)
+            for key, value in composition(species).items():
+                remainder[key] = remainder.get(key, 0) + value * copies
+            remainder = {k: v for k, v in remainder.items() if v}
+            if not remainder or (_is_proton_only(remainder) and _has_proton_donor_or_acceptor(left)):
+                balanced = True
+                proton_reconciled = bool(remainder)
+                dropped_species.append({"species": species, "count": copies})
+                break
 
     # Conjugate acid/base pairs left in the residual (e.g. AcO- vs AcOH, H3O+ vs H2O).
     conjugate_pairs: List[Dict[str, str]] = []
@@ -304,6 +344,8 @@ def _audit(
         step_delta = _delta(_composition_of(current), _composition_of(resulting))
         if not balanced:
             resolution = "unresolved"
+        elif dropped_species and _divides(step_delta, composition(dropped_species[0]["species"])):
+            resolution = "resolved_dropped_species"
         elif _is_proton_only(step_delta):
             resolution = "resolved_conjugate_pair"
         elif any(_divides(step_delta, formula) for formula in catalyst_formulas):
@@ -320,6 +362,8 @@ def _audit(
     ]
 
     findings = _efficiency_findings(ordered, added_left, final_state)
+    for item in dropped_species:
+        findings.append({"type": "dropped_species", **item})
     if proton_reconciled:
         findings.append({"type": "unaccounted_proton", "net_delta": dict(net_delta)})
     if excess_reagent:
@@ -328,7 +372,7 @@ def _audit(
 
     if not balanced:
         grade = "approximate"
-    elif flags or added_left or added_right or proton_reconciled or excess_reagent or excess_steps:
+    elif flags or added_left or added_right or proton_reconciled or excess_reagent or excess_steps or dropped_species:
         grade = "reconciled"
     else:
         grade = "exact"
@@ -343,6 +387,7 @@ def _audit(
         "proton_reconciled": proton_reconciled,
         "excess_reagent_reconciled": excess_reagent,
         "excess_reagent_steps": excess_steps,
+        "dropped_species": dropped_species,
         "catalysts": catalysts,
         "spectators": spectators,
         "reagents_added": reagents_added,
