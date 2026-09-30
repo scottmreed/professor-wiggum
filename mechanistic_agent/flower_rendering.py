@@ -280,6 +280,16 @@ def render_cases(
     return payload
 
 
+def render_mechanism_png(case: Dict[str, Any], path: Path) -> Path:
+    """Render one case (``verified_mechanism.steps`` = any step path) to a PNG file."""
+    if Chem is None or Draw is None or Image is None or ImageDraw is None:
+        raise RuntimeError("RDKit and Pillow are required for PNG rendering.")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _render_case(case).save(path, format="PNG", optimize=True)
+    return path
+
+
 def render_pngs(*, input_path: Path, output_dir: Path, max_reactions: int | None = None) -> Dict[str, Any]:
     payload = json.loads(Path(input_path).read_text(encoding="utf-8"))
     cases = list(payload if isinstance(payload, list) else payload.get("cases") or [])

@@ -1,0 +1,256 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "eval_run_id": "c7abe8589ecc41198d1ae76e5e598160",
+  "run_group": "bridge_opus55_jev_medium",
+  "date": "2026-09-29",
+  "model": "agent-bridge",
+  "thinking_level": null,
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5 (headless claude -p, blind per call)",
+    "responder": "agent-bridge",
+    "responder_kind": "cli",
+    "responder_saw_ground_truth": false
+  },
+  "harness": "jev_reaction_type",
+  "harness_bundle_hash": "a72268fc7e94a54a10b3a8bbfae72503fa4b28803ab04511f30eabb3e82828cd",
+  "tier": "medium",
+  "eval_set_id": "003aae8966184aa2a2874dbf3e0f510f",
+  "case_ids_hash": "055031c6e73c0930a73ae786ae5117369459e7eee2a2761c0e8fd60bc4ba0918",
+  "holdout": false,
+  "scoring_version": "v2",
+  "git_commit": "71bdae4",
+  "summary": {
+    "points": 904,
+    "outcome": "WIN",
+    "breakdown": {
+      "product": 300,
+      "pathway": 254,
+      "push": 191,
+      "speed": 59,
+      "methodology": 100
+    },
+    "cases": 10,
+    "targets_reached": 10,
+    "passed": 10,
+    "mean_score": 0.9462,
+    "avg_latency_s": 164.1
+  },
+  "cases": [
+    {
+      "case_id": "flower_058277",
+      "known_steps": 3,
+      "accepted_steps": 2,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.9513,
+      "latency_s": 189.6,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_077973",
+      "known_steps": 3,
+      "accepted_steps": 2,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.9513,
+      "latency_s": 126.5,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_102973",
+      "known_steps": 3,
+      "accepted_steps": 2,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.8525,
+      "latency_s": 148.8,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_103167",
+      "known_steps": 3,
+      "accepted_steps": 2,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.9513,
+      "latency_s": 148.1,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_122060",
+      "known_steps": 3,
+      "accepted_steps": 2,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.8525,
+      "latency_s": 139.9,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_138321",
+      "known_steps": 3,
+      "accepted_steps": 3,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 211.6,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_156414",
+      "known_steps": 3,
+      "accepted_steps": 2,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.9513,
+      "latency_s": 138.7,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_175010",
+      "known_steps": 3,
+      "accepted_steps": 2,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.9513,
+      "latency_s": 149.3,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_184403",
+      "known_steps": 3,
+      "accepted_steps": 3,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 228.1,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_254799",
+      "known_steps": 3,
+      "accepted_steps": 3,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 160.4,
+      "run_status": "completed"
+    }
+  ],
+  "hardest_solved": {
+    "case_id": "flower_138321",
+    "known_steps": 3,
+    "accepted_steps": 3,
+    "score": 1.0,
+    "starting_materials": [
+      "CCOC(=O)Nc1ccccc1",
+      "CC(N)CN"
+    ],
+    "products": [
+      "CC(N)CNC(=O)Nc1ccccc1",
+      "CCO"
+    ],
+    "steps": [
+      {
+        "step_index": 1,
+        "current_state": [
+          "CCOC(=O)Nc1ccccc1",
+          "CC(N)CN"
+        ],
+        "resulting_state": [
+          "CCOC([O-])(Nc1ccccc1)[NH2+]CC(C)N"
+        ],
+        "reaction_smirks": "[C:6](=[O:7])([NH:8][c:9]1[cH:10][cH:11][cH:12][cH:13][cH:14]1)[O:17][CH2:16][CH3:15].[CH3:1][CH:2]([NH2:3])[CH2:4][NH2:5]>>[CH3:1][CH:2]([NH2:3])[CH2:4][NH2+:5][C:6]([O-:7])([NH:8][c:9]1[cH:10][cH:11][cH:12][cH:13][cH:14]1)[O:17][CH2:16][CH3:15]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:5>6",
+            "source_atom": "5",
+            "target_atom": "6"
+          },
+          {
+            "electrons": 2,
+            "kind": "pi_bond",
+            "notation": "pi:6-7>7",
+            "source_bond": [
+              "6",
+              "7"
+            ],
+            "target_atom": "7",
+            "through_atom": "7"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 2,
+        "current_state": [
+          "CCOC([O-])(Nc1ccccc1)[NH2+]CC(C)N"
+        ],
+        "resulting_state": [
+          "CC(N)C[NH2+]C(=O)Nc1ccccc1",
+          "CC[O-]"
+        ],
+        "reaction_smirks": "[CH3:15][CH2:16][O:17][C:6]([O-:7])([NH:8][c:9]1[cH:10][cH:11][cH:12][cH:13][cH:14]1)[NH2+:5][CH2:4][CH:2]([CH3:1])[NH2:3]>>[CH3:15][CH2:16][O-:17].[C:6](=[O:7])([NH:8][c:9]1[cH:10][cH:11][cH:12][cH:13][cH:14]1)[NH2+:5][CH2:4][CH:2]([CH3:1])[NH2:3]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:7>6",
+            "source_atom": "7",
+            "target_atom": "6"
+          },
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:6-17>17",
+            "source_bond": [
+              "6",
+              "17"
+            ],
+            "target_atom": "17",
+            "through_atom": "17"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 3,
+        "current_state": [
+          "CC(N)C[NH2+]C(=O)Nc1ccccc1",
+          "CC[O-]"
+        ],
+        "resulting_state": [
+          "CC(N)CNC(=O)Nc1ccccc1",
+          "CCO"
+        ],
+        "reaction_smirks": "[CH3:1][CH:2]([NH2:3])[CH2:4][NH+:5]([H:18])[C:6](=[O:7])[NH:8][c:9]1[cH:10][cH:11][cH:12][cH:13][cH:14]1.[CH3:15][CH2:16][O-:17]>>[CH3:1][CH:2]([NH2:3])[CH2:4][NH:5][C:6](=[O:7])[NH:8][c:9]1[cH:10][cH:11][cH:12][cH:13][cH:14]1.[CH3:15][CH2:16][O:17][H:18]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:17>18",
+            "source_atom": "17",
+            "target_atom": "18"
+          },
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:18-5>5",
+            "source_bond": [
+              "18",
+              "5"
+            ],
+            "target_atom": "5",
+            "through_atom": "5"
+          }
+        ],
+        "acceptance_kind": "validated"
+      }
+    ],
+    "image": "results/mechanisms/bridge_opus55_jev_medium__flower_138321.png"
+  }
+}

@@ -57,7 +57,7 @@ SCORING_SCRIPT    = REPO_ROOT / "clawdiators-test" / "scoring" / "score_submissi
 CHALLENGE_MD      = REPO_ROOT / "clawdiators-submission" / "easy" / "CHALLENGE.md"
 WORKED_EXAMPLE    = REPO_ROOT / "clawdiators-submission" / "easy" / "worked_example.json"
 RUNS_DIR          = local_contributions_runs_dir(REPO_ROOT)
-LEADERBOARD_MD    = REPO_ROOT / "LEADERBOARD.md"
+LEADERBOARD_MD    = REPO_ROOT / "docs" / "legacy" / "clawdiators_leaderboard.md"
 
 
 # ── Build prompt ──────────────────────────────────────────────────────

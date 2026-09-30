@@ -10,7 +10,7 @@ from main import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LEADERBOARD_MD = REPO_ROOT / "LEADERBOARD.md"
+LEADERBOARD_MD = REPO_ROOT / "docs" / "legacy" / "clawdiators_leaderboard.md"
 
 MINIMAL_FIXTURE = """\
 # Mechanistic Agent Leaderboard

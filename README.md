@@ -4,24 +4,25 @@
 
 A local-first agent that predicts **arrow-pushing (elementary-step) mechanisms** for organic reactions. An LLM proposes each step; deterministic RDKit validators (bond/electron conservation, atom balance, state progress) decide whether the step is accepted. The harness — prompts, few-shots, module graph, validators — evolves only on eval evidence. See [SOUL.md](SOUL.md) for the philosophy.
 
-## Current focus: Claude Opus 5.5
+## Leaderboard
 
-**Claude Opus 5.5** (`anthropic/claude-opus-5.5`) is the model we are developing against, and the default model for the product runtime. Two API differences from the 4.x line are handled in the adapters: forced `tool_choice` is rejected (the harness sends `auto` plus an explicit instruction and retries once before failing with `tool_call_missing`), and thinking cannot be disabled (`effort` only, default `medium`).
+We are focusing on one top-tier model — currently **Claude Opus 5.5** — to improve the harness, and will back-fill cheaper models later. Scores are the 1000-point eval rubric on FlowER-derived tiers of 10 cases each (easy = 1–2 steps, medium = 3, hard = 4–8; WIN ≥ 700).
 
-Latest development-tier results (FlowER-derived tiers, 10 cases each; not the official holdout):
+<!-- leaderboard:start -->
+| Tier | Best model | Score | Targets reached | Passed | Harness | Date | Details |
+|---|---|---|---|---|---|---|---|
+| easy | **Claude Opus 5.5** | **940**/1000 | 10/10 | 10/10 | `default` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-cli-eval-opus55-easy) |
+| medium | **Claude Opus 5.5** † | **904**/1000 | 10/10 | 10/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-medium) |
+| hard | **Claude Opus 5.5** † | **823**/1000 | 10/10 | 9/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-hard) |
 
-| Date | How it ran | Harness | Easy | Medium | Hard |
-|---|---|---|---|---|---|
-| 2026-09-29 | Opus 5.5 via API | `default` | 940 · 10/10 | — | — |
-| 2026-09-29 | Opus 5.5 blind via agent bridge † | `jev_reaction_type` | 939 · 10/10 | 904 · 10/10 | 823 · 10/10 targets, 9/10 pass |
+Hardest mechanism solved so far: [`flower_002647`, a 4-step mechanism (hard tier, Claude Opus 5.5)](results/mechanisms/bridge_opus55_jev_hard__flower_002647.png). Full results: [LEADERBOARD.md](LEADERBOARD.md).
 
-Scores are out of 1000 (WIN ≥ 700). The one hard-tier fail reached the product with a correct acid-catalysed path; it was marked down because the end-of-run balance check does not yet recognise a catalyst that is regenerated (a second equivalent of acetic acid used as a proton shuttle). Fixing that reconciliation is the next harness item.
-
-† Bridge runs are attributed to the `agent-bridge` model with a declared origin (`claude-opus-5-5`, headless `claude -p`, one fresh blind session per call, `responder_saw_ground_truth: false`). Their cost is opaque, so they are not eligible for cost-class claims. Older Opus 4.8 bridge rows were ground-truth replays, not capability measurements.
+† Answered through the [agent bridge](docs/agent_bridge.md): each model call went to the declared model in a fresh session that saw only the harness prompt (`responder_saw_ground_truth: false`). Cost is opaque, so these rows make no cost claim.
+<!-- leaderboard:end -->
 
 ## Run types
 
-All results land in the local SQLite database (`../wiggum-data/data/mechanistic.db` when the sibling data checkout exists; see [docs/DATA_SETUP.md](docs/DATA_SETUP.md)). Nothing is committed to git by running them.
+All results land in the local SQLite database (`../wiggum-data/data/mechanistic.db` when the sibling data checkout exists; see [docs/DATA_SETUP.md](docs/DATA_SETUP.md)). Nothing reaches git until you publish it with `publish-results`.
 
 | Run type | Invoke | Leaderboard |
 |---|---|---|
@@ -29,14 +30,15 @@ All results land in the local SQLite database (`../wiggum-data/data/mechanistic.
 | Web UI | `python main.py serve` → `http://127.0.0.1:8010/` (unverified mode only; `/?run=<id>` replays a run) | none |
 | Harness dev eval | `python main.py eval --tier easy\|medium\|hard --model <id> [--harness <name>]` or `--all-tiers` | development leaderboard (local): `python main.py leaderboard --eval-set-id <id>`, UI, `GET /api/evals/leaderboard` |
 | Harness-free baseline | `python main.py baseline --tier <tier> --model <id>` (or `--all-tiers`) | development leaderboard, type `Baseline` |
-| Official holdout | `python main.py eval-runset-official --model-name <id>` and `baseline-runset-official` | official leaderboard: `python main.py leaderboard-official`; `python main.py update-leaderboard-artifacts` writes [LEADERBOARD.md](LEADERBOARD.md) |
+| Official holdout | `python main.py eval-runset-official --model-name <id>` and `baseline-runset-official` | official leaderboard: `python main.py leaderboard-official`; `update-leaderboard-artifacts` refreshes the [legacy Arena table](docs/legacy/clawdiators_leaderboard.md) |
+| Publish results | `python main.py publish-results --eval-run-id <id> [--open-pr]`, or `eval ... --publish [--open-pr]` | public [LEADERBOARD.md](LEADERBOARD.md) and the board above, from committed `results/runs/*.json` |
 | Keyless (agent bridge) | any of the above with `--model agent-bridge`, answered by `python main.py bridge-serve --command "<responder>"` | same leaderboards, model column `agent-bridge` † |
-| Curriculum checkpoints | `python main.py curriculum submit\|publish\|render-readme --model-name <id>` | `curriculum/generated/leaderboard_*.json` |
+| Curriculum checkpoints | `python main.py curriculum submit\|publish\|render-readme --model-name <id>` | `curriculum/generated/leaderboard_*.json`, [curriculum/STATUS.md](curriculum/STATUS.md) |
 | Harness evolution | `python scripts/evolve_harness.py [--island-mode]`, `python main.py overnight-ralph`, `python main.py vote` | evolution archive (holdout sets are rejected) |
 
 Notes:
 - `eval --tier` goes through the development-leaderboard planner, which may re-route a run (for example to repeat the current tier). Pass `--leaderboard-route next` to move up a tier or `custom` to keep your own selection; see [docs/development_leaderboard_routes.md](docs/development_leaderboard_routes.md).
-- Only official-holdout runs reach the committed `LEADERBOARD.md` table. Development evals — including the Opus 5.5 rows above — live in your local database.
+- `publish-results` exports an eval run to `results/runs/` (scores, per-case table, the hardest mechanism solved as an image) and regenerates `LEADERBOARD.md` and the board above. `--open-pr` branches from `origin/main`, commits only those files, and opens a PR; it never merges. Ground-truth replays are refused, and holdout runs publish aggregates only.
 - Leaderboards drop eval runs whose responder declares it saw the ground truth.
 - Custom eval sets without FlowER data: [docs/custom_eval_sets.md](docs/custom_eval_sets.md). Keyless runs: [docs/agent_bridge.md](docs/agent_bridge.md).
 
@@ -48,31 +50,7 @@ There are three ways to contribute (details in [CONTRIBUTING.md](CONTRIBUTING.md
 2. **Report a bug or idea** — open a *Bug report* or *Feature request* issue.
 3. **Submit code** — PRs are welcome; the only check you need is `python -m pytest tests/fast/ -q`.
 
-Changes to prompts, few-shots, models, validators, or harness behaviour are evidence-gated by the maintainers before merge ([docs/change_evidence_policy.md](docs/change_evidence_policy.md)); you do not need to run model evals yourself. If you work through an agent with no API key, you can still produce runs and traces via the [agent bridge](docs/agent_bridge.md) — declare the responder's origin and ground-truth exposure so the runs can be used as evidence. Maintainer playbooks: [docs/agent_playbooks.md](docs/agent_playbooks.md).
-
-## Curriculum status
-
-<!-- curriculum-status:start -->
-## Program Status
-
-- Course: `Mechanistic Curriculum`
-- Launch: `2026-03-11`
-- Module: `Module 1` — climbing the difficulty chain (easy 1–2 step → medium 3-step → hard 4+ step)
-
-**Trainees:** [anthropic__claude-opus-4-5](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4-5/) | [anthropic__claude-opus-4.6](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.6/) | [anthropic__claude-opus-4.8](skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-4.8/)
-
-Quick links: [Checkpoints](curriculum/checkpoints/) | [Reactions](training_data/flower_curriculum_pngs/index.json) | [Prompt guide](docs/model_asset_overrides.md) | [History](docs/history_and_reproducibility.md)
-
-Curriculum checkpoints and trainee lanes advance **as time permits**. There is no public release clock; use the CLI below when you are ready to queue or publish work.
-
-## Trainee Progress Snapshot
-
-- See [curriculum/generated/](curriculum/generated/) for per-lane leaderboard rows.
-
-## Checkpoints
-<!-- curriculum-status:end -->
-
-`python main.py curriculum render-readme --model-name <id>` refreshes only the block above. To inspect a past milestone, open its manifest under `curriculum/checkpoints/`, check out the recorded tag or commit, and compare the resolved prompt and few-shot hashes to the current trainee lane.
+Changes to prompts, few-shots, models, validators, or harness behaviour are evidence-gated by the maintainers before merge ([docs/change_evidence_policy.md](docs/change_evidence_policy.md)); you do not need to run model evals yourself. If you work through an agent with no API key, you can still produce runs and traces via the [agent bridge](docs/agent_bridge.md) — declare the responder's origin and ground-truth exposure so the runs can be used as evidence. To share a result, run `python main.py publish-results --eval-run-id <id> --open-pr`. Maintainer playbooks: [docs/agent_playbooks.md](docs/agent_playbooks.md).
 
 ## Developer
 
@@ -102,5 +80,6 @@ Harness variants live under `harness_versions/` (`default`, `jev_reaction_type`,
 - Prompt/few-shot overrides: [docs/model_asset_overrides.md](docs/model_asset_overrides.md)
 - History and reproducibility: [docs/history_and_reproducibility.md](docs/history_and_reproducibility.md)
 - Evidence policy: [docs/change_evidence_policy.md](docs/change_evidence_policy.md)
+- Curriculum lanes and checkpoints: [curriculum/STATUS.md](curriculum/STATUS.md)
 
-The 1000-point score rubric originated with the Clawdiators arena; no arena data is currently coming in, and the historical arena material is kept in [LEADERBOARD.md](LEADERBOARD.md).
+The 1000-point rubric originated with the Clawdiators arena; that material is kept in [docs/legacy/clawdiators_leaderboard.md](docs/legacy/clawdiators_leaderboard.md).
