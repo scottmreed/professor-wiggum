@@ -41,3 +41,15 @@ def test_water_target_present_as_hydronium_counts_as_reached() -> None:
     assert result["contains_target_product"] is True
     assert result["targets_as_conjugate"] == ["O"]
     assert result["missing_target_products"] == []
+
+
+def test_protonated_main_product_is_not_the_product() -> None:
+    # hard rerun of flower_002647 stopped one step early on the protonated amide.
+    result = assess_target_product_state(
+        current_state=["CC(=O)NNC(O)(O)c1ccccc1"],
+        resulting_state=["CC(=O)NNC(=[OH+])c1ccccc1", "[OH-]"],
+        target_products=["CC(=O)NNC(=O)c1ccccc1", "O"],
+        starting_materials=["CC(=O)NN", "O=C(O)c1ccccc1"],
+    )
+    assert result["contains_target_product"] is False
+    assert "CC(=O)NNC(=O)c1ccccc1" in result["missing_target_products"]

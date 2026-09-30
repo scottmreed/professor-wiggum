@@ -219,13 +219,17 @@ def assess_target_product_state(
             item for item in productive_targets if heavy_atom_count_for_matching(item) == max_heavy_atoms
         ]
 
-    # A target present only as its conjugate acid/base (H3O+ for a water target,
-    # AcO- for AcOH) counts as reached; it is reported in targets_as_conjugate.
+    # A small target (<= 1 heavy atom: water, HCl) present only as its conjugate
+    # (H3O+ for a water target) counts as reached; it is reported in
+    # targets_as_conjugate. Larger products must appear exactly: a protonated
+    # product still needs its deprotonation step.
     resulting_parents = {neutral_parent_signature(item): item for item in resulting_signatures}
     targets_as_conjugate = [
         item
         for item in target_signatures
-        if item not in resulting_signatures and neutral_parent_signature(item) in resulting_parents
+        if item not in resulting_signatures
+        and heavy_atom_count_for_matching(item) <= 1
+        and neutral_parent_signature(item) in resulting_parents
     ]
     present = set(resulting_signatures) | set(targets_as_conjugate)
     matched_targets = [item for item in target_signatures if item in present]
