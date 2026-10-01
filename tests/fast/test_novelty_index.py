@@ -655,6 +655,13 @@ RELEASE_ASSETS = [
         "sha256": "9d5b5d4f6864cd7df7ae1dde1887a82c43e3168bf60202cc66e95dcfdcb0dc34",
         "bytes": 2332,
     },
+    {
+        "name": "flower_train_mechanisms.v2.sqlite",
+        "kind": "train_mechanisms",
+        "url": "https://github.com/scottmreed/professor-wiggum/releases/download/novelty-index-reaction_corpus.v1/flower_train_mechanisms.v2.sqlite",
+        "sha256": "4dd5c2e8745e77fddf5220dbf73d9b0761a4e572ed7ff7ba66da5fd414c90354",
+        "bytes": 60297216,
+    },
 ]
 
 
@@ -674,6 +681,9 @@ def test_committed_manifest_names_the_release_assets(tmp_path) -> None:
     (tmp_path / "reaction_novelty_index.manifest.json").write_text("{}")
     with pytest.raises(ni.NoveltyIndexMismatch):
         ni.load_from_manifest(PROJECT_ROOT, tmp_path)
+    (tmp_path / "flower_train_mechanisms.v2.sqlite").write_bytes(b"not the release")
+    with pytest.raises(ni.NoveltyIndexMismatch):
+        ni.load_reference_library_from_manifest(PROJECT_ROOT, tmp_path)
 
 
 def test_null_assets_manifest_is_unavailable(tmp_path) -> None:
