@@ -674,3 +674,200 @@ def test_reconciliation_accepts_catalytic_proton_without_llm() -> None:
     payload = [ev for ev in store.events if ev["event_type"] == "overall_balance_reconciled"][-1]["payload"]
     assert payload["grade"] == "reconciled"
     assert payload["audit"]["proton_reconciled"] is True
+
+
+# --- Excess solvent/reagent equivalents (hard tier TFA Boc deprotections, flower_064575) ---
+
+TFA = "O=C(O)C(F)(F)F"
+TFA_ANION = "O=C([O-])C(F)(F)F"
+BOC = "CC(C)(C)OC(=O)NC1CCC(F)(F)CC1"
+BOC_H = "CC(C)(C)OC(=[OH+])NC1CCC(F)(F)CC1"
+AMINE = "NC1CCC(F)(F)CC1"
+_STEP_VALIDATORS = {"atom_balance_validation", "state_progress_validation"}
+
+
+def _tfa_protonation_output() -> Dict[str, Any]:
+    """Step 1 as the model drew it: TFA protonates the Boc carbonyl, and a second
+    CF3COOH (TFA is the solvent) rides along that the pool holds only one of."""
+    return {
+        "current_state": [TFA, BOC],
+        "resulting_state": [BOC_H, TFA_ANION, TFA],
+        "resulting_state_changed": True,
+        "unchanged_starting_materials_detected": False,
+        "contains_target_product": False,
+        "electron_pushes": [
+            {"electrons": 2, "kind": "lone_pair", "notation": "lp:10>24", "source_atom": "10", "target_atom": "24"},
+            {"electrons": 2, "kind": "sigma_bond", "notation": "sigma:24-19>19", "source_bond": ["24", "19"],
+             "target_atom": "19", "through_atom": "19"},
+        ],
+        "bond_electron_validation": {"dbe": "10-10:-2;10-24:+2;19-19:+2;24-19:-2", "level": "ok", "valid": True},
+        "reaction_smirks": (
+            "[O:17]=[C:18]([O:19][H:24])[C:20]([F:21])([F:22])[F:23].[NH:1]([CH:2]1[CH2:3][CH2:4]"
+            "[C:5]([F:6])([F:7])[CH2:8][CH2:9]1)[C:11](=[O:10])[O:12][C:14]([CH3:13])([CH3:15])[CH3:16]"
+            ">>[O:17]=[C:18]([O-:19])[C:20]([F:21])([F:22])[F:23].[NH:1]([CH:2]1[CH2:3][CH2:4]"
+            "[C:5]([F:6])([F:7])[CH2:8][CH2:9]1)[C:11](=[O+:10][H:24])[O:12][C:14]([CH3:13])([CH3:15])[CH3:16]"
+        ),
+    }
+
+
+def _atom_check(result: Any) -> StepValidationCheck:
+    return next(check for check in result.checks if check.name == "atom_balance")
+
+
+def test_excess_pool_equivalent_passes_atom_balance_with_explicit_record() -> None:
+    result = validate_mechanism_step_output(
+        _tfa_protonation_output(),
+        enabled_validators=_STEP_VALIDATORS,
+        reagent_pool={TFA: "starting_material"},
+    )
+    assert result.passed is True
+    check = _atom_check(result)
+    assert check.passed is True
+    assert check.details["excess_reagent_reconciled"] == {
+        "species": TFA, "count": 1, "source": "starting_material", "proton_residual": {},
+    }
+    # The raw imbalance stays visible for audit.
+    assert check.details["balanced"] is False
+
+
+def test_excess_equivalent_without_pool_still_fails_atom_balance() -> None:
+    result = validate_mechanism_step_output(_tfa_protonation_output(), enabled_validators=_STEP_VALIDATORS)
+    assert result.passed is False
+    assert "excess_reagent_reconciled" not in _atom_check(result).details
+
+
+def test_excess_equivalent_is_not_reconciled_when_another_check_fails() -> None:
+    output = _tfa_protonation_output()
+    output["resulting_state_changed"] = False  # state_progress fails too
+    result = validate_mechanism_step_output(
+        output, enabled_validators=_STEP_VALIDATORS, reagent_pool={TFA: "starting_material"}
+    )
+    check = _atom_check(result)
+    assert check.passed is False
+    assert "excess_reagent_reconciled" not in check.details
+
+
+def test_non_equivalent_heavy_residual_still_fails_with_pool() -> None:
+    output = _tfa_protonation_output()
+    output["resulting_state"] = [BOC_H, TFA_ANION, "FC(F)F"]
+    result = validate_mechanism_step_output(
+        output, enabled_validators=_STEP_VALIDATORS, reagent_pool={TFA: "starting_material"}
+    )
+    assert _atom_check(result).passed is False
+
+
+def test_balance_reagent_pool_has_starting_materials_and_conditions_species() -> None:
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(starting_materials=[TFA, BOC], products=[AMINE], mode="unverified")
+    coordinator._record_step(
+        state,
+        StepResult(
+            step_name="initial_conditions",
+            tool_name="assess_initial_conditions",
+            output={
+                "environment": "acidic",
+                "acid_candidates": [{"name": "HCl", "role": "acid", "smiles": "Cl"}],
+                "base_candidates": [{"name": "Et3N", "role": "base", "smiles": "CCN(CC)CC"}],
+            },
+            source="llm",
+        ),
+    )
+    pool = coordinator._balance_reagent_pool(state)
+    assert pool[TFA] == "starting_material"
+    assert pool[BOC] == "starting_material"
+    assert pool["Cl"] == "initial_conditions:acid"
+    assert pool["CCN(CC)CC"] == "initial_conditions:base"
+
+
+class _FixedMechanismAgent:
+    def __init__(self, output: Dict[str, Any]) -> None:
+        self.output = output
+
+    def run(self, _state: RunState, _scoped: Dict[str, Any], retry_feedback: Any = None) -> StepResult:
+        return StepResult(
+            step_name="mechanism_synthesis",
+            tool_name="predict_mechanistic_step",
+            output=dict(self.output),
+            source="deterministic",
+        )
+
+
+class _TfaProposalAgent:
+    def run(self, _state: RunState, template_guidance: Optional[Dict[str, Any]] = None) -> StepResult:
+        return StepResult(
+            step_name="mechanism_step_proposal",
+            tool_name="propose_mechanism_step",
+            output={
+                "classification": "intermediate_step",
+                "candidates": [
+                    {
+                        "rank": 1,
+                        "intermediate_smiles": BOC_H,
+                        "resulting_state": [BOC_H, TFA_ANION, TFA],
+                        "reaction_smirks": _tfa_protonation_output()["reaction_smirks"],
+                        "electron_pushes": _tfa_protonation_output()["electron_pushes"],
+                    }
+                ],
+            },
+            source="llm",
+        )
+
+
+def test_loop_accepts_excess_solvent_step_as_validated_without_balance_flag() -> None:
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(starting_materials=[TFA, BOC], products=[AMINE, "O=C=O", "C=C(C)C"], mode="unverified")
+    state.run_config.balance_mode = "deferred"
+    state.run_config.max_runtime_seconds = 60.0
+    state.current_state = [TFA, BOC]
+    coordinator.intermediate_agent = _TfaProposalAgent()  # type: ignore[assignment]
+    coordinator.mechanism_agent = _FixedMechanismAgent(_tfa_protonation_output())  # type: ignore[assignment]
+
+    try:
+        coordinator._run_mechanism_loop(state, threading.Event())
+    except _RunPaused:
+        pass  # max_steps=1 without reaching the target pauses after accepting step 1
+
+    accepted = [ev for ev in store.events if ev["event_type"] == "mechanism_step_accepted"]
+    assert accepted, [ev["event_type"] for ev in store.events]
+    payload = accepted[0]["payload"]
+    assert payload["acceptance_kind"] == "validated"
+    assert payload["balance_flag"] is None
+    assert payload["excess_reagent_reconciled"] == {
+        "species": TFA, "count": 1, "source": "starting_material", "proton_residual": {},
+    }
+    assert not [ev for ev in store.events if ev["event_type"] == "mechanism_step_soft_advance"]
+
+
+def test_reconciliation_accepts_final_excess_solvent_without_llm() -> None:
+    """The extra TFA is never dropped: the final state carries two CF3COOH."""
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    state = _state(starting_materials=[TFA, BOC], products=[AMINE, "O=C=O", "C=C(C)C"], mode="unverified")
+    final = [AMINE, "O=C=O", "C=C(C)C", TFA, TFA]
+    for step, current, resulting in (
+        (1, [TFA, BOC], [BOC_H, TFA_ANION, TFA]),
+        (2, [BOC_H, TFA_ANION, TFA], final),
+    ):
+        store.append_event(
+            state.run_id,
+            "mechanism_step_accepted",
+            {"step_index": step, "current_state": current, "resulting_state": resulting},
+            step_name="mechanism_synthesis",
+        )
+    state.current_state = list(final)
+
+    class _NoLLM:
+        @staticmethod
+        def run_missing_reagents(**_kwargs: Any) -> Dict[str, Any]:
+            raise AssertionError("an excess pool equivalent must not call the LLM rescue")
+
+    coordinator.missing_reagents_agent.executor = _NoLLM()  # type: ignore[assignment]
+    coordinator._run_overall_balance_reconciliation(state)
+
+    payload = [ev for ev in store.events if ev["event_type"] == "overall_balance_reconciled"][-1]["payload"]
+    assert payload["grade"] == "reconciled"
+    assert payload["balanced"] is True
+    assert payload["audit"]["excess_reagent_reconciled"]["species"] == TFA
+    assert payload["audit"]["excess_reagent_reconciled"]["count"] == 1

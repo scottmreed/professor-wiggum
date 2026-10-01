@@ -15,8 +15,14 @@ in order, each ``{"step_index", "current_state", "resulting_state",
 
 Grades: ``exact`` (net equation balances with nothing added or flagged),
 ``reconciled`` (balances once catalysts / conjugate pairs / recorded reagent
-additions are accounted for — every flag resolved), ``approximate`` (atoms
-still appear or vanish), ``invalid_species`` (a SMILES does not parse).
+additions / excess pool equivalents are accounted for — every flag resolved),
+``approximate`` (atoms still appear or vanish), ``invalid_species`` (a SMILES
+does not parse).
+
+Excess equivalents: a reagent used in excess (TFA as the solvent of a Boc
+deprotection) is often drawn as a second molecule the harness pool holds only
+one of. ``excess_reagent_equivalents`` recognises a residual that is exactly n
+whole equivalents of one pool species, carried intact on the excess side.
 """
 
 from __future__ import annotations
@@ -123,18 +129,95 @@ def _divides(delta: Mapping[str, int], formula: Mapping[str, int]) -> bool:
     return ratio != 0 and float(ratio).is_integer()
 
 
+def _multiple_of(delta: Mapping[str, int], formula: Mapping[str, int]) -> int:
+    """n when the heavy atoms of ``delta`` are n (nonzero) whole copies of ``formula``'s, else 0."""
+    d = {k: v for k, v in delta.items() if k not in {"H", "+"} and v}
+    f = {k: v for k, v in formula.items() if k not in {"H", "+"} and v}
+    if not d or not f or set(d) != set(f):
+        return 0
+    first = next(iter(f))
+    if d[first] % f[first]:
+        return 0
+    n = d[first] // f[first]
+    return n if n and all(d[k] == n * f[k] for k in f) else 0
+
+
+def _pool_items(pool: Any) -> List[Tuple[str, str]]:
+    """``pool`` as (canonical SMILES, source) pairs; a mapping keeps its sources."""
+    items = pool.items() if isinstance(pool, Mapping) else ((s, "pool") for s in pool or [])
+    out: Dict[str, str] = {}
+    for smiles, source in items:
+        for token in _tokens([smiles]):
+            try:
+                out.setdefault(canonical(token), str(source))
+            except _InvalidSpecies:
+                continue
+    return sorted(out.items())
+
+
+def excess_reagent_equivalents(
+    current_state: Sequence[str] | Counter,
+    resulting_state: Sequence[str] | Counter,
+    pool: Any,
+) -> Optional[Dict[str, Any]]:
+    """``{"species", "count", "source", "proton_residual"}`` when ``resulting - current``
+    is exactly ``count`` (signed, nonzero) whole equivalents of one pool species, else None.
+
+    Hydrogen and charge beyond those equivalents must be zero or exactly n protons
+    (the extra equivalent drawn as its conjugate acid/base). The species — or a
+    conjugate of it — must be carried intact on the excess side at least ``|count|``
+    times, so atoms conjured into another molecule never qualify, and a step that
+    drops equivalents must leave at least one behind (deleting the only chloride is
+    not dropping an excess one).
+    """
+    if Chem is None:  # pragma: no cover
+        return None
+    try:
+        current = current_state if isinstance(current_state, Counter) else _species(current_state)
+        resulting = resulting_state if isinstance(resulting_state, Counter) else _species(resulting_state)
+        delta = _delta(_composition_of(current), _composition_of(resulting))
+        if not {k for k in delta if k not in {"H", "+"}}:
+            return None
+        for species, source in _pool_items(pool):
+            formula = composition(species)
+            n = _multiple_of(delta, formula)
+            if not n:
+                continue
+            parent = neutral_parent(species)
+            carried = {
+                side: sum(count for smiles, count in states.items() if neutral_parent(smiles) == parent)
+                for side, states in (("current", current), ("resulting", resulting))
+            }
+            # The excess side holds the extra equivalents intact; a dropped equivalent
+            # was excess only if one is still left after the step.
+            if carried["resulting" if n > 0 else "current"] < abs(n) or (n < 0 and carried["resulting"] < 1):
+                continue
+            remainder = {k: delta.get(k, 0) - n * formula.get(k, 0) for k in set(delta) | set(formula)}
+            remainder = {k: v for k, v in sorted(remainder.items()) if v}
+            if remainder and not _is_proton_only(remainder):
+                continue
+            return {"species": species, "count": n, "source": source, "proton_residual": remainder}
+    except _InvalidSpecies:
+        return None
+    return None
+
+
 def audit_mechanism(
     *,
     starting: Sequence[str],
     targets: Sequence[str],
     steps: Sequence[Mapping[str, Any]],
     final_state: Optional[Sequence[str]] = None,
+    reagent_pool: Any = None,
 ) -> Dict[str, Any]:
-    """``final_state`` defaults to the last step's resulting state (or ``starting``)."""
+    """``final_state`` defaults to the last step's resulting state (or ``starting``).
+    ``reagent_pool`` (SMILES -> source) defaults to the starting materials."""
     if Chem is None:  # pragma: no cover
         return {"schema": AUDIT_SCHEMA, "grade": "unavailable", "error": "RDKit not available"}
+    if reagent_pool is None:
+        reagent_pool = {smiles: "starting_material" for smiles in starting}
     try:
-        return _audit(starting, targets, steps, final_state)
+        return _audit(starting, targets, steps, final_state, reagent_pool)
     except _InvalidSpecies as exc:
         return {"schema": AUDIT_SCHEMA, "grade": "invalid_species", "invalid_species": [str(exc)], "balanced": False}
 
@@ -144,6 +227,7 @@ def _audit(
     targets: Sequence[str],
     steps: Sequence[Mapping[str, Any]],
     final_state_override: Optional[Sequence[str]],
+    reagent_pool: Any,
 ) -> Dict[str, Any]:
     ordered = sorted(steps, key=lambda s: int(s.get("step_index") or 0))
     if final_state_override is not None:
@@ -180,6 +264,15 @@ def _audit(
     if not balanced and _is_proton_only(net_delta) and _has_proton_donor_or_acceptor(left):
         balanced = True
         proton_reconciled = True
+    # A residual of exactly n whole equivalents of a pool species (TFA used as the
+    # solvent, carried as a second molecule) is excess reagent, not conjured atoms.
+    # Only a surplus counts: a listed reagent that vanishes is a deficit.
+    excess_reagent: Optional[Dict[str, Any]] = None
+    if not balanced:
+        excess_reagent = excess_reagent_equivalents(residual_left, residual_right, reagent_pool)
+        if excess_reagent is not None and excess_reagent["count"] < 0:
+            excess_reagent = None
+        balanced = excess_reagent is not None
 
     # Conjugate acid/base pairs left in the residual (e.g. AcO- vs AcOH, H3O+ vs H2O).
     conjugate_pairs: List[Dict[str, str]] = []
@@ -219,13 +312,23 @@ def _audit(
             resolution = "resolved_by_path"
         flags.append({"step_index": int(step.get("step_index") or 0), "step_delta": step_delta, "resolution": resolution})
 
+    excess_steps = [
+        {"step_index": int(step.get("step_index") or 0), **{k: rec.get(k) for k in ("species", "count", "source")}}
+        for step in ordered
+        for rec in [step.get("excess_reagent_reconciled")]
+        if isinstance(rec, Mapping) and rec.get("species")
+    ]
+
     findings = _efficiency_findings(ordered, added_left, final_state)
     if proton_reconciled:
         findings.append({"type": "unaccounted_proton", "net_delta": dict(net_delta)})
+    if excess_reagent:
+        findings.append({"type": "excess_reagent", "species": excess_reagent["species"],
+                         "count": excess_reagent["count"], "net_delta": dict(net_delta)})
 
     if not balanced:
         grade = "approximate"
-    elif flags or added_left or added_right or proton_reconciled:
+    elif flags or added_left or added_right or proton_reconciled or excess_reagent or excess_steps:
         grade = "reconciled"
     else:
         grade = "exact"
@@ -238,6 +341,8 @@ def _audit(
         "net_right": dict(sorted(residual_right.items())),
         "net_delta": net_delta,
         "proton_reconciled": proton_reconciled,
+        "excess_reagent_reconciled": excess_reagent,
+        "excess_reagent_steps": excess_steps,
         "catalysts": catalysts,
         "spectators": spectators,
         "reagents_added": reagents_added,
@@ -305,4 +410,5 @@ def step_for_audit(payload: Mapping[str, Any], *, fallback_additions: Optional[M
         "resulting_state": list(payload.get("resulting_state") or []),
         "rescue_additions": dict(additions or fallback_additions or {}),
         "balance_flag": payload.get("balance_flag"),
+        "excess_reagent_reconciled": payload.get("excess_reagent_reconciled"),
     }

@@ -205,12 +205,47 @@ def _override_atom_balance_check(
     return StepValidationResult(checks=updated)
 
 
+def _reconcile_excess_reagent(
+    result: StepValidationResult,
+    *,
+    payload: Dict[str, Any],
+    reagent_pool: Optional[Dict[str, str]],
+) -> StepValidationResult:
+    """Pass an atom-balance failure that is exactly n whole equivalents of a pool species.
+
+    Only when atom balance is the sole failing check: a reagent used in excess (TFA
+    as the solvent) drawn as a second molecule is not conjured matter. The raw
+    imbalance stays in the details next to ``excess_reagent_reconciled``.
+    """
+    if not reagent_pool:
+        return result
+    failing = [check for check in result.checks if not check.passed]
+    if len(failing) != 1 or failing[0].name != "atom_balance":
+        return result
+    atom_check = failing[0]
+    if (atom_check.details or {}).get("classification") == "invalid_species":
+        return result
+    from .mechanism_audit import excess_reagent_equivalents
+
+    excess = excess_reagent_equivalents(
+        [str(item) for item in payload.get("current_state", [])],
+        [str(item) for item in payload.get("resulting_state", [])],
+        reagent_pool,
+    )
+    if excess is None:
+        return result
+    atom_check.passed = True
+    atom_check.details = {**dict(atom_check.details or {}), "excess_reagent_reconciled": excess}
+    return result
+
+
 def validate_mechanism_step_output(
     payload: Dict[str, Any],
     *,
     dbe_policy: str = "strict",
     enabled_validators: Optional[Set[str]] = None,
     run_config: Any = None,
+    reagent_pool: Optional[Dict[str, str]] = None,
 ) -> StepValidationResult:
     """Validate a ``predict_mechanistic_step`` style payload.
 
@@ -220,6 +255,9 @@ def validate_mechanism_step_output(
         Set of validator module IDs that are active.  When *None* (the
         default) all validators run, preserving backward compatibility.
         Pass a subset of :data:`ALL_VALIDATOR_IDS` to skip specific checks.
+    reagent_pool:
+        Species (SMILES -> source) that may appear as whole excess equivalents;
+        see :func:`_reconcile_excess_reagent`.  *None* disables reconciliation.
     """
     active = enabled_validators if enabled_validators is not None else ALL_VALIDATOR_IDS
 
@@ -243,4 +281,4 @@ def validate_mechanism_step_output(
     result = _override_atom_balance_check(result, payload=payload, active=active)
     _attach_backend_metadata(result, backend_meta)
     _annotate_soft_backend_warnings(result)
-    return result
+    return _reconcile_excess_reagent(result, payload=payload, reagent_pool=reagent_pool)
