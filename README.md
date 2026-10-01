@@ -11,7 +11,7 @@ We are focusing on one top-tier model — currently **Claude Opus 5.5** — to i
 <!-- leaderboard:start -->
 | Tier | Best model | Score | Targets reached | Passed | Harness | Date | Details |
 |---|---|---|---|---|---|---|---|
-| easy | **Claude Opus 5.5** | **940**/1000 | 10/10 | 10/10 | `default` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-cli-eval-opus55-easy) |
+| easy | **Claude Opus 5.5** † | **940**/1000 | 10/10 | 10/10 | `jev_reaction_type` | 2026-09-30 | [results](LEADERBOARD.md#2026-09-30-bridge-opus55-jev-deferred-easy-final3) |
 | medium | **Claude Opus 5.5** † | **904**/1000 | 10/10 | 10/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-medium) |
 | hard | **Claude Opus 5.5** † | **823**/1000 | 10/10 | 9/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-hard) |
 
