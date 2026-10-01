@@ -78,42 +78,58 @@ Expected outputs in `dist/novelty/`:
 
 - `reaction_novelty_index.npz` — about 20 MB for 300k rows with fingerprints (about 10 MB without). The build **fails with exit 2** above `--max-bytes`; rebuild with `--no-fingerprints` if that happens.
 - `reaction_novelty_index.manifest.json` — recipe versions, RDKit/numpy versions, SHA-256 of `train.txt` and `test.txt`, rows per split, skipped counts, artifact bytes and SHA-256, and (with `--with-mechanisms`) the library's size, SHA-256 and per-mechanism averages.
-- `flower_train_mechanisms.sqlite` and `flower_train_mechanisms.sqlite.gz` — train only, keyed by the core key. The core key ignores species found on both sides (regenerated catalysts, spectators) and one-heavy-atom fragments such as H+, water and counterions, so a user's bare substrate → product finds the FlowER mechanism that carries them. The builder prints the compressed and uncompressed size and the average steps and bytes per mechanism; there is no size budget yet (Scott sets one after the first real build).
+- `flower_train_mechanisms.v2.sqlite` (with `--with-mechanisms`) — the reference mechanism library, train only, keyed by the core key. The core key ignores species found on both sides (regenerated catalysts, spectators) and one-heavy-atom fragments such as H+, water and counterions, so a user's bare substrate → product finds the FlowER mechanism that carries them. The builder prints its size and the average steps and bytes per mechanism.
 
-The same inputs with the same RDKit and numpy give byte-identical artifacts (no timestamps inside them; `built_at` lives only in the manifest).
+#### Library format v2 (`train_mechanisms.v2`)
+
+SQLite with `meta(key, value)` (`format = train_mechanisms.v2`, `split = train`, `corpus_recipe_version`, `source_sha256`, `rows`, `built_at`) and `mechanisms(core_key INTEGER, mechanism_id INTEGER, step_count INTEGER, payload BLOB)`, indexed on `core_key`, rows in `(core_key, mechanism_id)` order. Each `payload` is `zlib.compress(level 9)` of the compact JSON `{"initial_state": [...], "steps": [{"resulting_state": [...], "electron_pushes": ["lp:11>1", ...]}]}`. The state is stored once per step, and the fields that are derivable or constant are dropped: `current_state`, `target_products`, `predicted_intermediate`, `reaction_smirks`, `note`, `confidence` and the structured push dicts (only the `notation` string is kept). The file is shipped uncompressed and queried in place, because each row is already compressed. `built_at` is `SOURCE_DATE_EPOCH` when that is set, otherwise the source file's mtime, so the same input gives the same SHA-256.
+
+The first real build wrote the older **v1** library (`flower_train_mechanisms.sqlite[.gz]`, full step JSON per row): 68 MB gzipped and 1.35 GB on disk for 118,888 mechanisms. Converted to v2 it is **60,297,216 bytes** (about 507 B per mechanism, with a 434 B payload), takes about 20 s, and gives identical lookups for all 112,214 core keys. `ReferenceMechanismLibrary.lookup(core_key)` reads both formats and returns the same shape: `[{"mechanism_id", "step_count", "initial_state", "steps": [{"index", "resulting_state", "electron_pushes"}]}]`.
+
+**Known coverage limit.** Only mechanisms that `flower_curriculum._convert_group` can convert are in the library: 118,888 of 257,167 train mechanisms. About 121k (120,771) are skipped as `state_discontinuity`, and others as `no_cycle_found` (14,447) or as unsupported bond-order or charge patterns. The novelty index itself covers all of train and test, so plan B shows a reference mechanism for only about half of the train reactions it recognizes. The skip counts are in `reaction_novelty_index.manifest.json` under `train_mechanisms.skipped`.
+
+The same inputs with the same RDKit, numpy, SQLite and zlib give byte-identical artifacts. The npz has no timestamps inside it, and the index's `built_at` is only in its manifest. The library's `built_at` is pinned as described above.
 
 ### Publish
 
-1. Create a release on `scottmreed/professor-wiggum` with tag `novelty-index-reaction_corpus.v1` and upload the three files `reaction_novelty_index.npz`, `reaction_novelty_index.manifest.json` and `flower_train_mechanisms.sqlite.gz`:
+1. Create a release on `scottmreed/professor-wiggum` with tag `novelty-index-reaction_corpus.v1` and upload the index files (done on 2026-10-01 for `reaction_corpus.v1`):
 
    ```bash
    gh release create novelty-index-reaction_corpus.v1 \
      dist/novelty/reaction_novelty_index.npz \
      dist/novelty/reaction_novelty_index.manifest.json \
-     dist/novelty/flower_train_mechanisms.sqlite.gz \
      --title "Reaction novelty index (reaction_corpus.v1)" \
      --notes "FlowER-derived novelty keys/fingerprints (train+test) and train-only reference mechanisms. FlowER: Nature 645, 115–123 (2025)."
    ```
 
-2. The builder ends by printing the `assets` list (name, kind, url, sha256, bytes). Paste it into `novelty_index/manifest.json`, which then looks like:
+2. Upload the v2 mechanism library. A fresh `--with-mechanisms` build already writes `dist/novelty/flower_train_mechanisms.v2.sqlite`. If you have only the v1 file from the first build, convert it; you don't need to rebuild FlowER. The converter refuses a v1 file whose meta is not `split = train`:
+
+   ```bash
+   python scripts/compact_reference_mechanisms.py \
+     --input dist/novelty/flower_train_mechanisms.sqlite.gz --out dist/novelty
+   gh release upload novelty-index-reaction_corpus.v1 dist/novelty/flower_train_mechanisms.v2.sqlite
+   ```
+
+   The converter prints the row count, the size, per-mechanism averages, the SHA-256 and a ready-to-paste asset entry. It decompresses a `.gz` input into `--out`, or into `--tmp-dir`, which needs about 1.4 GB free.
+
+3. Paste the printed asset entries into the `assets` list of `novelty_index/manifest.json`. The builder prints all of them, and the converter prints the `train_mechanisms` one. The list then looks like this:
 
    ```json
    {
      "schema": "novelty_index_manifest.v1",
      "release_tag": "novelty-index-reaction_corpus.v1",
-     "corpus_recipe_version": "reaction_corpus.v1",
-     "recipe_version": "mechanism_submission.v2",
-     "rdkit_version": "2023.09.1",
      "assets": [
        {"name": "reaction_novelty_index.npz", "kind": "novelty_index", "url": "https://github.com/scottmreed/professor-wiggum/releases/download/novelty-index-reaction_corpus.v1/reaction_novelty_index.npz", "sha256": "…", "bytes": 0},
        {"name": "reaction_novelty_index.manifest.json", "kind": "novelty_index_manifest", "url": "…", "sha256": "…", "bytes": 0},
-       {"name": "flower_train_mechanisms.sqlite.gz", "kind": "train_mechanisms", "url": "…", "sha256": "…", "bytes": 0}
+       {"name": "flower_train_mechanisms.v2.sqlite", "kind": "train_mechanisms", "url": "…", "sha256": "…", "bytes": 0}
      ]
    }
    ```
 
-   While `assets` is `null`, `load_from_manifest` returns `None` and ChemIllusion reports reference screening as unavailable. A present file whose SHA-256 differs from this manifest raises `NoveltyIndexMismatch`.
+   `load_from_manifest(base_dir, assets_dir)` and `load_reference_library_from_manifest(base_dir, assets_dir)` return `None` when `assets` is `null`, when the kind is not listed, or when the file is not in `assets_dir`, and ChemIllusion then reports that feature as unavailable. A present file whose SHA-256 differs from this manifest raises `NoveltyIndexMismatch`. The committed manifest lists the two index assets now; the `train_mechanisms` entry is added after the v2 upload.
 
-3. Commit the manifest change only (never the assets). ChemIllusion picks it up when `WIGGUM_RUNTIME_REF` is bumped.
+4. Commit the manifest change only (never the assets). ChemIllusion picks it up when `WIGGUM_RUNTIME_REF` is bumped.
 
-Before ChemIllusion shows reference mechanisms to users, confirm that the FlowER dataset license (figshare 28359407) allows it and add the attribution it requires.
+`tests/fast/test_novelty_index.py::test_committed_manifest_loads_the_released_index` loads the released index through the committed manifest when the files are in `dist/novelty/` or in `$WIGGUM_NOVELTY_ASSETS_DIR`, and is skipped otherwise.
+
+The FlowER dataset (figshare 28359407) is MIT-licensed (confirmed by Scott on 2026-10-01). Show the attribution with any reference mechanism.
