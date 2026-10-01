@@ -1,0 +1,1150 @@
+{
+ "cases": [
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "41071ca579867ef618ef16dace4a7c69cd686d80431b98214ad2dda4e4c9be62",
+    "endpoint_hash": "70c6793bf002ad74c87e5951687934d2e82233436d4fbde30c56b461e5396ba4",
+    "exact_reaction_hash": "70ca3f970e889e01f56c24718ed5c9f5feb5dbf488d09da36ac4ddbe36f1a170",
+    "executable": true,
+    "inchikey_reaction_hash": "a7afbc35644aef5d725541b8887a008a49503ca12a4bec6727f79e0fcc5d466b",
+    "major_key_hash": "680f9dc34fdde8fa35b8eae691627c9f6dde209e52dcea595d06d1c48c455fa6",
+    "participants": [
+     {
+      "canonical_smiles": "CCBr",
+      "inchikey": "RDHPKYGYEGBMSE-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Cl-]",
+      "inchikey": "VEXZGXHMUGYJMC-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCCl",
+      "inchikey": "HRYZWHHZPQKTII-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-]",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_680f9dc34fdde8fa35b8",
+    "stoich_hash": "1977d91451a4d609c627c4a77f8b04e9896be4ab5bc236827133b2d88c670e24"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "CCBr.[Cl-]>>CCCl.[Br-]"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "41071ca579867ef618ef16dace4a7c69cd686d80431b98214ad2dda4e4c9be62",
+    "endpoint_hash": "70c6793bf002ad74c87e5951687934d2e82233436d4fbde30c56b461e5396ba4",
+    "exact_reaction_hash": "70ca3f970e889e01f56c24718ed5c9f5feb5dbf488d09da36ac4ddbe36f1a170",
+    "executable": true,
+    "inchikey_reaction_hash": "a7afbc35644aef5d725541b8887a008a49503ca12a4bec6727f79e0fcc5d466b",
+    "major_key_hash": "680f9dc34fdde8fa35b8eae691627c9f6dde209e52dcea595d06d1c48c455fa6",
+    "participants": [
+     {
+      "canonical_smiles": "[Cl-]",
+      "inchikey": "VEXZGXHMUGYJMC-UHFFFAOYSA-M",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCBr",
+      "inchikey": "RDHPKYGYEGBMSE-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-]",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCCl",
+      "inchikey": "HRYZWHHZPQKTII-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_680f9dc34fdde8fa35b8",
+    "stoich_hash": "1977d91451a4d609c627c4a77f8b04e9896be4ab5bc236827133b2d88c670e24"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "[Cl-].BrCC>>[Br-].ClCC"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "41071ca579867ef618ef16dace4a7c69cd686d80431b98214ad2dda4e4c9be62",
+    "endpoint_hash": "70c6793bf002ad74c87e5951687934d2e82233436d4fbde30c56b461e5396ba4",
+    "exact_reaction_hash": "70ca3f970e889e01f56c24718ed5c9f5feb5dbf488d09da36ac4ddbe36f1a170",
+    "executable": true,
+    "inchikey_reaction_hash": "a7afbc35644aef5d725541b8887a008a49503ca12a4bec6727f79e0fcc5d466b",
+    "major_key_hash": "680f9dc34fdde8fa35b8eae691627c9f6dde209e52dcea595d06d1c48c455fa6",
+    "participants": [
+     {
+      "canonical_smiles": "CCBr",
+      "inchikey": "RDHPKYGYEGBMSE-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Cl-]",
+      "inchikey": "VEXZGXHMUGYJMC-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCCl",
+      "inchikey": "HRYZWHHZPQKTII-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-]",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_680f9dc34fdde8fa35b8",
+    "stoich_hash": "1977d91451a4d609c627c4a77f8b04e9896be4ab5bc236827133b2d88c670e24"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "[CH3:1][CH2:2]Br.[Cl-]>>CCCl.[Br-]"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "267dd713d89b7e429003c14c5407dc17500d494caaa034cb9476ed2f853634cf",
+    "endpoint_hash": "ed5295efb349fbe0c8912fc4952334037efaf2ed22921b1e29e85f76ed2768c1",
+    "exact_reaction_hash": "760a447d94882a7d77210ad2c85031efb7821817b281140a5e33433e8648996d",
+    "executable": true,
+    "inchikey_reaction_hash": "dcb34ca706f719441d30de8e824f005341fe073590a753250613788b65732a6a",
+    "major_key_hash": "fb39a0867325bad45c4d3b9ea152016a31266f0f7d2a264cb5c01c2b13aac783",
+    "participants": [
+     {
+      "canonical_smiles": "CCCl",
+      "inchikey": "HRYZWHHZPQKTII-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-]",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCBr",
+      "inchikey": "RDHPKYGYEGBMSE-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Cl-]",
+      "inchikey": "VEXZGXHMUGYJMC-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_fb39a0867325bad45c4d",
+    "stoich_hash": "0779dcb8297dea48ca1443c7442bec3b4ddf955ae69c325047d17e3b114ab334"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "CCCl.[Br-]>>CCBr.[Cl-]"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "12c7f1a1fa0f70a30af51f04c7c7541862a06a90df89eea7eb844f007cd0089d",
+    "endpoint_hash": "f791165fd7330260964bc762234832ac5de297ab2413525cec90ff1124345a0e",
+    "exact_reaction_hash": "646af310e077064de0e76dcd2d0ebfdda1c0a67adfce3088556aaf438e72ce1d",
+    "executable": true,
+    "inchikey_reaction_hash": "64b90ea546b5d25f9e4d7845cfc18f9f1837e7e338f8c747f23b30944d6bebf3",
+    "major_key_hash": "167778a2aac7812792dd199214cb319fd0a0ccbefdaadae978b1a3e3831c4883",
+    "participants": [
+     {
+      "canonical_smiles": "COC(C)=O",
+      "inchikey": "KXKVLQRXCPHEJC-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CC(=O)O",
+      "inchikey": "QTBSBXVTEAMEQO-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CO",
+      "inchikey": "OKKJLVBELUTLKV-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_167778a2aac7812792dd",
+    "stoich_hash": "3601b9aabfbd5a2df5c1c33e6ca89ceae3c8c9fc708b13516a8bdd664d221f36"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "CC(=O)OC>>CC(=O)O.CO"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "83fe4693d2f166913df2fac0756bbdfbd689c7bf75b215e191a266ca1f15fb33",
+    "endpoint_hash": "b8552ee10711a4ee5459e2d2e8c35467681db46655f1364369caf9ff76c0a8d6",
+    "exact_reaction_hash": "86383d6df0292f220478b164b3f87de122c5b60a62c25c177523570e0b324149",
+    "executable": true,
+    "inchikey_reaction_hash": "b04e06c409bde9f30a8fbb04d92ecff6b5c5942a6a9788d6423095fcd59cbf36",
+    "major_key_hash": "167778a2aac7812792dd199214cb319fd0a0ccbefdaadae978b1a3e3831c4883",
+    "participants": [
+     {
+      "canonical_smiles": "COC(C)=O",
+      "inchikey": "KXKVLQRXCPHEJC-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "O",
+      "inchikey": "XLYOFNOQVPJJNP-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CC(=O)O",
+      "inchikey": "QTBSBXVTEAMEQO-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CO",
+      "inchikey": "OKKJLVBELUTLKV-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_167778a2aac7812792dd",
+    "stoich_hash": "5b11bb3c7632dbc8668b1d95050fb1dd006292beb060527b39ac97de6027c55a"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "CC(=O)OC.O>>CC(=O)O.CO"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "353e8d6ee17f17f48ef8d76e74aaa9ee344e3f3f426919a8bdc107bdf255906a",
+    "endpoint_hash": "238ec8a3bc4a05200e438a03406ddf4522043f8cd1be2799630a1d51f6b8cad2",
+    "exact_reaction_hash": "3989db919c21ea24332a591d1238dd4661b03e1b554229a77400368fba7fc524",
+    "executable": true,
+    "inchikey_reaction_hash": "7f7cf7ffbfd1986fb8b8c87922608b6afe74e498fbbfca10ba989646c3d2ea62",
+    "major_key_hash": "4da61430ac4606501bccea03dd8daaa5d54e81805580b2796b6460a6b46bf5a8",
+    "participants": [
+     {
+      "canonical_smiles": "CCO",
+      "inchikey": "LFQSCWFLJHTTHZ-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "O=[Cr](=O)=O",
+      "inchikey": "WGLPBDUCMAPZCE-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CC=O",
+      "inchikey": "IKHGUXGNUITLKF-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "ClCCl",
+      "inchikey": "YMWUJEATGCHHMB-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reagent",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_4da61430ac4606501bcc",
+    "stoich_hash": "d13f2f1cc00bc469207490d73d1d54e69dcbf0ba4396d9c5b72c4ea3b80cf337"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "CCO.O=[Cr](=O)=O>ClCCl>CC=O"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "ba1f2f40bbc2cd837aef3859b9510e8439a21a06dd9422a1c010147b35b3fe62",
+    "endpoint_hash": "0f87c1159ee953906c4f3d1c7f7b01e15db3fe033bd67d7316518492f2bf24ed",
+    "exact_reaction_hash": "75fda9a48c40518570340b4675f50bc169eaf6c0f451eab5d94772cf22a779f2",
+    "executable": true,
+    "inchikey_reaction_hash": "b79e1149fc170c1af6b6d1830739bb2825503c167df4744be5afe750589bb458",
+    "major_key_hash": "9991cea3ab464e4669bc2bb617ddeb3a1bd2fa69b99b3d56b83f01f91784677d",
+    "participants": [
+     {
+      "canonical_smiles": "CC=O",
+      "inchikey": "IKHGUXGNUITLKF-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCO",
+      "inchikey": "LFQSCWFLJHTTHZ-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_9991cea3ab464e4669bc",
+    "stoich_hash": "2068b993f24b261ebcd5084b4e7def22f1779f57291fe6c97ba59fb2210c955b"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "CC=O>>CCO"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "b90f0696488ea14e6da00889b33ca7e85581a1c24d36aaf12d716d745b451174",
+    "endpoint_hash": "33c7bc047b7790604bc1bd6fd527df63f26d9751db7be51c4a77e405ebb609ea",
+    "exact_reaction_hash": "280028f75501415028dafa8ed4966bbc75e1c30de10c24c562de12a7f27f0de1",
+    "executable": true,
+    "inchikey_reaction_hash": "04c3f49097737518fed75dc5cc8318e2699fa7d8812599480d80aed5f93d314b",
+    "major_key_hash": "869248a85628ffa58429e7705b8a331758fb7664f3256bec5f4e30a125ff7ea2",
+    "participants": [
+     {
+      "canonical_smiles": "CC[C@H](C)O",
+      "inchikey": "BTANRVKWQNVYAZ-BYPYZUCNSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CC[C@H](C)Cl",
+      "inchikey": "BSPCSKHALVHRSR-BYPYZUCNSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_869248a85628ffa58429",
+    "stoich_hash": "48d1186c6be595b8569af070f33de2a11628266f60c0218879f537142c3cd33f"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "C[C@H](O)CC>>C[C@H](Cl)CC"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "234bdc7156d961785ae6f43518eb0d860a1f6c96d757ba3a6102d14f653976ec",
+    "endpoint_hash": "122505d5a082173836fe95141e201a6863ee32803ae7376a85cb7d6fa2cb955f",
+    "exact_reaction_hash": "5ec5f4527e3a7c6ce26366d0a68073bc690a90f9d56eb892e375bc0cd8988c04",
+    "executable": true,
+    "inchikey_reaction_hash": "711938627beed0a8423db8ba75380f6c10c2d9ac2958e1204d9bfe18636510a0",
+    "major_key_hash": "a990f0245acdd247863b495a75bfa5940d78639ede99f22e40cc5c90f4f2c6b2",
+    "participants": [
+     {
+      "canonical_smiles": "CC[C@@H](C)O",
+      "inchikey": "BTANRVKWQNVYAZ-SCSAIBSYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CC[C@@H](C)Cl",
+      "inchikey": "BSPCSKHALVHRSR-SCSAIBSYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_a990f0245acdd247863b",
+    "stoich_hash": "2cf547b5d1e95ebc7f6b28a0c479b66690cf5598af94d06e7965a63a8387ef16"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "C[C@@H](O)CC>>C[C@@H](Cl)CC"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "37cbbe55616af26856f822a8c433abe48ffbeb0192ca2e10127fccff518cf399",
+    "endpoint_hash": "6d66bd1be565b956cc5a5451d47717c288714b7d811d701ba954fa326e411c07",
+    "exact_reaction_hash": "602249178e2905c7e03765312b4fce3a4d5651cc8e82603a92985934ffb478d6",
+    "executable": true,
+    "inchikey_reaction_hash": "dc952a4f8cd5b17aae81cad1836a1aed9f74e4c09f82fca31c6abb6b55196c28",
+    "major_key_hash": "213160e6ae69f360cf365dcf877c61619a19099993b46c502bb82828a47c7e61",
+    "participants": [
+     {
+      "canonical_smiles": "COC(=O)c1ccc(C)cc1",
+      "inchikey": "QSSJZLPUHJDYKF-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[OH-]",
+      "inchikey": "XLYOFNOQVPJJNP-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Na+]",
+      "inchikey": "FKNQFGJONOIPTF-UHFFFAOYSA-N",
+      "index": 2,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "Cc1ccc(C(=O)[O-])cc1",
+      "inchikey": "LPNBBFKOUUSUDB-UHFFFAOYSA-M",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Na+]",
+      "inchikey": "FKNQFGJONOIPTF-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CO",
+      "inchikey": "OKKJLVBELUTLKV-UHFFFAOYSA-N",
+      "index": 2,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_213160e6ae69f360cf36",
+    "stoich_hash": "ab301707e67d59a2f421391cc7c93f13d27b111a0b6e659e3a1c3e9ff76a28ca"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "Cc1ccc(cc1)C(=O)OC.[OH-].[Na+]>>Cc1ccc(cc1)C(=O)[O-].[Na+].CO"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "c2abfcbdd037aef7aca5c557f7d2622d0ead38c4087827da4fda579467373a72",
+    "endpoint_hash": "3ad7dfad70d29be8f7b1f0e8c292cf3d1e706a469275b41335a08de0d2f30cc6",
+    "exact_reaction_hash": "11701ff142709fd103bc6152422b2144c9c304952824a6217c707f823ab5e4dd",
+    "executable": true,
+    "inchikey_reaction_hash": "87b9bf76e6a7eef3d689585fb8691608c5ffd95b2bd4101549595fb8408c6c42",
+    "major_key_hash": "213160e6ae69f360cf365dcf877c61619a19099993b46c502bb82828a47c7e61",
+    "participants": [
+     {
+      "canonical_smiles": "COC(=O)c1ccc(C)cc1",
+      "inchikey": "QSSJZLPUHJDYKF-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[OH-]",
+      "inchikey": "XLYOFNOQVPJJNP-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[K+]",
+      "inchikey": "NPYPAHLBTDXSSS-UHFFFAOYSA-N",
+      "index": 2,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "Cc1ccc(C(=O)[O-])cc1",
+      "inchikey": "LPNBBFKOUUSUDB-UHFFFAOYSA-M",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[K+]",
+      "inchikey": "NPYPAHLBTDXSSS-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CO",
+      "inchikey": "OKKJLVBELUTLKV-UHFFFAOYSA-N",
+      "index": 2,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_213160e6ae69f360cf36",
+    "stoich_hash": "f258bf10830d7b762f6067c8f27d0347d052ed73c49e6e5584aeb37b5a59d9fb"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "Cc1ccc(cc1)C(=O)OC.[OH-].[K+]>>Cc1ccc(cc1)C(=O)[O-].[K+].CO"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "c2e1150e3cdd62757dd99caf533ec8a822d09ad4825130e7d403f480214b5363",
+    "endpoint_hash": "ede4c4e0c05230dc4549fab71903dfb12b20d34be9629af12c82a810a5a0bd49",
+    "exact_reaction_hash": "6a8a7d981bca4321d31ec0710edf2998cfe6edf41997b7d46c0993b6a7e97d66",
+    "executable": true,
+    "inchikey_reaction_hash": "f56526069ce2a6933e907fb9db834874bd9ff0571ac34995e18600791d3affe1",
+    "major_key_hash": "59a66944c32a8e3fee3f1734e0b47c945cb9f67eb8bfca044a74167238bb1010",
+    "participants": [
+     {
+      "canonical_smiles": "C=CC=C",
+      "inchikey": "KAKZBPTYRLMSJV-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "C=C",
+      "inchikey": "VGGSQFUCUMXWEO-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "C1=CCCCC1",
+      "inchikey": "HGCIXCUEYOPUTN-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_59a66944c32a8e3fee3f",
+    "stoich_hash": "d18000a17cee2e39636432ca18fb8eb2b302069ede3fbce4facbb426bb235e92"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "C=CC=C.C=C>>C1=CCCCC1"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "571b47c8c27addfa80a35d4d21835bd99e78a1115d1ac9f5bf7074b96c466c1e",
+    "endpoint_hash": "93eeb6784da9bcf34391b823e2fde8d4096bbb70a035d6f6056532409c95017a",
+    "exact_reaction_hash": "04196173ae239aadd195c8202b50e190e1d303d49de24a928e716d959e060f6a",
+    "executable": true,
+    "inchikey_reaction_hash": "8e17f6867851efeabc7f3b14af8c16e1e815a8391c4550821bd317a008c10767",
+    "major_key_hash": "d5e075d1d36f27372a7fa9a5bebae8a228dd24fa51aab989e5a46dd79769d09e",
+    "participants": [
+     {
+      "canonical_smiles": "c1ccccc1",
+      "inchikey": "UHOVQNZJYSORNB-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "BrBr",
+      "inchikey": "GDTBXPJZTBHREO-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "Brc1ccccc1",
+      "inchikey": "QARVLSVVCXYDNA-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "Br",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Fe+3]",
+      "inchikey": "VTLYFUHAOXGGBS-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reagent",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-]",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "reagent",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-]",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+      "index": 2,
+      "role": "reagent",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-]",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+      "index": 3,
+      "role": "reagent",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_d5e075d1d36f27372a7f",
+    "stoich_hash": "4d6f1209a0d33bb940df1871769f1bee528dbe0f200757915b75c63c6910a76c"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "c1ccccc1.BrBr>[Fe+3].[Br-].[Br-].[Br-]>Brc1ccccc1.Br"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "383a87128ab947449a9d5e22884bc707e3fc4c59d910599032838fb1817dd99d",
+    "endpoint_hash": "18fd64d53c328f5ea05963be15788ad09903f2840bd0fe2b07df264f7be97b2f",
+    "exact_reaction_hash": "7e858313e632f2d077308200329a4530ed34d2ce48eddf8b09dea6c9af485d62",
+    "executable": true,
+    "inchikey_reaction_hash": "433925b528253ce411b9fe240ff79b881f9b66d58e41aa0e7ee9fc122423f4ef",
+    "major_key_hash": "84ae2cc562cb711a0cabc08d4e45e00c1b237a4aae4dc4c1d2ba1e004e3e6f70",
+    "participants": [
+     {
+      "canonical_smiles": "CC(C)=O",
+      "inchikey": "CSCPPACGZOOCGX-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[BH4-]",
+      "inchikey": "CROBTXVXNQNKKO-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Na+]",
+      "inchikey": "FKNQFGJONOIPTF-UHFFFAOYSA-N",
+      "index": 2,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CC(C)O",
+      "inchikey": "KFZMGEQAYNKOFK-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCO",
+      "inchikey": "LFQSCWFLJHTTHZ-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reagent",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_84ae2cc562cb711a0cab",
+    "stoich_hash": "9378e77d3cc62d0c4cf08aa2ff6ee94da1e4a055a055fecd9ad2c6a94c7f4e47"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "CC(C)=O.[BH4-].[Na+]>CCO>CC(C)O"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "380cdbb488099e8f9007adaa68acce3dd48b42c641326aee65d1ea865fd12a58",
+    "endpoint_hash": "ab8cbba2be988dd5ba1b9cc70744451eebccb92275d8e4676115d0e56bb08b86",
+    "exact_reaction_hash": "5abe3425f0a3e4f44c8d4a2a0874ee6dfd86dd4e5d426ef448b774b1b3eb9111",
+    "executable": true,
+    "inchikey_reaction_hash": "8d01f92d433110d11a8c5f3b76a55d0137328e0eb2044ce2cf6ff9a9ae0bb153",
+    "major_key_hash": "b77e000ef5d9d6448e3e4ddd0a6157afb0bae2f6fb7fd6af2eeca051697a412a",
+    "participants": [
+     {
+      "canonical_smiles": "O=C1CCCCC1",
+      "inchikey": "JHIVVAPYMSGYDF-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "NO",
+      "inchikey": "AVXURJPOCDRRFD-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "ON=C1CCCCC1",
+      "inchikey": "VEZUQRBDRNJBJY-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "O",
+      "inchikey": "XLYOFNOQVPJJNP-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_b77e000ef5d9d6448e3e",
+    "stoich_hash": "5e23ded3d8995400f6528cdb2a6ef7e544cb76fa29cd3834cc0de68a5d11dae9"
+   },
+   "payload": {
+    "raw_input": {
+     "reaction_smiles": "O=C1CCCCC1.NO>>ON=C1CCCCC1.O"
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "83fe4693d2f166913df2fac0756bbdfbd689c7bf75b215e191a266ca1f15fb33",
+    "endpoint_hash": "932c752f5513e3c46c133a774483ca5020a2f4c5a4be6c99889947bf7d74bba9",
+    "exact_reaction_hash": "f0035fb6916ac73ab0ecdb0ee0745f094518bc92f906d4e03f8defd2104d81ed",
+    "executable": true,
+    "inchikey_reaction_hash": "338e265986934a31b7d0b5cce27c46d4fb97144fe65560a9a15a7e2587c6138d",
+    "major_key_hash": "167778a2aac7812792dd199214cb319fd0a0ccbefdaadae978b1a3e3831c4883",
+    "participants": [
+     {
+      "canonical_smiles": "COC(C)=O",
+      "inchikey": "KXKVLQRXCPHEJC-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "O",
+      "inchikey": "XLYOFNOQVPJJNP-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CC(=O)O",
+      "inchikey": "QTBSBXVTEAMEQO-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CO",
+      "inchikey": "OKKJLVBELUTLKV-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "C1CCOC1",
+      "inchikey": "WYURNTSHIVDZCO-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "solvent",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_167778a2aac7812792dd",
+    "stoich_hash": "ff0d07292c5ac71bf2b404cf51f098d5ef158a7376c84ce60c7d88426d46ad96"
+   },
+   "payload": {
+    "participants": {
+     "products": [
+      {
+       "input": "CC(=O)O"
+      },
+      {
+       "input": "CO"
+      }
+     ],
+     "reactants": [
+      {
+       "input": "CC(=O)OC"
+      },
+      {
+       "input": "O"
+      }
+     ],
+     "solvents": [
+      {
+       "input": "C1CCOC1"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "86bd238d118b594a5888c1337303f6b5cd39508911996b23b5a1d61983ffc29b",
+    "endpoint_hash": "62879c8fc961dd56ec665bbdd48854151d3fa2f27089d60f194963adf3589bff",
+    "exact_reaction_hash": "1ce28da82f85cbe104cfc6473c4c640126b8ed2eed789bd1112451dcf12fc404",
+    "executable": true,
+    "inchikey_reaction_hash": "a8290f1e4e900523d3256319b3c5f3cf4030b79945d1a9ff37639b47f9875a26",
+    "major_key_hash": "507fbcfbb216df0043f945ad3cec0397e6d05634cf1a3b4eb2b02d315318ea83",
+    "participants": [
+     {
+      "canonical_smiles": "[H][H]",
+      "inchikey": "UFHFLCQGNIYNRP-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "O=O",
+      "inchikey": "MYMOFIZGZYHOMD-UHFFFAOYSA-N",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "O",
+      "inchikey": "XLYOFNOQVPJJNP-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_507fbcfbb216df0043f9",
+    "stoich_hash": "3f27abd2b00cc7cd233e6b39819a0668f1f23e1b91064d0f344d5ad837dd678c"
+   },
+   "payload": {
+    "participants": {
+     "products": [
+      {
+       "coefficient": 2,
+       "input": "O"
+      }
+     ],
+     "reactants": [
+      {
+       "coefficient": 2,
+       "input": "[H][H]"
+      },
+      {
+       "input": "O=O"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "8ab2a99282fbf24cf6c08351d8fce742cf1c459d299e6c5b4ff3ab5b7e87caf7",
+    "endpoint_hash": "3ae77dcbd8d6de981be8891830d005df7e19174cee6b6c9f91f5a8ce0a080e1c",
+    "exact_reaction_hash": "11b65fd17a9a3c703be8fa318585e459694eb16cb0191ce46fe77a52f2b57b05",
+    "executable": true,
+    "inchikey_reaction_hash": "97ce8bcb1240a0ee2044fc0a6998d4c2a292e3a0a542b269302ae1d8d205e5fa",
+    "major_key_hash": "680f9dc34fdde8fa35b8eae691627c9f6dde209e52dcea595d06d1c48c455fa6",
+    "participants": [
+     {
+      "canonical_smiles": "CCBr",
+      "inchikey": "RDHPKYGYEGBMSE-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Cl-].[Na+]",
+      "inchikey": "FAPWRFPIFSIZLT-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCCl",
+      "inchikey": "HRYZWHHZPQKTII-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-].[Na+]",
+      "inchikey": "JHJLBTNAGRQEKS-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_680f9dc34fdde8fa35b8",
+    "stoich_hash": "a16033cad3f44dc3070389d5995526c52cd685e7d6623e69dd36d27eb7766827"
+   },
+   "payload": {
+    "participants": {
+     "products": [
+      {
+       "input": "CCCl"
+      },
+      {
+       "input": "[Na+].[Br-]"
+      }
+     ],
+     "reactants": [
+      {
+       "input": "CCBr"
+      },
+      {
+       "input": "[Na+].[Cl-]"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "b750d7639e1b9ae05edf45f4b8161ef22892a3a21d7b88588757c2035b220b18",
+    "endpoint_hash": "e9d43a0ff1a7eb05515d36610d512e424230390dad19b2b8eca6485cc474240c",
+    "exact_reaction_hash": "388f895ad3224a9e817d0870841bf23facbeacfad9c57dd33e3e4a8b27d7c2fc",
+    "executable": true,
+    "inchikey_reaction_hash": "5836a1a46896f01cab931d53dbe0b9d8db2dfbb8522162271f44d61b732f19da",
+    "major_key_hash": "680f9dc34fdde8fa35b8eae691627c9f6dde209e52dcea595d06d1c48c455fa6",
+    "participants": [
+     {
+      "canonical_smiles": "CCBr",
+      "inchikey": "RDHPKYGYEGBMSE-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCCl",
+      "inchikey": "HRYZWHHZPQKTII-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Cl-].[Na+]",
+      "inchikey": "FAPWRFPIFSIZLT-UHFFFAOYSA-M",
+      "index": 0,
+      "role": "reagent",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_680f9dc34fdde8fa35b8",
+    "stoich_hash": "240cd97030a5c27c6e2c3c967dffa56810984ff5337d63c4beb4817ed49938be"
+   },
+   "payload": {
+    "participants": {
+     "products": [
+      {
+       "input": "CCCl"
+      }
+     ],
+     "reactants": [
+      {
+       "input": "CCBr"
+      }
+     ],
+     "reagents": [
+      {
+       "input": "[Na+].[Cl-]"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "cfd2c338934d66089165c4635a95c02af77571d5dd13e869e65923614d90222d",
+    "core_hash": "41071ca579867ef618ef16dace4a7c69cd686d80431b98214ad2dda4e4c9be62",
+    "endpoint_hash": "70c6793bf002ad74c87e5951687934d2e82233436d4fbde30c56b461e5396ba4",
+    "exact_reaction_hash": "70ca3f970e889e01f56c24718ed5c9f5feb5dbf488d09da36ac4ddbe36f1a170",
+    "executable": true,
+    "inchikey_reaction_hash": "a7afbc35644aef5d725541b8887a008a49503ca12a4bec6727f79e0fcc5d466b",
+    "major_key_hash": "680f9dc34fdde8fa35b8eae691627c9f6dde209e52dcea595d06d1c48c455fa6",
+    "participants": [
+     {
+      "canonical_smiles": "CCBr",
+      "inchikey": "RDHPKYGYEGBMSE-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Cl-]",
+      "inchikey": "VEXZGXHMUGYJMC-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "CCCl",
+      "inchikey": "HRYZWHHZPQKTII-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     },
+     {
+      "canonical_smiles": "[Br-]",
+      "inchikey": "CPELXLSAUQHCOX-UHFFFAOYSA-M",
+      "index": 1,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_680f9dc34fdde8fa35b8",
+    "stoich_hash": "1977d91451a4d609c627c4a77f8b04e9896be4ab5bc236827133b2d88c670e24"
+   },
+   "payload": {
+    "conditions": {
+     "ph": 7.0,
+     "temperature_celsius": 25.0
+    },
+    "participants": {
+     "products": [
+      {
+       "input": "CCCl"
+      },
+      {
+       "input": "[Br-]"
+      }
+     ],
+     "reactants": [
+      {
+       "input": "CCBr"
+      },
+      {
+       "input": "[Cl-]"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "expected": {
+    "conditions_hash": "d0ce3117db0a45c4f5a37a322390796af467f9fcb2805eb8db64c7b7fb418c60",
+    "core_hash": "f9b5398e17458eb861e8ce162bd961632ce275a14d080c010cc014ecfeb98398",
+    "endpoint_hash": "2ebf1ca05720b15c30d060bbab4362462590bdd064d5b67591b24087571c7711",
+    "exact_reaction_hash": "df5170b8f474741635ae65dfe241b743a8329f65a73c8b8f261531af0a023e92",
+    "executable": false,
+    "inchikey_reaction_hash": null,
+    "major_key_hash": "680f9dc34fdde8fa35b8eae691627c9f6dde209e52dcea595d06d1c48c455fa6",
+    "participants": [
+     {
+      "canonical_smiles": "CCBr",
+      "inchikey": "RDHPKYGYEGBMSE-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "reactant",
+      "valid": true
+     },
+     {
+      "canonical_smiles": null,
+      "inchikey": null,
+      "index": 1,
+      "role": "reactant",
+      "valid": false
+     },
+     {
+      "canonical_smiles": "CCCl",
+      "inchikey": "HRYZWHHZPQKTII-UHFFFAOYSA-N",
+      "index": 0,
+      "role": "product",
+      "valid": true
+     }
+    ],
+    "similarity_cluster_id": "mpc_680f9dc34fdde8fa35b8",
+    "stoich_hash": "c9b69d70e5db52fe446bd3fd5f3018511cfe89590af2c64eea2060c7109776fb"
+   },
+   "payload": {
+    "participants": {
+     "products": [
+      {
+       "input": "CCCl"
+      }
+     ],
+     "reactants": [
+      {
+       "input": "CCBr"
+      },
+      {
+       "input": "not_a_smiles"
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "generated_from": "chem-art-generator backend/app/services/mechanism_predictor/submission_normalizer.py @ 6c45cc8b",
+ "rdkit_version": "2023.09.1",
+ "schema": "mechanism_submission.v2"
+}

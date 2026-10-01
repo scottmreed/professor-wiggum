@@ -1,0 +1,5 @@
+{
+  "schema": "novelty_index_manifest.v1",
+  "assets": null,
+  "note": "Populated after the first build is uploaded as a GitHub Release asset; null means reference screening is unavailable."
+}

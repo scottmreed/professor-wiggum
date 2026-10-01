@@ -11,4 +11,5 @@ google-genai>=1.0.0
 rdkit>=2022.9.5  # Via conda: conda install -c conda-forge rdkit
                 # Via pip: pip install rdkit-pypi
                 # Required for: atom counting, SMILES validation, mechanism validation
+numpy>=1.24  # novelty index loader/builder (mechanistic_agent/novelty_index.py); also an RDKit dependency
 dimorphite-dl>=2.0.0  # recommend_ph uses the 2.0+ protonate_smiles() function API
