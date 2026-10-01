@@ -399,3 +399,56 @@ class RegistrySet:
                     "model_name": item.get("model_name"),
                 }
         return mapping
+
+    def bind_run_prompts(
+        self,
+        store: Any,
+        run_id: str,
+        *,
+        model_name: str | None,
+        step_names: Optional[Iterable[str]] = None,
+    ) -> Dict[str, str]:
+        """Register the resolved prompt versions and bind them to ``run_id``'s steps.
+
+        Traces read their ``prompt_version_id`` from these bindings, and evidence
+        export rejects traces without one, so every path that creates a run must
+        call this. ``step_names=None`` binds every known prompt step. Returns
+        ``{step_name: prompt_version_id}`` for all known steps.
+        """
+        prompt_records = self.prompt_step_map(model_name=model_name)
+        prompt_ids_by_step = store.upsert_prompt_versions(
+            [
+                {
+                    "name": value.get("name"),
+                    "call_name": value.get("call_name"),
+                    "step": step,
+                    "version": value.get("version"),
+                    "path": value.get("path"),
+                    "sha256": value.get("sha256"),
+                    "shared_base_sha256": value.get("shared_base_sha256"),
+                    "call_base_sha256": value.get("call_base_sha256"),
+                    "few_shot_sha256": value.get("few_shot_sha256"),
+                    "prompt_bundle_sha256": value.get("prompt_bundle_sha256"),
+                    "template": value.get("template"),
+                    "model_name": value.get("model_name"),
+                    "resolved_shared_base_path": value.get("resolved_shared_base_path"),
+                    "resolved_call_base_path": value.get("resolved_call_base_path"),
+                    "resolved_few_shot_path": value.get("resolved_few_shot_path"),
+                    "asset_scope": value.get("asset_scope"),
+                }
+                for step, value in prompt_records.items()
+            ]
+        )
+        bound_steps = set(prompt_ids_by_step) if step_names is None else set(step_names)
+        if "intermediates" in bound_steps and "mechanism_step_proposal" in prompt_ids_by_step:
+            bound_steps.add("mechanism_step_proposal")
+        for step_name in sorted(bound_steps):
+            prompt_id = prompt_ids_by_step.get(step_name)
+            if prompt_id:
+                store.bind_run_step_prompt(
+                    run_id=run_id,
+                    step_name=step_name,
+                    prompt_version_id=prompt_id,
+                    attempt=0,
+                )
+        return prompt_ids_by_step

@@ -131,6 +131,12 @@ class MicroEvalRunner:
             memory_bundle_hash=hashes.get("memory_bundle_hash", ""),
             harness_bundle_hash=hashes.get("harness_bundle_hash", ""),
         )
+        self.registry.bind_run_prompts(
+            self.store,
+            run_id,
+            model_name=model_name or None,
+            step_names=config.get("step_models") or None,
+        )
         return run_id
 
     @staticmethod
