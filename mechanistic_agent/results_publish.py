@@ -233,21 +233,55 @@ def _export_baseline_run(
     return record
 
 
+def _combined_results(store: Any, eval_run_ids: Sequence[str]) -> tuple:
+    """Merge case results from several eval runs of one tier; later runs win per case.
+
+    Used to publish a tier that was resumed (e.g. after a responder outage): the
+    record lists every source run and which cases came from it.
+    """
+    runs: List[Dict[str, Any]] = []
+    by_case: Dict[str, tuple] = {}
+    for eval_run_id in eval_run_ids:
+        run = store.get_eval_run(eval_run_id)
+        if not run:
+            raise PublishError(f"eval run {eval_run_id} not found")
+        if runs:
+            first = runs[0]
+            for key in ("eval_set_id", "model_name", "thinking_level"):
+                if run.get(key) != first.get(key):
+                    raise PublishError(f"cannot combine eval runs with different {key}: {eval_run_ids}")
+        runs.append(run)
+        for result in store.list_eval_run_results(eval_run_id):
+            by_case[str(result.get("case_id") or "")] = (run, result)
+    if not by_case:
+        raise PublishError(f"eval run(s) {', '.join(eval_run_ids)} have no case results")
+    sources = [
+        {
+            "eval_run_id": run.get("id"),
+            "run_group": run.get("run_group_name"),
+            "cases": sorted(case for case, (src, _) in by_case.items() if src is run),
+        }
+        for run in runs
+    ]
+    return runs, [by_case[case] for case in sorted(by_case)], sources
+
+
 def export_eval_run(
     store: Any,
-    eval_run_id: str,
+    eval_run_id: Any,
     *,
     base_dir: Optional[Path] = None,
     expected_resolver: Optional[Callable[[Dict[str, Any], Dict[str, Any]], Optional[Dict[str, Any]]]] = None,
     scoring_version: str = DEFAULT_SCORING_VERSION,
 ) -> Dict[str, Any]:
-    """Build the public record for one eval run (does not write anything)."""
-    run = store.get_eval_run(eval_run_id)
-    if not run:
-        raise PublishError(f"eval run {eval_run_id} not found")
-    results = store.list_eval_run_results(eval_run_id)
-    if not results:
-        raise PublishError(f"eval run {eval_run_id} has no case results")
+    """Build the public record for one eval run, or a combined record when given a
+    list of eval run ids for the same tier (does not write anything)."""
+    ids = [eval_run_id] if isinstance(eval_run_id, str) else [str(i) for i in eval_run_id]
+    runs, pairs, sources = _combined_results(store, ids)
+    run = runs[0]
+    eval_run_id = ids[-1] if len(ids) > 1 else ids[0]
+    results = [result for _, result in pairs]
+    run_for_result = {id(result): src for src, result in pairs}
     eval_set = store.get_eval_set(str(run.get("eval_set_id") or "")) or {}
     holdout = str(eval_set.get("purpose") or "") == "leaderboard_holdout"
     if is_baseline_eval_run(run, results):
@@ -276,7 +310,7 @@ def export_eval_run(
         harness_name = harness_name or config.get("harness_name")
         latency = float(result.get("latency_ms") or 0.0)
         latencies.append(latency)
-        expected = resolver(result, run) if snapshot else None
+        expected = resolver(result, run_for_result.get(id(result), run)) if snapshot else None
         graded = score_snapshot_against_known(snapshot, expected, scoring_version=scoring_version) if (snapshot and expected) else {}
         graded_all.append(graded)
         known_steps = int((expected or {}).get("n_mechanistic_steps") or len(((expected or {}).get("verified_mechanism") or {}).get("steps") or []) or 0)
@@ -300,7 +334,7 @@ def export_eval_run(
     record: Dict[str, Any] = {
         "schema": RECORD_SCHEMA,
         "eval_run_id": eval_run_id,
-        "run_group": run.get("run_group_name"),
+        "run_group": run.get("run_group_name") if len(ids) == 1 else f"{run.get('run_group_name')}+resumed",
         "date": date,
         "model": run.get("model_name") or run.get("model"),
         "thinking_level": run.get("thinking_level"),
@@ -313,6 +347,7 @@ def export_eval_run(
         "holdout": holdout,
         "scoring_version": scoring_version,
         "git_commit": _git_commit(base_dir or Path.cwd()),
+        "sources": sources if len(ids) > 1 else None,
         "summary": {
             "points": points["total"],
             "outcome": points["outcome"],
@@ -575,8 +610,11 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
             f"mean case score {s['mean_score']:.3f}, {s['avg_latency_s']} s/case",
             f"- Model id `{record.get('model')}`, harness `{record.get('harness')}`, run group `{record.get('run_group')}`, eval run "
             f"`{record.get('eval_run_id')}`, commit `{record.get('git_commit')}` — [record]({record.get('_path')})",
-            "",
         ]
+        if record.get("sources"):
+            parts = ", ".join(f"`{src['eval_run_id'][:8]}` ({len(src['cases'])} cases)" for src in record["sources"])
+            lines.append(f"- Combined from resumed eval runs: {parts}")
+        lines.append("")
         if record.get("cases"):
             lines += ["| Case | Known steps | Accepted steps | Target | Passed | Score |", "|---|---|---|---|---|---|"]
             for case in record["cases"]:
