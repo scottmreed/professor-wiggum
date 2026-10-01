@@ -104,7 +104,9 @@ A response file is matched to its request by identical basename and looks like:
 ```
 
 `arguments` may be a JSON object (it is encoded to a string automatically) or a
-JSON string. `usage` is optional.
+JSON string. `usage` is optional. A responder that cannot answer may write
+`{"tool_calls": [], "error": "<reason>"}` instead; the harness then fails that call
+immediately (see [Responder failures](#responder-failures)).
 
 ## Writing a responder (subagent loop)
 
@@ -148,11 +150,43 @@ python main.py bridge-serve --command "my-agent --answer"
 python main.py bridge-serve --replay traces/bridge_replay/<run>
 
 # loop controls: --once, --max-requests N, --idle-timeout S, --poll-seconds S
+# failure controls: --retries N (default 3), --retry-wait S (default 30)
 ```
 
 With **neither** flag, `bridge-serve` just lists pending requests and waits — the
 pattern an orchestrator uses when it answers the request files itself. The bridge
 fails loud and never falls back to a hosted model.
+
+### Responder failures
+
+One failed answer does not stop `bridge-serve`. A responder failure is a
+`--command` that exits non-zero or prints something that is not JSON (for example
+a CLI agent printing "You've hit your session limit"), or a `--replay` seed that
+is not valid JSON. When that happens:
+
+1. `bridge-serve` logs the failure with the request basename, attempt number and
+   the responder's stderr (or stdout when stderr is empty).
+2. The request is retried after `--retry-wait` seconds, doubling on each further
+   retry (30 s, 60 s, 120 s with the defaults). While it waits, other pending
+   requests keep being served; the loop never blocks on a backoff.
+3. After `--retries` retries (`--retries 0` means no retry) it writes an **error
+   response** for that request and moves on:
+
+   ```json
+   { "tool_calls": [], "content": "", "error": "responder failed after 4 attempt(s): ..." }
+   ```
+
+   The waiting harness call raises `AgentBridgeResponderError` (a `RuntimeError`)
+   as soon as it sees this file. The step fails the same way it would on a bridge
+   timeout, but immediately instead of after `MECHANISTIC_AGENT_BRIDGE_TIMEOUT`.
+
+Error responses count toward `--once` / `--max-requests`. Any responder can write
+one with `write_response(req_path, tool_calls=[], error="...")`.
+
+Total backoff with the defaults is about 3.5 minutes. That is long enough for a
+transient failure, but much shorter than a usage-limit reset. During a long
+outage the remaining calls in an eval fail fast rather than hang, so re-run those
+cases once the limit resets.
 
 ## Reproducibility / CI replay
 

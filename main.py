@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import typer
 
@@ -2251,10 +2251,28 @@ def bridge_serve(
         help="Exit after this many seconds with no pending requests (0 = run forever).",
     ),
     max_requests: int = typer.Option(
-        0, "--max-requests", help="Stop after answering N requests (0 = unlimited)."
+        0,
+        "--max-requests",
+        help="Stop after handling N requests, answered or failed (0 = unlimited).",
     ),
     once: bool = typer.Option(
-        False, "--once", help="Answer at most one pending request, then exit."
+        False, "--once", help="Handle at most one pending request, then exit."
+    ),
+    retries: int = typer.Option(
+        3,
+        "--retries",
+        min=0,
+        help=(
+            "Retries per request after a responder failure (non-zero exit, bad JSON). "
+            "When they run out an error response is written so the harness call "
+            "fails fast."
+        ),
+    ),
+    retry_wait: float = typer.Option(
+        30.0,
+        "--retry-wait",
+        min=0.0,
+        help="Seconds before the first retry; doubles on each further retry.",
     ),
 ) -> None:
     """Answer agent-bridge model calls so the harness can run keyless.
@@ -2269,6 +2287,10 @@ def bridge_serve(
     With neither, pending requests are listed and the loop waits — the pattern an
     orchestrator uses when it answers the request files itself. The bridge fails
     loud and never falls back to a hosted model.
+
+    A responder failure never stops the loop: the request is retried with
+    backoff (--retries, --retry-wait) while other requests keep being served,
+    and once retries run out an error response makes that harness call fail.
     """
     import os
     import subprocess
@@ -2317,9 +2339,9 @@ def bridge_serve(
             text=True,
         )
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"Responder command exited {proc.returncode}: {proc.stderr.strip()[:500]}"
-            )
+            # Some CLIs report failures (e.g. usage limits) on stdout, not stderr.
+            detail = proc.stderr.strip() or proc.stdout.strip()
+            raise RuntimeError(f"Responder command exited {proc.returncode}: {detail[:500]}")
         out = proc.stdout.strip()
         if out.startswith("```"):  # tolerate fenced output
             out = out.strip("`")
@@ -2340,12 +2362,16 @@ def bridge_serve(
         return _coerce_response(parsed, model_input)
 
     answered = 0
+    failed = 0
+    # Per-request retry state for responder failures: basename -> (failures, next try).
+    retry_state: Dict[str, Tuple[int, float]] = {}
     idle_since: Optional[float] = None
     mode_label = "command" if command else ("replay" if replay else "observe")
     typer.echo(f"bridge-serve: dir={resolved_dir} mode={mode_label}")
     while True:
         pending = pending_requests(resolved_dir)
         if not pending:
+            retry_state.clear()
             if idle_timeout > 0:
                 idle_since = idle_since if idle_since is not None else time.monotonic()
                 if time.monotonic() - idle_since >= idle_timeout:
@@ -2354,16 +2380,57 @@ def bridge_serve(
             time.sleep(poll_seconds)
             continue
         idle_since = None
+        # Forget requests that were answered elsewhere while backing off.
+        pending_names = {req_path.name for req_path in pending}
+        for name in list(retry_state):
+            if name not in pending_names:
+                del retry_state[name]
+        attempted = False
         for req_path in pending:
+            failures, next_try = retry_state.get(req_path.name, (0, 0.0))
+            if time.monotonic() < next_try:
+                continue  # backing off; keep serving the other requests
             request = read_request(req_path)
             model_input = request.get("model_input") or {}
-            if command:
-                kwargs = _answer_via_command(request, model_input)
-            elif replay:
-                kwargs = _answer_via_replay(req_path.name, model_input)
+            if command or replay:
+                try:
+                    if command:
+                        kwargs = _answer_via_command(request, model_input)
+                    else:
+                        kwargs = _answer_via_replay(req_path.name, model_input)
+                except Exception as exc:  # noqa: BLE001 - one bad answer must not end the loop
+                    attempted = True
+                    failures += 1
+                    if failures <= retries:
+                        wait = retry_wait * (2 ** (failures - 1))
+                        retry_state[req_path.name] = (failures, time.monotonic() + wait)
+                        typer.echo(
+                            f"bridge-serve: responder failed for {req_path.name} "
+                            f"(attempt {failures}/{retries + 1}): {exc}; "
+                            f"retrying in {wait:g}s"
+                        )
+                        continue
+                    retry_state.pop(req_path.name, None)
+                    write_response(
+                        req_path,
+                        bridge_dir=resolved_dir,
+                        tool_calls=[],
+                        error=f"responder failed after {failures} attempt(s): {exc}",
+                    )
+                    failed += 1
+                    typer.echo(
+                        f"bridge-serve: responder failed for {req_path.name} "
+                        f"(attempt {failures}/{retries + 1}): {exc}; giving up, "
+                        f"wrote error response ({failed} failed total)"
+                    )
+                    if once or (max_requests > 0 and answered + failed >= max_requests):
+                        return
+                    continue
+                retry_state.pop(req_path.name, None)
                 if kwargs is None:
                     # No seed yet for this request; wait for it to appear.
                     continue
+                attempted = True
             else:
                 typer.echo(f"bridge-serve: pending {req_path.name} (no responder configured)")
                 time.sleep(poll_seconds)
@@ -2371,8 +2438,11 @@ def bridge_serve(
             write_response(req_path, bridge_dir=resolved_dir, **kwargs)
             answered += 1
             typer.echo(f"bridge-serve: answered {req_path.name} ({answered} total)")
-            if once or (max_requests > 0 and answered >= max_requests):
+            if once or (max_requests > 0 and answered + failed >= max_requests):
                 return
+        if not attempted:
+            # Everything pending is backing off or awaiting a seed; don't spin.
+            time.sleep(poll_seconds)
 
 
 @app.command()

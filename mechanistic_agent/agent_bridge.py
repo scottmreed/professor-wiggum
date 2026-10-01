@@ -40,7 +40,10 @@ A responder reads a request, produces a tool call from ``model_input`` alone,
 and writes the response. Pre-seeding the matching response file makes runs
 deterministic / replayable in CI. If no response arrives within the timeout
 (``MECHANISTIC_AGENT_BRIDGE_TIMEOUT`` seconds, default 1800) the adapter raises —
-failing loud rather than silently degrading.
+failing loud rather than silently degrading. A responder that cannot answer a
+request may instead write an *error response* (``{"error": "..."}``, see
+:func:`write_response`); the adapter raises :class:`AgentBridgeResponderError`
+as soon as it sees it, so the call fails fast instead of waiting for the timeout.
 """
 from __future__ import annotations
 
@@ -97,6 +100,14 @@ REQUEST_SCHEMA = "mechanistic.agent_bridge/request@1"
 # The only keys allowed inside the model-visible request block. Kept as a module
 # constant so the privacy invariant is asserted against a single source of truth.
 MODEL_INPUT_KEYS = ("messages", "tools", "tool_choice")
+
+
+class AgentBridgeResponderError(RuntimeError):
+    """The responder wrote an explicit error response instead of an answer.
+
+    A ``RuntimeError`` subclass so the harness handles it exactly like the
+    timeout — the call fails — only without waiting out the timeout first.
+    """
 
 
 def _resolve_bridge_dir(bridge_dir: Optional[str]) -> Path:
@@ -208,6 +219,11 @@ def _parse_response(response_path: Path) -> _SimpleMessage:
     data = json.loads(response_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise RuntimeError(f"Agent bridge response {response_path} is not a JSON object")
+    error = data.get("error")
+    if error:
+        raise AgentBridgeResponderError(
+            f"Agent bridge responder could not answer {response_path.name}: {error}"
+        )
 
     raw_tool_calls = data.get("tool_calls") or []
     tool_calls: List[Dict[str, Any]] = []
@@ -258,8 +274,14 @@ def write_response(
     content: str = "",
     usage: Optional[Dict[str, Any]] = None,
     bridge_dir: Optional[str] = None,
+    error: Optional[str] = None,
 ) -> Path:
-    """Write the responder's answer next to the request, matching by basename."""
+    """Write the responder's answer next to the request, matching by basename.
+
+    Pass ``error`` (with ``tool_calls=[]``) when the responder gave up on the
+    request: the waiting adapter raises :class:`AgentBridgeResponderError`
+    immediately instead of blocking until its timeout.
+    """
     request_path = Path(request_path)
     root = _resolve_bridge_dir(bridge_dir) if bridge_dir else request_path.parent.parent
     response_path = root / "responses" / request_path.name
@@ -267,6 +289,8 @@ def write_response(
     payload: Dict[str, Any] = {"tool_calls": tool_calls, "content": content}
     if usage is not None:
         payload["usage"] = usage
+    if error:
+        payload["error"] = str(error)
     _write_json_atomic(response_path, payload)
     return response_path
 
@@ -331,6 +355,7 @@ def origin_for_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 __all__ = [
     "AgentBridgeAdapter",
+    "AgentBridgeResponderError",
     "build_model_input",
     "build_origin_provenance",
     "origin_for_config",
