@@ -787,6 +787,9 @@ def run_curriculum_batch(
                 skill_bundle_hash=hashes.get("skill_bundle_hash", ""),
                 memory_bundle_hash=hashes.get("memory_bundle_hash", ""),
             )
+            registry.bind_run_prompts(
+                store, run_id, model_name=model_plan.model_name, step_names=model_plan.step_models
+            )
             coordinator.execute_run(run_id, threading.Event())
 
             snapshot = store.get_run_snapshot(run_id) or {}

@@ -112,6 +112,13 @@ class RalphOrchestrator:
                 skill_bundle_hash=str(parent_row.get("skill_bundle_hash") or ""),
                 memory_bundle_hash=str(parent_row.get("memory_bundle_hash") or ""),
             )
+            for binding in self.store.list_run_step_prompts(parent_run_id):
+                self.store.bind_run_step_prompt(
+                    run_id=child_run_id,
+                    step_name=str(binding.get("step_name") or ""),
+                    prompt_version_id=str(binding.get("prompt_version_id") or ""),
+                    attempt=int(binding.get("attempt") or 0),
+                )
             attempt_id = self.store.create_ralph_attempt(
                 parent_run_id=parent_run_id,
                 attempt_index=attempt_index,

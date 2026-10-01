@@ -1490,42 +1490,9 @@ def create_app(
                 "dry_run": dry_run,
             },
         )
-        prompt_records = registry.prompt_step_map(model_name=selected_primary_model)
-        prompt_ids_by_step = store.upsert_prompt_versions(
-            [
-                {
-                    "name": value.get("name"),
-                    "call_name": value.get("call_name"),
-                    "step": step,
-                    "version": value.get("version"),
-                    "path": value.get("path"),
-                    "sha256": value.get("sha256"),
-                    "shared_base_sha256": value.get("shared_base_sha256"),
-                    "call_base_sha256": value.get("call_base_sha256"),
-                    "few_shot_sha256": value.get("few_shot_sha256"),
-                    "prompt_bundle_sha256": value.get("prompt_bundle_sha256"),
-                    "template": value.get("template"),
-                    "model_name": value.get("model_name"),
-                    "resolved_shared_base_path": value.get("resolved_shared_base_path"),
-                    "resolved_call_base_path": value.get("resolved_call_base_path"),
-                    "resolved_few_shot_path": value.get("resolved_few_shot_path"),
-                    "asset_scope": value.get("asset_scope"),
-                }
-                for step, value in prompt_records.items()
-            ]
+        prompt_ids_by_step = registry.bind_run_prompts(
+            store, run_id, model_name=selected_primary_model, step_names=model_plan.step_models
         )
-        bound_steps = set(model_plan.step_models)
-        if "intermediates" in bound_steps and "mechanism_step_proposal" in prompt_ids_by_step:
-            bound_steps.add("mechanism_step_proposal")
-        for step_name in sorted(bound_steps):
-            prompt_id = prompt_ids_by_step.get(step_name)
-            if prompt_id:
-                store.bind_run_step_prompt(
-                    run_id=run_id,
-                    step_name=step_name,
-                    prompt_version_id=prompt_id,
-                    attempt=0,
-                )
         store.append_event(
                 run_id,
                 "run_created",
