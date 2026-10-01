@@ -14,8 +14,9 @@ Outputs in ``--out``:
 * ``reaction_novelty_index.npz`` — split labels, 64-bit corpus keys and
   256-bit fingerprints only (layout: ``mechanistic_agent/novelty_index.py``);
 * ``reaction_novelty_index.manifest.json`` — provenance, row counts, size, SHA-256;
-* with ``--with-mechanisms``: ``flower_train_mechanisms.sqlite`` and
-  ``flower_train_mechanisms.sqlite.gz`` — TRAIN mechanisms only.
+* with ``--with-mechanisms``: ``flower_train_mechanisms.v2.sqlite`` — TRAIN
+  mechanisms only, ``train_mechanisms.v2`` format (per-row zlib, so the file
+  is not gzipped).
 
 Exit 2 when the index exceeds ``--max-bytes`` (rebuild with ``--no-fingerprints``).
 
@@ -25,10 +26,7 @@ Exit 2 when the index exceeds ``--max-bytes`` (rebuild with ``--no-fingerprints`
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
-import shutil
-import sqlite3
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -56,8 +54,12 @@ from mechanistic_agent.novelty_index import (  # noqa: E402
     MECHANISM_LIBRARY_ARTIFACT,
     NOVELTY_INDEX_ARTIFACT,
     NOVELTY_INDEX_MANIFEST,
+    compact_mechanism,
+    default_built_at,
+    encode_mechanism_payload,
     file_sha256,
     to_sqlite_int,
+    write_mechanism_library_v2,
     write_npz_deterministic,
 )
 from mechanistic_agent.reaction_signatures import (  # noqa: E402
@@ -154,7 +156,7 @@ def _process(task: Tuple[str, int, List[str], bool, bool]) -> Dict[str, Any]:
                 keys.core,
                 int(mechanism_id),
                 len(steps),
-                json.dumps(steps, separators=(",", ":"), sort_keys=True, ensure_ascii=False),
+                encode_mechanism_payload(compact_mechanism(steps)),
             )
     return out
 
@@ -200,71 +202,44 @@ def assemble_index_arrays(rows: Sequence[Tuple[int, Tuple[int, int, int, int], b
     return arrays, counts
 
 
-def write_mechanism_library(out_dir: Path, records: Sequence[Tuple[str, Tuple[int, int, int, str]]]) -> Dict[str, Any]:
-    """Write the train-only SQLite library and its gzip; returns size stats.
+def write_mechanism_library(
+    out_dir: Path,
+    records: Sequence[Tuple[str, Tuple[int, int, int, bytes]]],
+    *,
+    source_sha256: str = "",
+    built_at: str = "1970-01-01T00:00:00+00:00",
+) -> Dict[str, Any]:
+    """Write the train-only ``train_mechanisms.v2`` library; returns size stats.
 
-    ``records`` are ``(split, (core_key, mechanism_id, step_count, steps_json))``;
+    ``records`` are ``(split, (core_key, mechanism_id, step_count, payload))``
+    with an unsigned core key and an :func:`encode_mechanism_payload` payload;
     any non-train record is a hard error.
     """
     for split, _ in records:
         if split != "train":
             raise AssertionError("refusing to write a non-train mechanism into the reference library")
-    sqlite_path = out_dir / MECHANISM_LIBRARY_ARTIFACT
-    gz_path = out_dir / f"{MECHANISM_LIBRARY_ARTIFACT}.gz"
-    for path in (sqlite_path, gz_path):
-        if path.exists():
-            path.unlink()
-    rows = sorted((to_sqlite_int(core), mid, count, steps) for _, (core, mid, count, steps) in records)
-    conn = sqlite3.connect(sqlite_path)
-    try:
-        conn.executescript(
-            """
-            PRAGMA journal_mode = DELETE;
-            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            CREATE TABLE mechanisms (
-                core_key INTEGER NOT NULL,
-                mechanism_id INTEGER NOT NULL,
-                step_count INTEGER NOT NULL,
-                steps_json TEXT NOT NULL
-            );
-            """
-        )
-        conn.executemany(
-            "INSERT INTO meta(key, value) VALUES (?, ?)",
-            [
-                ("split", "train"),
-                ("corpus_recipe_version", CORPUS_RECIPE_VERSION),
-                ("builder_version", BUILDER_VERSION),
-                ("key", "core (reaction_corpus.v1), unsigned 64-bit stored as signed"),
-            ],
-        )
-        conn.executemany(
-            "INSERT INTO mechanisms(core_key, mechanism_id, step_count, steps_json) VALUES (?, ?, ?, ?)", rows
-        )
-        conn.execute("CREATE INDEX idx_mechanisms_core_key ON mechanisms(core_key)")
-        conn.commit()
-        conn.execute("VACUUM")
-    finally:
-        conn.close()
-    with sqlite_path.open("rb") as src, gz_path.open("wb") as raw:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=9, mtime=0) as dst:
-            shutil.copyfileobj(src, dst)
-    count = len(rows)
-    sqlite_bytes = sqlite_path.stat().st_size
-    gz_bytes = gz_path.stat().st_size
+    path = out_dir / MECHANISM_LIBRARY_ARTIFACT
+    rows = sorted((to_sqlite_int(core), mid, count, payload) for _, (core, mid, count, payload) in records)
+    count = write_mechanism_library_v2(
+        path,
+        rows,
+        source_sha256=source_sha256,
+        built_at=built_at,
+        extra_meta={"builder_version": BUILDER_VERSION, "source": "FlowER train.txt"},
+    )
+    size = path.stat().st_size
     steps_total = sum(row[2] for row in rows)
     return {
-        "artifact": gz_path.name,
+        "artifact": path.name,
+        "format": "train_mechanisms.v2",
         "split": "train",
         "mechanisms": count,
         "steps": steps_total,
-        "sqlite_bytes": sqlite_bytes,
-        "gz_bytes": gz_bytes,
-        "sqlite_sha256": file_sha256(sqlite_path),
-        "gz_sha256": file_sha256(gz_path),
+        "bytes": size,
+        "sha256": file_sha256(path),
         "avg_steps_per_mechanism": round(steps_total / count, 3) if count else 0.0,
-        "avg_gz_bytes_per_mechanism": round(gz_bytes / count, 1) if count else 0.0,
-        "avg_sqlite_bytes_per_mechanism": round(sqlite_bytes / count, 1) if count else 0.0,
+        "avg_bytes_per_mechanism": round(size / count, 1) if count else 0.0,
+        "avg_payload_bytes_per_mechanism": round(sum(len(row[3]) for row in rows) / count, 1) if count else 0.0,
     }
 
 
@@ -385,7 +360,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     library: Optional[Dict[str, Any]] = None
     if args.with_mechanisms:
-        library = write_mechanism_library(out_dir, mechanisms)
+        library = write_mechanism_library(
+            out_dir,
+            mechanisms,
+            source_sha256=manifest["source"]["train_sha256"],
+            built_at=default_built_at(args.train_file),
+        )
         library["skipped"] = dict(sorted(mechanism_skipped.items()))
         manifest["train_mechanisms"] = library
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -399,9 +379,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"  skipped: {json.dumps(manifest['skipped'], sort_keys=True)}")
     if library is not None:
         print(
-            f"{library['artifact']}: {library['gz_bytes']:,} bytes gzipped, {library['sqlite_bytes']:,} bytes "
-            f"uncompressed; {library['mechanisms']:,} train mechanisms, "
-            f"{library['avg_steps_per_mechanism']} steps and {library['avg_gz_bytes_per_mechanism']} gz bytes "
+            f"{library['artifact']}: {library['bytes']:,} bytes; {library['mechanisms']:,} train mechanisms, "
+            f"{library['avg_steps_per_mechanism']} steps and {library['avg_bytes_per_mechanism']} bytes "
             f"per mechanism (skipped: {json.dumps(library['skipped'], sort_keys=True)})"
         )
     assets = [

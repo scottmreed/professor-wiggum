@@ -1,5 +1,9 @@
 {
   "schema": "novelty_index_manifest.v1",
-  "assets": null,
-  "note": "Populated after the first build is uploaded as a GitHub Release asset; null means reference screening is unavailable."
+  "release_tag": "novelty-index-reaction_corpus.v1",
+  "assets": [
+    {"name": "reaction_novelty_index.npz", "kind": "novelty_index", "url": "https://github.com/scottmreed/professor-wiggum/releases/download/novelty-index-reaction_corpus.v1/reaction_novelty_index.npz", "sha256": "374ad393a85ed1ac35fe8bd01342f8a05b822e60dd2a9d1af17c5675f514ffd2", "bytes": 20184490},
+    {"name": "reaction_novelty_index.manifest.json", "kind": "novelty_index_manifest", "url": "https://github.com/scottmreed/professor-wiggum/releases/download/novelty-index-reaction_corpus.v1/reaction_novelty_index.manifest.json", "sha256": "9d5b5d4f6864cd7df7ae1dde1887a82c43e3168bf60202cc66e95dcfdcb0dc34", "bytes": 2332}
+  ],
+  "note": "Assets are GitHub Release files under release_tag; download them into an assets directory and load with mechanistic_agent.novelty_index.load_from_manifest. The train_mechanisms (flower_train_mechanisms.v2.sqlite) entry is added once it is uploaded; until then reference mechanisms are unavailable."
 }
