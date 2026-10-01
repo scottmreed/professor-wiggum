@@ -136,6 +136,9 @@ CRITICAL VALIDATION REQUIREMENTS:
   * Non-ring aromatic atom annotations (`non-ring atom ... aromatic`) and unkekulizable aromatic systems
   * Fallback-style disconnected placeholders (`C.C.C`, single counterions like `[Cl-]`) as the primary intermediate
 
+Chemistry conventions for choosing the step:
+- Carboxylic acids, esters and amides are nucleophilic at the carbonyl oxygen, not at the OH/OR/NR2 heteroatom. When one attacks an electrophile (a proton, SOCl2, PCl5, POCl3, oxalyl chloride, a sulfonyl or acyl chloride), the carbonyl oxygen forms the new bond and the product is the resonance-stabilized cation, e.g. `RC(=[OH+])OS(=O)Cl` or `RC(=[OH+])OP(Cl)(Cl)(Cl)Cl`. Do not put the charge on the former hydroxyl oxygen (`RC(=O)[OH+]S...`).
+
 SMILES format requirements:
 - Use RDKit-parseable SMILES notation: water=`O`, not `[H2O]`.
 - Never place molecular formulas inside brackets: `[H2SO4]` is invalid, use `OS(=O)(=O)O`.
