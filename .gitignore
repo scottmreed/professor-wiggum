@@ -63,6 +63,8 @@ frontend/dist
 
 # Database and bulk data (live in wiggum-data sibling or local data/ for forkers)
 *.sqlite
+# Novelty index build outputs (GitHub Release assets, never committed)
+*.npz
 *.db
 *.db-journal
 data/flower_curriculum_index.jsonl

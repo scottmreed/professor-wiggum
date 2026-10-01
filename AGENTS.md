@@ -74,6 +74,7 @@ Embedding (no HTTP): `mechanistic_agent.runtime.EmbeddedMechanismRuntime(base_di
   - `POST /api/evals/official-runset`
   - `GET /api/evals/leaderboard/official`
 - `scripts/evolve_harness.py` explicitly rejects holdout eval sets to prevent tuning on leaderboard data.
+- The reaction novelty index (`scripts/build_reaction_novelty_index.py` → `reaction_novelty_index.npz`, a GitHub Release asset named in `novelty_index/manifest.json`) holds test-split rows only as split labels, 64-bit InChIKey-based keys and 256-bit fingerprints: no structures, no mechanisms, no FlowER ids. Its loader (`mechanistic_agent/novelty_index.py`) answers only `{split, kind}` and similarities. The reference mechanism library (`flower_train_mechanisms.sqlite.gz`, `--with-mechanisms`) is **train only**: the builder refuses non-train rows and the loader refuses a library whose `meta.split` is not `train`. Neither is ever written under `training_data/`, and tuning tools never load either. The shared recipe is `mechanistic_agent/reaction_signatures.py` (see `training_data/REGENERATE.md`, "Reaction novelty index").
 
 ## Chemistry Backend Soft Passes
 
