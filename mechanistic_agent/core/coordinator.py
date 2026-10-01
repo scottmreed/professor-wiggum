@@ -2671,6 +2671,34 @@ class RunCoordinator:
             },
         )
 
+    def _balance_reagent_pool(self, state: RunState) -> Dict[str, str]:
+        """Species a step may carry as whole excess equivalents (SMILES -> source):
+        the starting materials plus the acids/bases assess_initial_conditions listed."""
+        pool: Dict[str, str] = {}
+        for smiles in state.run_input.starting_materials or []:
+            if str(smiles or "").strip():
+                pool.setdefault(str(smiles).strip(), "starting_material")
+        try:
+            conditions = self._latest_output_by_step(state.run_id, "initial_conditions") or {}
+        except Exception:  # the pool only widens reconciliation; never fail a validation over it
+            conditions = {}
+        for key, default_role in (("acid_candidates", "acid"), ("base_candidates", "base")):
+            for item in conditions.get(key) or []:
+                if not isinstance(item, dict) or not str(item.get("smiles") or "").strip():
+                    continue
+                role = str(item.get("role") or default_role).strip() or default_role
+                pool.setdefault(str(item["smiles"]).strip(), f"initial_conditions:{role}")
+        return pool
+
+    @staticmethod
+    def _excess_reagent_for_candidate(candidate: BranchCandidate) -> Optional[Dict[str, Any]]:
+        for check in (candidate.validation_summary or {}).get("checks") or []:
+            if isinstance(check, dict) and check.get("name") == "atom_balance":
+                details = check.get("details") if isinstance(check.get("details"), dict) else {}
+                record = details.get("excess_reagent_reconciled")
+                return dict(record) if isinstance(record, dict) else None
+        return None
+
     @staticmethod
     def _balance_flag_for_candidate(candidate: BranchCandidate) -> Optional[Dict[str, Any]]:
         """Flag payload for a step accepted with a deferred atom-balance failure."""
@@ -3328,6 +3356,7 @@ class RunCoordinator:
                     dbe_policy=state.run_config.dbe_policy,
                     enabled_validators=enabled_validators,
                     run_config=state.run_config,
+                    reagent_pool=self._balance_reagent_pool(state),
                 )
             except Exception as exc:
                 self.store.append_event(
@@ -3487,6 +3516,7 @@ class RunCoordinator:
                         dbe_policy=state.run_config.dbe_policy,
                         enabled_validators=enabled_validators,
                         run_config=state.run_config,
+                        reagent_pool=self._balance_reagent_pool(state),
                     )
                     rescued_validation = rescued_validation_result.as_dict()
                     if rescued_validation.get("passed"):
@@ -3861,6 +3891,7 @@ class RunCoordinator:
                 "electron_pushes": list((candidate.mechanism_output or {}).get("electron_pushes") or []),
                 "rescue_additions": dict((candidate.mechanism_output or {}).get("rescue_additions") or {}),
                 "balance_flag": self._balance_flag_for_candidate(candidate),
+                "excess_reagent_reconciled": self._excess_reagent_for_candidate(candidate),
             },
             step_name="mechanism_synthesis",
         )
@@ -5683,6 +5714,7 @@ class RunCoordinator:
             targets=[str(item) for item in state.run_input.products or []],
             steps=path_steps,
             final_state=final_state,
+            reagent_pool=self._balance_reagent_pool(state),
         )
         self.store.append_event(
             state.run_id,
@@ -5715,15 +5747,19 @@ class RunCoordinator:
         if bool(initial_diagnostics.get("balanced")) and audit.get("grade") == "reconciled":
             # Balanced only because of catalysts / recorded additions / resolved flags.
             grade = "reconciled"
-        proton_only = bool(audit.get("proton_reconciled")) and audit.get("grade") == "reconciled"
-        if proton_only:
-            # The residual is exactly n protons from an acid/base catalyst whose
-            # conjugate was not carried in the state: reconciled by the audit, no LLM.
+        # The residual is exactly n protons from an acid/base catalyst whose conjugate
+        # was not carried in the state, or n whole equivalents of a pool species used
+        # in excess (TFA as the solvent): reconciled by the audit, no LLM.
+        audit_reconciled = (
+            bool(audit.get("proton_reconciled") or audit.get("excess_reagent_reconciled"))
+            and audit.get("grade") == "reconciled"
+        )
+        if audit_reconciled:
             grade = "reconciled"
 
         if (
             state.mode == "unverified"
-            and not proton_only
+            and not audit_reconciled
             and not bool(initial_diagnostics.get("balanced"))
             and str(initial_diagnostics.get("classification") or "") != "invalid_species"
         ):
@@ -5784,12 +5820,12 @@ class RunCoordinator:
             self._record_step(state, reconciliation_step)
         elif str(initial_diagnostics.get("classification") or "") == "invalid_species":
             grade = "invalid_species"
-        elif not bool(initial_diagnostics.get("balanced")) and not proton_only:
+        elif not bool(initial_diagnostics.get("balanced")) and not audit_reconciled:
             grade = "approximate"
 
         overall_balance = {
             "grade": grade,
-            "balanced": bool(final_diagnostics.get("balanced")) or proton_only,
+            "balanced": bool(final_diagnostics.get("balanced")) or audit_reconciled,
             "accepted_step_count": len(accepted_rows),
             "initial_balance": initial_diagnostics,
             "final_balance": final_diagnostics,
