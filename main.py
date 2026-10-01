@@ -4346,13 +4346,17 @@ def _publish_eval_runs(
     open_pr: bool = False,
     dry_run: bool = False,
     branch: Optional[str] = None,
+    combine: bool = False,
 ) -> None:
     """Export eval runs to results/, regenerate the public boards, optionally open a PR."""
     from mechanistic_agent import results_publish as rp
 
     base = Path.cwd()
     try:
-        records = [rp.export_eval_run(store, eval_run_id, base_dir=base) for eval_run_id in eval_run_ids]
+        if combine:
+            records = [rp.export_eval_run(store, list(eval_run_ids), base_dir=base)]
+        else:
+            records = [rp.export_eval_run(store, eval_run_id, base_dir=base) for eval_run_id in eval_run_ids]
     except rp.PublishError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -4402,6 +4406,11 @@ def publish_results_cmd(
     regenerate_only: bool = typer.Option(
         False, "--regenerate-only", help="Only rebuild LEADERBOARD.md and the README block from results/runs/"
     ),
+    combine: bool = typer.Option(
+        False,
+        "--combine",
+        help="Publish the given eval runs of ONE tier as a single record (a resumed tier); later runs win per case.",
+    ),
 ) -> None:
     """Publish local eval results to results/ and regenerate the public leaderboard.
 
@@ -4418,7 +4427,7 @@ def publish_results_cmd(
     if not eval_run_ids:
         raise typer.BadParameter("pass at least one --eval-run-id (or --regenerate-only)")
     store = RunStore(resolve_db_path(Path.cwd()))
-    _publish_eval_runs(store, list(eval_run_ids), open_pr=open_pr, dry_run=dry_run, branch=branch)
+    _publish_eval_runs(store, list(eval_run_ids), open_pr=open_pr, dry_run=dry_run, branch=branch, combine=combine)
 
 
 @app.command(name="eval-runset-official")
