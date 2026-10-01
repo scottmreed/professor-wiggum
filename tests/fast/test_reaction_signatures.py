@@ -59,10 +59,46 @@ def test_fixture_metadata() -> None:
     assert len(data["cases"]) == 22
 
 
+# Hashes keyed on InChIKeys or conditions alone, which survive RDKit SMILES-writer changes.
+WRITER_INDEPENDENT_FIELDS = ("inchikey_reaction_hash", "conditions_hash", "executable")
+
+
+def _writer_divergence(participants: List[Dict[str, Any]]) -> List[str]:
+    """Expected canonical SMILES that the running RDKit itself writes differently.
+
+    The SMILES-derived hashes are only reproducible where RDKit's writer still
+    emits the vector's canonical string. RDKit 2025.03 brackets atoms bonded to
+    a transition metal (``O=[Cr](=O)=O`` -> ``[O]=[Cr](=[O])=[O]``), which
+    2023.09 and 2024.03 do not. Round-tripping the expected string through bare
+    RDKit isolates that from a regression in ``normalize_species``.
+    """
+    from rdkit import Chem, rdBase
+
+    changed = []
+    with rdBase.BlockLogs():
+        for p in participants:
+            if not p["valid"]:
+                continue
+            mol = Chem.MolFromSmiles(p["canonical_smiles"])
+            if mol is None or Chem.MolToSmiles(mol, isomericSmiles=True) != p["canonical_smiles"]:
+                changed.append(p["canonical_smiles"])
+    return changed
+
+
 @pytest.mark.parametrize("case", _vectors(), ids=lambda c: json.dumps(c["payload"], sort_keys=True)[:80])
 def test_v2_hash_parity(case: Dict[str, Any]) -> None:
     expected = case["expected"]
     result = rs.reaction_hashes(_roles_from_payload(case["payload"]), case["payload"].get("conditions") or {})
+    divergent = _writer_divergence(expected["participants"])
+    if divergent:
+        for name in WRITER_INDEPENDENT_FIELDS:
+            assert getattr(result, name) == expected[name], name
+        observed_keys = [(p.role, p.index, p.species.inchikey, p.species.valid) for p in result.participants]
+        assert observed_keys == [(p["role"], p["index"], p["inchikey"], p["valid"]) for p in expected["participants"]]
+        pytest.skip(
+            f"RDKit {rs.RDKIT_VERSION} writes {divergent} differently from the vectors' RDKit; "
+            "SMILES-derived hashes are not comparable (InChIKey-based fields checked)"
+        )
     for name in HASH_FIELDS:
         assert getattr(result, name) == expected[name], name
     observed = [

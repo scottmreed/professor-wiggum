@@ -37,8 +37,16 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS_DIR = Path(__file__).resolve().parent
+# Spawn workers unpickle ``_process`` by module name and inherit this sys.path.
+# When the script is imported (not run as __main__) that name is
+# ``build_reaction_novelty_index``, which only resolves with scripts/ on the
+# path; without it every worker dies on its first task and Pool waits forever.
+# Appended, so script names never shadow installed packages.
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.append(str(SCRIPTS_DIR))
 
 from mechanistic_agent.flower_curriculum import (  # noqa: E402
     ConversionError,
