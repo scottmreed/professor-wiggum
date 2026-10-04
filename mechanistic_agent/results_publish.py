@@ -29,6 +29,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from mechanistic_agent.agent_bridge import origin_integrity_contaminated
+from mechanistic_agent.quality_scoring import (
+    QUALITY_VERSION,
+    WEIGHTS as QUALITY_WEIGHTS,
+    _baseline_snapshot,
+    quality_or_error,
+    summarize as summarize_quality,
+)
 from mechanistic_agent.rescoring import default_expected_resolver
 from mechanistic_agent.scoring import (
     DEFAULT_SCORING_VERSION,
@@ -38,7 +45,7 @@ from mechanistic_agent.scoring import (
 )
 from mechanistic_agent.smiles_utils import strip_atom_mapping_list
 
-RECORD_SCHEMA = "wiggum.published_eval_run@1"
+RECORD_SCHEMA = "wiggum.published_eval_run@1"  # @1 records without ``scoring`` are legacy-scored
 RESULTS_DIR = Path("results")
 RUNS_DIR = RESULTS_DIR / "runs"
 MECHANISMS_DIR = RESULTS_DIR / "mechanisms"
@@ -115,7 +122,11 @@ def _pick_hardest(cases: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         return None
     return max(
         solved,
-        key=lambda c: (int(c.get("known_steps") or 0), float(c.get("score") or 0.0), int(c.get("accepted_steps") or 0)),
+        key=lambda c: (
+            int(c.get("known_steps") or 0),
+            float(c.get("quality_points") if c.get("quality_points") is not None else (c.get("score") or 0.0) * 1000),
+            int(c.get("accepted_steps") or 0),
+        ),
     )
 
 
@@ -138,6 +149,41 @@ def _refuse_contaminated(block: Optional[Dict[str, Any]], eval_run_id: str, wher
         raise PublishError(
             f"eval run {eval_run_id} is contaminated per the responder-integrity audit ({where}); refusing to publish"
         )
+
+
+def _case_quality(summary: Dict[str, Any], snapshot: Optional[Dict[str, Any]], expected: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The case's quality_v1 result: the stored one, else computed from the snapshot (harness) or
+    the saved baseline steps. None when there is nothing to re-check (a legacy baseline)."""
+    stored = summary.get("quality")
+    if isinstance(stored, dict) and stored.get("version") == QUALITY_VERSION and "error" not in stored:
+        return stored
+    if not expected:
+        return None
+    snapshot = snapshot or _baseline_snapshot(summary, expected)
+    if not snapshot:
+        return None
+    return quality_or_error(snapshot, expected)
+
+
+def _quality_fields(qualities: List[Optional[Dict[str, Any]]], legacy_summary: Dict[str, Any]) -> Dict[str, Any]:
+    """Record-level scoring fields: quality_v1 when every case has a quality result, else legacy."""
+    if not qualities or any(q is None for q in qualities):
+        return {"scoring": "legacy", "summary": legacy_summary}
+    quality = summarize_quality([q for q in qualities if q is not None])
+    return {
+        "scoring": QUALITY_VERSION,
+        "summary": {
+            "points": int(round(quality["points"])),
+            "outcome": "pass" if quality["passed"] == quality["cases"] else "partial",
+            "components": quality["components"],
+            "cases": quality["cases"],
+            "targets_reached": quality["targets_reached"],
+            "passed": quality["passed"],
+            "valid_step_fraction": quality["valid_step_fraction"],
+            "avg_latency_s": legacy_summary.get("avg_latency_s"),
+        },
+        "legacy": legacy_summary,
+    }
 
 
 def is_baseline_eval_run(run: Dict[str, Any], results: Sequence[Dict[str, Any]]) -> bool:
@@ -180,6 +226,8 @@ def _export_baseline_run(
     case_ids_hash = metadata.get("selected_case_ids_hash")
     versions = set()
     cases: List[Dict[str, Any]] = []
+    qualities: List[Optional[Dict[str, Any]]] = []
+    resolver = default_expected_resolver(store) if store is not None else None
     for result in results:
         summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
         breakdown = summary.get("scoring_breakdown") if isinstance(summary.get("scoring_breakdown"), dict) else {}
@@ -193,9 +241,14 @@ def _export_baseline_run(
             versions.add(str(summary["scoring_version"]))
         error = summary.get("error")
         score = result.get("score") if result.get("score") is not None else summary.get("score")
+        quality = _case_quality(summary, None, resolver(result, run)) if resolver else None
+        qualities.append(quality)
         cases.append(
             {
                 "case_id": str(result.get("case_id") or ""),
+                "quality_points": quality.get("points") if quality else None,
+                "quality_passed": bool(quality.get("passed")) if quality else None,
+                "valid_steps": f"{quality.get('valid_steps')}/{quality.get('step_count')}" if quality else None,
                 "score": round(float(score or 0.0), 4),
                 "target_reached": bool(breakdown.get("final_product_reached")),
                 "alignment": round(float(breakdown.get("known_alignment_component") or 0.0), 4),
@@ -225,8 +278,8 @@ def _export_baseline_run(
         "holdout": holdout,
         "scoring_version": versions.pop() if len(versions) == 1 else ("mixed" if versions else None),
         "git_commit": _git_commit(base_dir or Path.cwd()),
-        "summary": {
-            # ``points`` here is the mean case score x 1000, not the harness 1000-point rubric.
+        "legacy_summary": {
+            # Legacy: ``points`` is the mean case score x 1000, not a rubric.
             "points": int(round(mean_score * 1000)),
             "outcome": "baseline",
             "cases": n,
@@ -238,6 +291,7 @@ def _export_baseline_run(
             "avg_latency_s": round(sum(c["latency_s"] for c in cases) / n, 1) if n else 0.0,
         },
     }
+    record.update(_quality_fields(qualities, record.pop("legacy_summary")))
     if not holdout:
         record["cases"] = cases
     return record
@@ -307,6 +361,7 @@ def export_eval_run(
     graded_all: List[Dict[str, Any]] = []
     latencies: List[float] = []
     cases: List[Dict[str, Any]] = []
+    qualities: List[Optional[Dict[str, Any]]] = []
     snapshots: Dict[str, Dict[str, Any]] = {}
 
     for result in results:
@@ -322,13 +377,18 @@ def export_eval_run(
         expected = resolver(result, run_for_result.get(id(result), run)) if snapshot else None
         graded = score_snapshot_against_known(snapshot, expected, scoring_version=scoring_version) if (snapshot and expected) else {}
         graded_all.append(graded)
+        summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+        quality = _case_quality(summary, snapshot, expected) if snapshot else None
+        qualities.append(quality)
         known_steps = int((expected or {}).get("n_mechanistic_steps") or len(((expected or {}).get("verified_mechanism") or {}).get("steps") or []) or 0)
         case = {
             "case_id": str(result.get("case_id") or ""),
             "known_steps": known_steps,
             "accepted_steps": int(graded.get("accepted_path_step_count") or 0),
             "target_reached": bool(graded.get("final_product_reached")),
-            "passed": bool(graded.get("passed", result.get("pass_bool"))),
+            "passed": bool(quality.get("passed")) if quality else bool(graded.get("passed", result.get("pass_bool"))),
+            "quality_points": quality.get("points") if quality else None,
+            "valid_steps": f"{quality.get('valid_steps')}/{quality.get('step_count')}" if quality else None,
             "score": round(float(graded.get("score", result.get("score") or 0.0)), 4),
             "latency_s": round(latency / 1000.0, 1),
             "run_status": (snapshot or {}).get("status"),
@@ -357,7 +417,7 @@ def export_eval_run(
         "scoring_version": scoring_version,
         "git_commit": _git_commit(base_dir or Path.cwd()),
         "sources": sources if len(ids) > 1 else None,
-        "summary": {
+        "legacy_summary": {
             "points": points["total"],
             "outcome": points["outcome"],
             "breakdown": {k: points[k] for k in ("product", "pathway", "push", "speed", "methodology")},
@@ -368,6 +428,7 @@ def export_eval_run(
             "avg_latency_s": round(points["avg_latency_ms"] / 1000.0, 1),
         },
     }
+    record.update(_quality_fields(qualities, record.pop("legacy_summary")))
     if holdout:
         return record
     record["cases"] = cases
@@ -489,11 +550,16 @@ def _anchor(record: Dict[str, Any]) -> str:
     return _slug(f"{record.get('date')}-{record.get('run_group')}").lower().replace("_", "-").replace(".", "")
 
 
+def is_quality_record(record: Dict[str, Any]) -> bool:
+    return record.get("scoring") == QUALITY_VERSION
+
+
 def best_by_tier(records: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Best quality_v1 harness record per tier (baselines, holdout and legacy-scored records excluded)."""
     best: Dict[str, Dict[str, Any]] = {}
     for record in records:
         tier = str(record.get("tier") or "")
-        if tier not in TIER_ORDER or record.get("holdout") or _is_baseline_record(record):
+        if tier not in TIER_ORDER or record.get("holdout") or _is_baseline_record(record) or not is_quality_record(record):
             continue
         key = (int(record["summary"]["points"]), str(record.get("date") or ""))
         current = best.get(tier)
@@ -505,19 +571,19 @@ def best_by_tier(records: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]
 def _best_table(records: Sequence[Dict[str, Any]], *, link_prefix: str) -> List[str]:
     best = best_by_tier(records)
     lines = [
-        "| Tier | Best model | Score | Targets reached | Passed | Harness | Date | Details |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Tier | Best model | Thinking | Quality | Valid steps | Passed | Harness | Date | Details |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for tier in TIER_ORDER:
         record = best.get(tier)
         if record is None:
-            lines.append(f"| {tier} | — | — | — | — | — | — | — |")
+            lines.append(f"| {tier} | — | — | — | — | — | — | — | — |")
             continue
         s = record["summary"]
         lines.append(
-            f"| {tier} | {_model_label(record)} | **{s['points']}**/1000 | {s['targets_reached']}/{s['cases']} | "
-            f"{s['passed']}/{s['cases']} | `{record.get('harness')}` | {record.get('date')} | "
-            f"[results]({link_prefix}#{_anchor(record)}) |"
+            f"| {tier} | {_model_label(record)} | {record.get('thinking_level') or 'default'} | **{s['points']}**/1000 | "
+            f"{s['valid_step_fraction']:.0%} | {s['passed']}/{s['cases']} | `{record.get('harness')}` | "
+            f"{record.get('date')} | [results]({link_prefix}#{_anchor(record)}) |"
         )
     return lines
 
@@ -533,39 +599,97 @@ def _hardest_overall(records: Sequence[Dict[str, Any]]) -> Optional[Dict[str, An
 
 
 BASELINES_ANCHOR = "harness-free-baselines"
+COMPARISON_ANCHOR = "harness-vs-baseline"
 BEST_BY_TIER_ANCHOR = "best-model-by-tier"
+LEGACY_ANCHOR = "legacy-scores"
+COMPONENT_LABELS = {
+    "step_validity": "Step validity",
+    "sequence": "Sequence",
+    "electron_conservation": "Electron conservation",
+    "proton_bookkeeping": "Proton sources/sinks",
+    "protonation_states": "Protonation states",
+    "reagents_and_solvent": "Reagents & solvent",
+    "efficiency": "Efficiency",
+    "intermolecular": "Intermolecular",
+}
+RUBRIC_TEXT = [
+    "Every mechanism, harness or harness-free baseline, is scored by the same `quality_v1` rubric "
+    "(`mechanistic_agent/quality_scoring.py`, [docs/scoring_quality_v1.md](docs/scoring_quality_v1.md)). Each accepted "
+    "step is re-checked with the same deterministic code whatever produced it. The target product is given in the "
+    "prompt, so reaching it earns no points: it is a gate (a mechanism that misses a target scores half and cannot "
+    "pass). There are no speed points.",
+    "",
+    "| Component | Points | Earned by |",
+    "|---|---|---|",
+    "| Step validity | 250 | atom and charge balance, arrows that parse into a bond/electron change, SMIRKS that match the stated species, state progress |",
+    "| Sequence | 200 | heavy-atom events in the FlowER reference order; proton-shuttle choice is not penalized |",
+    "| Electron conservation | 100 | every step conserves electrons in the bond-electron matrix |",
+    "| Proton sources/sinks | 100 | protons move between explicit donors and acceptors (no bare H+); net protons close |",
+    "| Protonation states | 100 | no free strong base under acidic conditions, no free strong acid under basic conditions |",
+    "| Reagents & solvent | 100 | every species entering a step was supplied or made earlier; mass and charge close |",
+    "| Efficiency | 100 | no repeated or undone states, no heavy-atom steps beyond the reference |",
+    "| Intermolecular | 50 | proton transfers use an available shuttle (solvent, acid, base) rather than an intramolecular shift |",
+    "",
+    "A case passes when every target is reached, every step is valid, the mechanism closes in mass and charge, "
+    "no state repeats, and it scores at least 700. Harness and baseline rows are compared at the same thinking level.",
+]
 BASELINE_NOTE = (
-    "Baselines make one full-mechanism call with no harness; their steps are not validator-checked, so none "
-    '"passes" and scores cap below a validated harness run.'
+    "Baselines make one full-mechanism call with no harness. Their steps are scored exactly like harness steps, "
+    "so an unbalanced or unparseable step costs the same."
 )
 
 
-def _baseline_table(records: Sequence[Dict[str, Any]]) -> List[str]:
-    baselines = sorted(
-        (r for r in records if _is_baseline_record(r)),
+def _comparison_table(records: Sequence[Dict[str, Any]]) -> List[str]:
+    """Every quality_v1 record (harness and baseline), by tier then score."""
+    rows = sorted(
+        (r for r in records if is_quality_record(r)),
         key=lambda r: (
             BASELINE_TIER_ORDER.index(r["tier"]) if r.get("tier") in BASELINE_TIER_ORDER else 99,
-            -float(r["summary"].get("mean_score") or 0.0),
+            -int(r["summary"]["points"]),
             str(r.get("date") or ""),
         ),
     )
-    if not baselines:
-        return ["No harness-free baselines published yet.", "", BASELINE_NOTE]
+    if not rows:
+        return ["No runs scored with `quality_v1` yet."]
+    header = "| Tier | Model | Mode | Thinking | Cases | Quality | " + " | ".join(
+        COMPONENT_LABELS[k] for k in QUALITY_WEIGHTS
+    ) + " | Valid steps | Passed | Date | Record |"
+    lines = [header, "|" + "---|" * (11 + len(QUALITY_WEIGHTS))]
+    for record in rows:
+        s = record["summary"]
+        mode = "baseline" if _is_baseline_record(record) else f"harness `{record.get('harness')}`"
+        components = " | ".join(f"{float(s['components'].get(k, 0.0)):.0f}" for k in QUALITY_WEIGHTS)
+        link = f"[json]({record['_path']})" if record.get("_path") else "—"
+        lines.append(
+            f"| {record.get('tier') or '—'} | {_model_label(record)} | {mode} | {record.get('thinking_level') or 'default'} | "
+            f"{s['cases']} | **{s['points']}** | {components} | {s['valid_step_fraction']:.0%} | "
+            f"{s['passed']}/{s['cases']} | {record.get('date')} | {link} |"
+        )
+    return lines
+
+
+def _legacy_table(records: Sequence[Dict[str, Any]]) -> List[str]:
+    rows = sorted(
+        (r for r in records if not is_quality_record(r)),
+        key=lambda r: (str(r.get("tier") or ""), str(r.get("date") or "")),
+    )
+    if not rows:
+        return ["None."]
     lines = [
-        "| Model | Thinking | Tier | Cases | Mean score (/1000) | Products reached | Avg latency | Date | Run group |",
+        "| Tier | Model | Mode | Thinking | Cases | Legacy points | Scoring | Date | Record |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
-    for record in baselines:
+    for record in rows:
         s = record["summary"]
-        group = f"`{record.get('run_group')}`"
-        if record.get("_path"):
-            group = f"[{group}]({record['_path']})"
+        mode = "baseline" if _is_baseline_record(record) else f"harness `{record.get('harness')}`"
+        basis = "mean case score × 1000" if _is_baseline_record(record) else "Clawdiators-style rubric (incl. speed)"
+        link = f"[json]({record['_path']})" if record.get("_path") else "—"
         lines.append(
-            f"| {_model_label(record)} | {record.get('thinking_level') or '—'} | {record.get('tier') or '—'} | "
-            f"{s['cases']} | {int(round(float(s.get('mean_score') or 0.0) * 1000))} | "
-            f"{s['targets_reached']}/{s['cases']} | {s['avg_latency_s']} s | {record.get('date')} | {group} |"
+            f"| {record.get('tier') or '—'} | {_model_label(record)} | {mode} | {record.get('thinking_level') or 'default'} | "
+            f"{s.get('cases')} | {s.get('points')} | {basis}, case scoring `{record.get('scoring_version') or 'v2'}` | "
+            f"{record.get('date')} | {link} |"
         )
-    return lines + ["", BASELINE_NOTE]
+    return lines
 
 
 PROVENANCE_NOTE = (
@@ -577,21 +701,16 @@ PROVENANCE_NOTE = (
 
 def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
     ordered = sorted(
-        (r for r in records if not _is_baseline_record(r)),
+        (r for r in records if not _is_baseline_record(r) and is_quality_record(r)),
         key=lambda r: (TIER_ORDER.index(r["tier"]) if r.get("tier") in TIER_ORDER else 99, str(r.get("date"))),
     )
     lines = [
         "# Leaderboard",
         "",
         "Blind mechanism prediction on FlowER-derived development tiers (easy = 1–2 steps, medium = 3, hard = 4–10), "
-        "10 cases per tier. Deterministic RDKit validators decide every step; a step whose only failure is atom "
-        "balance can be accepted with a flag, and the end-of-mechanism audit must then resolve it (a regenerated "
-        "catalyst, a conjugate acid/base pair, a recorded reagent) or the case fails. Score is the "
-        "1000-point eval rubric: product 300, pathway 300, electron pushes 200, speed 100, methodology 100 "
-        "(WIN ≥ 700). Pathway credit uses scoring v3 (each record states its `scoring_version`): a path that "
-        "differs from the FlowER reference only in proton bookkeeping (an intramolecular relay vs a water, "
-        "hydronium or acid/base shuttle) gets full credit, alongside an exact match. Records scored under v2 "
-        "credited only exact FlowER states.",
+        "10 cases per tier.",
+        "",
+        *RUBRIC_TEXT,
         "",
         "Generated by `python main.py publish-results` from the records in [`results/runs/`](results/runs/). "
         "Do not edit by hand.",
@@ -601,10 +720,13 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
         "",
         *_best_table(records, link_prefix=""),
         "",
+        f'<a id="{COMPARISON_ANCHOR}"></a>',
         f'<a id="{BASELINES_ANCHOR}"></a>',
-        "## Harness-free baselines",
+        "## Harness vs harness-free baseline",
         "",
-        *_baseline_table(records),
+        *_comparison_table(records),
+        "",
+        BASELINE_NOTE,
         "",
         PROVENANCE_NOTE,
         "",
@@ -613,40 +735,51 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
     ]
     for record in ordered:
         s = record["summary"]
-        b = s["breakdown"]
+        parts = ", ".join(f"{COMPONENT_LABELS[k].lower()} {float(s['components'].get(k, 0.0)):.0f}" for k in QUALITY_WEIGHTS)
         lines += [
             f'<a id="{_anchor(record)}"></a>',
             f"### {record.get('tier') or 'eval'} · {_model_label(record)} · {record.get('date')}",
             "",
-            f"- **{s['points']}/1000 ({s['outcome']})** — product {b['product']}, pathway {b['pathway']}, "
-            f"pushes {b['push']}, speed {b['speed']}, methodology {b['methodology']}",
+            f"- **{s['points']}/1000** — {parts}",
             f"- Targets reached {s['targets_reached']}/{s['cases']}, passed {s['passed']}/{s['cases']}, "
-            f"mean case score {s['mean_score']:.3f}, {s['avg_latency_s']} s/case",
-            f"- Model id `{record.get('model')}`, harness `{record.get('harness')}`, scoring `{record.get('scoring_version') or 'v2'}`, run group `{record.get('run_group')}`, eval run "
+            f"valid steps {s['valid_step_fraction']:.0%}, thinking `{record.get('thinking_level') or 'default'}`",
+            f"- Model id `{record.get('model')}`, harness `{record.get('harness')}`, run group `{record.get('run_group')}`, eval run "
             f"`{record.get('eval_run_id')}`, commit `{record.get('git_commit')}` — [record]({record.get('_path')})",
         ]
         if record.get("sources"):
-            parts = ", ".join(f"`{src['eval_run_id'][:8]}` ({len(src['cases'])} cases)" for src in record["sources"])
-            lines.append(f"- Combined from resumed eval runs: {parts}")
+            srcs = ", ".join(f"`{src['eval_run_id'][:8]}` ({len(src['cases'])} cases)" for src in record["sources"])
+            lines.append(f"- Combined from resumed eval runs: {srcs}")
         lines.append("")
         if record.get("cases"):
-            lines += ["| Case | Known steps | Accepted steps | Target | Passed | Score |", "|---|---|---|---|---|---|"]
+            lines += ["| Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |",
+                      "|---|---|---|---|---|---|---|"]
             for case in record["cases"]:
+                q = case.get("quality_points")
                 lines.append(
-                    f"| `{case['case_id']}` | {case['known_steps']} | {case['accepted_steps']} | "
-                    f"{'✓' if case['target_reached'] else '✗'} | {'✓' if case['passed'] else '✗'} | {case['score']:.3f} |"
+                    f"| `{case['case_id']}` | {case['known_steps']} | {case['accepted_steps']} | {case.get('valid_steps') or '—'} | "
+                    f"{'✓' if case['target_reached'] else '✗'} | {'✓' if case['passed'] else '✗'} | "
+                    f"{f'{q:.0f}' if q is not None else '—'} |"
                 )
             lines.append("")
         hardest = record.get("hardest_solved") or {}
         if hardest.get("image"):
             lines += [
                 f"Hardest mechanism solved: `{hardest['case_id']}` — reference {hardest['known_steps']} steps, "
-                f"predicted {hardest['accepted_steps']} steps, case score {hardest['score']:.3f}",
+                f"predicted {hardest['accepted_steps']} steps",
                 "",
                 f"![{hardest['case_id']}]({hardest['image']})",
                 "",
             ]
     lines += [
+        f'<a id="{LEGACY_ANCHOR}"></a>',
+        "## Legacy scores",
+        "",
+        "Records published before `quality_v1`, or baselines run before their steps were saved, keep their old "
+        "numbers here. They are not comparable with the table above: harness rows used a Clawdiators-style "
+        "1000-point rubric with product and speed points, and baseline rows used the mean case score × 1000.",
+        "",
+        *_legacy_table(records),
+        "",
         "---",
         "",
         "Official holdout results and the historical Clawdiators arena material are in "
@@ -664,7 +797,7 @@ def render_readme_block(records: Sequence[Dict[str, Any]]) -> str:
             "",
             f"Hardest mechanism solved so far: [`{h['case_id']}`, a {h['known_steps']}-step mechanism "
             f"({hardest.get('tier')} tier, {_model_plain(hardest)})]({h['image']}). "
-            "Full results: [LEADERBOARD.md](LEADERBOARD.md).",
+            "Scored with the `quality_v1` rubric; harness vs baseline and legacy scores: [LEADERBOARD.md](LEADERBOARD.md).",
         ]
     lines += ["", PROVENANCE_NOTE]
     return "\n".join(lines)

@@ -159,6 +159,8 @@ def _steps_to_synthetic_snapshot(
                     "predicted_intermediate": predicted,
                     "contains_target_product": contains_product,
                     "validation_summary": None,
+                    "reaction_smirks": str(step.get("reaction_smirks") or ""),
+                    "electron_pushes": list(step.get("electron_pushes") or []),
                 },
             }
         )
@@ -457,6 +459,8 @@ def score_baseline_result(
     """Score a baseline run result using the standard harness scorer."""
     from mechanistic_agent.scoring import score_snapshot_against_known
 
+    from mechanistic_agent.quality_scoring import quality_or_error
+
     snapshot = result.get("snapshot") or {}
     graded = score_snapshot_against_known(snapshot, expected)
     return {
@@ -464,6 +468,10 @@ def score_baseline_result(
         "passed": graded["passed"],
         "scoring_breakdown": graded,
         "scoring_version": graded.get("scoring_version"),
+        # quality_v1 re-checks every baseline step with the same deterministic code as harness
+        # steps; the raw steps are kept so the run can be re-scored later.
+        "quality": quality_or_error(snapshot, expected),
+        "baseline_steps": list(result.get("raw_steps") or []),
         "step_count": len(result.get("raw_steps") or []),
         "mechanism_type": result.get("mechanism_type"),
         "error": result.get("error"),

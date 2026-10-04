@@ -9,13 +9,13 @@ A local-first agent that predicts **arrow-pushing (elementary-step) mechanisms**
 We are focusing on one top-tier model — currently **Claude Opus 5.5** — to improve the harness, and will back-fill cheaper models later. Scores are the 1000-point eval rubric on 10-case slices of FlowER-derived tiers (easy = 1–2 steps, medium = 3, hard = 4–10; WIN ≥ 700). Links: [Claude Opus 5.5 by tier](LEADERBOARD.md#best-model-by-tier) · [harness-free baselines (Opus 5.5 vs Opus 4.6)](LEADERBOARD.md#harness-free-baselines).
 
 <!-- leaderboard:start -->
-| Tier | Best model | Score | Targets reached | Passed | Harness | Date | Details |
-|---|---|---|---|---|---|---|---|
-| easy | **Claude Opus 5.5** † | **971**/1000 | 10/10 | 10/10 | `jev_reaction_type` | 2026-09-30 | [results](LEADERBOARD.md#2026-09-30-bridge-opus55-jev-deferred-easy-final3) |
-| medium | **Claude Opus 5.5** † | **950**/1000 | 10/10 | 10/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-medium) |
-| hard | **Claude Opus 5.5** † | **852**/1000 | 10/10 | 9/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-hard) |
+| Tier | Best model | Thinking | Quality | Valid steps | Passed | Harness | Date | Details |
+|---|---|---|---|---|---|---|---|---|
+| easy | **Claude Opus 5.5** † | default | **976**/1000 | 86% | 8/10 | `jev_reaction_type` | 2026-09-30 | [results](LEADERBOARD.md#2026-09-30-bridge-opus55-jev-deferred-easy-final3) |
+| medium | **Claude Opus 5.5** † | default | **965**/1000 | 100% | 10/10 | `jev_reaction_type` | 2026-09-30 | [results](LEADERBOARD.md#2026-09-30-bridge-opus55-jev-deferred-medium-final2-resumed) |
+| hard | **Claude Opus 5.5** † | default | **927**/1000 | 96% | 8/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-hard) |
 
-Hardest mechanism solved so far: [`flower_002647`, a 4-step mechanism (hard tier, Claude Opus 5.5)](results/mechanisms/bridge_opus55_jev_hard__flower_002647.png). Full results: [LEADERBOARD.md](LEADERBOARD.md).
+Hardest mechanism solved so far: [`flower_007666`, a 4-step mechanism (hard tier, Claude Opus 5.5)](results/mechanisms/bridge_opus55_jev_hard__flower_007666.png). Scored with the `quality_v1` rubric; harness vs baseline and legacy scores: [LEADERBOARD.md](LEADERBOARD.md).
 
 † Answered through the [agent bridge](docs/agent_bridge.md): each model call went to the declared model in a fresh session that saw only the prompt (`responder_saw_ground_truth: false`). Cost is opaque, so these rows make no cost claim.
 <!-- leaderboard:end -->

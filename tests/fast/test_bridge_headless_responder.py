@@ -58,3 +58,9 @@ def test_usage_limit_waits_instead_of_failing(monkeypatch) -> None:
     )
     assert out["tool_calls"][0]["arguments"] == {"steps": [1]}
     assert sleeps == [60]
+
+
+def test_effort_is_passed_only_when_set() -> None:
+    assert "--effort" not in hr.build_command("claude-opus-5-5")
+    command = hr.build_command("claude-opus-5-5", "claude", "low")
+    assert command[command.index("--effort") + 1] == "low"

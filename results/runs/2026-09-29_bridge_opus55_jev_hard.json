@@ -20,9 +20,29 @@
   "case_ids_hash": "f5fed8810a911fe14fc591f224a1c34c3da936adbd3295ee1515b08665bf9af0",
   "holdout": false,
   "scoring_version": "v3",
-  "git_commit": "22f391a",
+  "git_commit": "ec8e137",
   "sources": null,
+  "scoring": "quality_v1",
   "summary": {
+    "points": 927,
+    "outcome": "partial",
+    "components": {
+      "step_validity": 246.7,
+      "sequence": 165.8,
+      "electron_conservation": 100.0,
+      "proton_bookkeeping": 90.0,
+      "protonation_states": 95.0,
+      "reagents_and_solvent": 94.4,
+      "efficiency": 96.0,
+      "intermolecular": 39.2
+    },
+    "cases": 10,
+    "targets_reached": 10,
+    "passed": 8,
+    "valid_step_fraction": 0.9583,
+    "avg_latency_s": 334.1
+  },
+  "legacy": {
     "points": 852,
     "outcome": "WIN",
     "breakdown": {
@@ -34,7 +54,7 @@
     },
     "cases": 10,
     "targets_reached": 10,
-    "passed": 9,
+    "passed": 8,
     "mean_score": 0.8723,
     "avg_latency_s": 334.1
   },
@@ -45,6 +65,8 @@
       "accepted_steps": 4,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "4/4",
       "score": 1.0,
       "latency_s": 249.8,
       "run_status": "completed"
@@ -55,6 +77,8 @@
       "accepted_steps": 4,
       "target_reached": true,
       "passed": true,
+      "quality_points": 975.0,
+      "valid_steps": "4/4",
       "score": 1.0,
       "latency_s": 249.2,
       "run_status": "completed"
@@ -65,6 +89,8 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": false,
+      "quality_points": 818.8,
+      "valid_steps": "4/5",
       "score": 0.4215,
       "latency_s": 356.1,
       "run_status": "completed"
@@ -75,6 +101,8 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "5/5",
       "score": 0.9025,
       "latency_s": 376.9,
       "run_status": "completed"
@@ -85,6 +113,8 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "5/5",
       "score": 0.9025,
       "latency_s": 360.4,
       "run_status": "completed"
@@ -95,6 +125,8 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "5/5",
       "score": 0.9025,
       "latency_s": 358.2,
       "run_status": "completed"
@@ -105,6 +137,8 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
+      "quality_points": 972.0,
+      "valid_steps": "5/5",
       "score": 0.9,
       "latency_s": 374.8,
       "run_status": "completed"
@@ -114,7 +148,9 @@
       "known_steps": 4,
       "accepted_steps": 6,
       "target_reached": true,
-      "passed": true,
+      "passed": false,
+      "quality_points": 804.5,
+      "valid_steps": "5/6",
       "score": 0.7917,
       "latency_s": 407.6,
       "run_status": "completed"
@@ -125,6 +161,8 @@
       "accepted_steps": 4,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "4/4",
       "score": 1.0,
       "latency_s": 243.5,
       "run_status": "completed"
@@ -135,35 +173,37 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "5/5",
       "score": 0.9025,
       "latency_s": 364.8,
       "run_status": "completed"
     }
   ],
   "hardest_solved": {
-    "case_id": "flower_002647",
+    "case_id": "flower_007666",
     "known_steps": 4,
     "accepted_steps": 4,
     "score": 1.0,
     "starting_materials": [
-      "CC(=O)NN",
-      "O=C(O)c1ccc2occc2c1"
+      "O=C(O)c1cc2c(Br)coc2cn1",
+      "CC(=O)NN"
     ],
     "products": [
-      "CC(=O)NNC(=O)c1ccc2occc2c1",
+      "CC(=O)NNC(=O)c1cc2c(Br)coc2cn1",
       "O"
     ],
     "steps": [
       {
         "step_index": 1,
         "current_state": [
-          "CC(=O)NN",
-          "O=C(O)c1ccc2occc2c1"
+          "O=C(O)c1cc2c(Br)coc2cn1",
+          "CC(=O)NN"
         ],
         "resulting_state": [
-          "CC(=O)N[NH2+]C([O-])(O)c1ccc2occc2c1"
+          "CC(=O)N[NH2+]C([O-])(O)c1cc2c(Br)coc2cn1"
         ],
-        "reaction_smirks": "[CH3:1][C:2](=[O:3])[NH:4][NH2:5].[C:6](=[O:7])([c:8]1[cH:9][cH:10][c:11]2[o:12][cH:13][cH:14][c:15]2[cH:16]1)[OH:17]>>[CH3:1][C:2](=[O:3])[NH:4][NH2+:5][C:6]([O-:7])([c:8]1[cH:9][cH:10][c:11]2[o:12][cH:13][cH:14][c:15]2[cH:16]1)[OH:17]",
+        "reaction_smirks": "[C:6](=[O:7])([c:8]1[cH:9][c:10]2[c:11]([Br:12])[cH:13][o:14][c:15]2[cH:16][n:17]1)[OH:18].[CH3:1][C:2](=[O:3])[NH:4][NH2:5]>>[CH3:1][C:2](=[O:3])[NH:4][NH2+:5][C:6]([O-:7])([OH:18])[c:8]1[cH:9][c:10]2[c:11]([Br:12])[cH:13][o:14][c:15]2[cH:16][n:17]1",
         "electron_pushes": [
           {
             "electrons": 2,
@@ -189,30 +229,30 @@
       {
         "step_index": 2,
         "current_state": [
-          "CC(=O)N[NH2+]C([O-])(O)c1ccc2occc2c1"
+          "CC(=O)N[NH2+]C([O-])(O)c1cc2c(Br)coc2cn1"
         ],
         "resulting_state": [
-          "CC(=O)NNC(O)(O)c1ccc2occc2c1"
+          "CC(=O)NNC(O)(O)c1cc2c(Br)coc2cn1"
         ],
-        "reaction_smirks": "[CH3:1][C:2](=[O:3])[NH:4][NH+:5]([H:18])[C:6]([O-:7])([OH:17])[c:8]1[cH:9][cH:10][c:11]2[o:12][cH:13][cH:14][c:15]2[cH:16]1>>[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6]([O:7][H:18])([OH:17])[c:8]1[cH:9][cH:10][c:11]2[o:12][cH:13][cH:14][c:15]2[cH:16]1",
+        "reaction_smirks": "[CH3:1][C:2](=[O:3])[NH:4][NH+:5]([H:19])[C:6]([O-:7])([OH:18])[c:8]1[cH:9][c:10]2[c:11]([Br:12])[cH:13][o:14][c:15]2[cH:16][n:17]1>>[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6]([O:7][H:19])([OH:18])[c:8]1[cH:9][c:10]2[c:11]([Br:12])[cH:13][o:14][c:15]2[cH:16][n:17]1",
         "electron_pushes": [
           {
             "electrons": 2,
             "kind": "lone_pair",
-            "notation": "lp:7>18",
+            "notation": "lp:7>19",
             "source_atom": "7",
-            "target_atom": "18"
+            "target_atom": "19"
           },
           {
             "electrons": 2,
             "kind": "sigma_bond",
-            "notation": "sigma:5-18>5",
+            "notation": "sigma:5-19>5",
             "source_bond": [
               "5",
-              "18"
+              "19"
             ],
             "target_atom": "5",
-            "through_atom": "18"
+            "through_atom": "19"
           }
         ],
         "acceptance_kind": "validated"
@@ -220,13 +260,13 @@
       {
         "step_index": 3,
         "current_state": [
-          "CC(=O)NNC(O)(O)c1ccc2occc2c1"
+          "CC(=O)NNC(O)(O)c1cc2c(Br)coc2cn1"
         ],
         "resulting_state": [
-          "CC(=O)NNC(=[OH+])c1ccc2occc2c1",
+          "CC(=O)NNC(=[OH+])c1cc2c(Br)coc2cn1",
           "[OH-]"
         ],
-        "reaction_smirks": "[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6]([OH:7])([OH:17])[c:8]1[cH:9][cH:10][c:11]2[o:12][cH:13][cH:14][c:15]2[cH:16]1>>[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6](=[OH+:7])[c:8]1[cH:9][cH:10][c:11]2[o:12][cH:13][cH:14][c:15]2[cH:16]1.[OH-:17]",
+        "reaction_smirks": "[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6]([OH:7])([OH:18])[c:8]1[cH:9][c:10]2[c:11]([Br:12])[cH:13][o:14][c:15]2[cH:16][n:17]1>>[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6](=[OH+:7])[c:8]1[cH:9][c:10]2[c:11]([Br:12])[cH:13][o:14][c:15]2[cH:16][n:17]1.[OH-:18]",
         "electron_pushes": [
           {
             "electrons": 2,
@@ -238,13 +278,13 @@
           {
             "electrons": 2,
             "kind": "sigma_bond",
-            "notation": "sigma:6-17>17",
+            "notation": "sigma:6-18>18",
             "source_bond": [
               "6",
-              "17"
+              "18"
             ],
-            "target_atom": "17",
-            "through_atom": "17"
+            "target_atom": "18",
+            "through_atom": "18"
           }
         ],
         "acceptance_kind": "validated"
@@ -252,28 +292,28 @@
       {
         "step_index": 4,
         "current_state": [
-          "CC(=O)NNC(=[OH+])c1ccc2occc2c1",
+          "CC(=O)NNC(=[OH+])c1cc2c(Br)coc2cn1",
           "[OH-]"
         ],
         "resulting_state": [
-          "CC(=O)NNC(=O)c1ccc2occc2c1",
+          "CC(=O)NNC(=O)c1cc2c(Br)coc2cn1",
           "O"
         ],
-        "reaction_smirks": "[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6](=[O+:7][H:18])[c:8]1[cH:9][cH:10][c:11]2[o:12][cH:13][cH:14][c:15]2[cH:16]1.[OH-:17]>>[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6](=[O:7])[c:8]1[cH:9][cH:10][c:11]2[o:12][cH:13][cH:14][c:15]2[cH:16]1.[H:18][OH:17]",
+        "reaction_smirks": "[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6](=[O+:7][H:19])[c:8]1[cH:9][c:10]2[c:11]([Br:12])[cH:13][o:14][c:15]2[cH:16][n:17]1.[OH-:18]>>[CH3:1][C:2](=[O:3])[NH:4][NH:5][C:6](=[O:7])[c:8]1[cH:9][c:10]2[c:11]([Br:12])[cH:13][o:14][c:15]2[cH:16][n:17]1.[H:19][OH:18]",
         "electron_pushes": [
           {
             "electrons": 2,
             "kind": "lone_pair",
-            "notation": "lp:17>18",
-            "source_atom": "17",
-            "target_atom": "18"
+            "notation": "lp:18>19",
+            "source_atom": "18",
+            "target_atom": "19"
           },
           {
             "electrons": 2,
             "kind": "sigma_bond",
-            "notation": "sigma:18-7>7",
+            "notation": "sigma:19-7>7",
             "source_bond": [
-              "18",
+              "19",
               "7"
             ],
             "target_atom": "7",
@@ -283,6 +323,6 @@
         "acceptance_kind": "validated"
       }
     ],
-    "image": "results/mechanisms/bridge_opus55_jev_hard__flower_002647.png"
+    "image": "results/mechanisms/bridge_opus55_jev_hard__flower_007666.png"
   }
 }

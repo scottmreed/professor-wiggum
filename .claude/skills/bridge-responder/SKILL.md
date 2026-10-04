@@ -72,6 +72,13 @@ For every `DISPATCH <stem>`:
 
 Budgets: keep about 6 subagents in flight at most. Expect 40 to 140 s per call and 15 to 20 calls per 4 to 6 step case. If the account hits a usage limit, stop dispatching. Pending calls then time out and fail loudly, and you re-run those cases later. Never switch to a headless `claude -p` responder on your own.
 
+### Thinking parity (required when comparing harness and baseline)
+
+- Record the same `--thinking-level` on the `eval` and the `baseline` processes of a comparison.
+- Dispatch every call to the agent definition with the matching effort: `subagent_type: "bridge-model-low"` or `"bridge-model-medium"` (`.claude/agents/`, `effort` frontmatter, tools limited to Read and Write).
+- Agent definitions load when a session starts. If the type is missing, the session predates the files: restart it, or say which effort the run actually used. Never label a run with a level it did not use.
+- The run's scores use the `quality_v1` rubric (`docs/scoring_quality_v1.md`). `eval` and `baseline` print the rubric summary at the end.
+
 ### Headless responder (only when the user asks for one)
 
 If the user explicitly asks for a headless responder instead of subagents, use the committed script and nothing hand-rolled:
@@ -80,7 +87,7 @@ If the user explicitly asks for a headless responder instead of subagents, use t
 python main.py bridge-serve --command "python scripts/bridge_headless_responder.py"
 ```
 
-Its isolation is fixed in code (`HEADLESS_ISOLATION_FLAGS`):
+Set `RESPONDER_EFFORT=<level>` to the run's `--thinking-level`. Its isolation is fixed in code (`HEADLESS_ISOLATION_FLAGS`):
 - `--tools ""`: no built-in tools at all.
 - `--restricted`: user, project and local settings, hooks and plugins are ignored.
 - `--strict-mcp-config` with no `--mcp-config`: no MCP servers.

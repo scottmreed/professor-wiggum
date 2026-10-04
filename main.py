@@ -358,9 +358,34 @@ def _filter_leaderboard_rows(items: List[Dict[str, object]], *, completed_only: 
     return [item for item in items if str(item.get("status") or "").lower() == "completed"]
 
 
-from mechanistic_agent.scoring import (  # noqa: E402  (rubric lives with the scorer)
-    HARNESS_SPEED_CALIBRATION_MS,
-    graded_to_points as _graded_to_clawdiators_pts,
+from mechanistic_agent.quality_scoring import (  # noqa: E402
+    WEIGHTS as QUALITY_WEIGHTS,
+    quality_or_error,
+    summarize as summarize_quality,
+)
+
+
+def _echo_quality_summary(title: str, results: List[Dict[str, Any]]) -> None:
+    """Print the quality_v1 rubric (mean points per component) for an eval or baseline run."""
+    summary = summarize_quality(results)
+    sep = "=" * 64
+    typer.echo("")
+    typer.echo(sep)
+    typer.echo(f"  {title}")
+    typer.echo(sep)
+    for name, weight in QUALITY_WEIGHTS.items():
+        typer.echo(f"  {name:<24}: {summary['components'].get(name, 0.0):6.1f} / {weight}")
+    typer.echo(sep)
+    typer.echo(f"  TOTAL   : {summary['points']:6.1f} / 1000   (product supplied: a gate, not points)")
+    typer.echo(
+        f"  Passed  : {summary['passed']}/{summary['cases']}   targets reached {summary['targets_reached']}/{summary['cases']}"
+        f"   valid steps {summary['valid_step_fraction']:.0%}"
+    )
+    typer.echo(sep)
+
+
+from mechanistic_agent.scoring import (  # noqa: E402  (legacy Clawdiators rubric, DB leaderboard only)
+    HARNESS_SPEED_CALIBRATION_MS,  # noqa: F401
     latency_to_speed_pts as _latency_to_speed_pts,
 )
 
@@ -369,8 +394,7 @@ def _leaderboard_row_to_pts(row: Dict[str, Any]) -> Dict[str, Any]:
     """Convert a leaderboard DB row (0.0-1.0 metrics) to a clawdiators 1000-pt display dict.
 
     This is an approximation: the DB stores mean_quality_score and deterministic_pass_rate
-    but not the full component breakdown. Use _graded_to_clawdiators_pts() during eval for
-    the authoritative per-component breakdown.
+    but not the full component breakdown (legacy display; the published rubric is quality_v1).
     """
     quality   = float(row.get("weighted_quality_score") or row.get("mean_quality_score") or 0.0)
     pass_rate = float(row.get("weighted_pass_rate") or row.get("deterministic_pass_rate") or 0.0)
@@ -1521,6 +1545,7 @@ def _run_baseline_eval_set(
 
     completed = 0
     passed_count = 0
+    baseline_quality: List[Dict[str, Any]] = []
     failed = 0
     errored = 0
     prompt_hashes: List[str] = []
@@ -1563,6 +1588,8 @@ def _run_baseline_eval_set(
                 "step_count": graded.get("step_count"),
                 "mechanism_type": graded.get("mechanism_type"),
                 "scoring_breakdown": graded.get("scoring_breakdown", {}),
+                "quality": graded.get("quality"),
+                "baseline_steps": graded.get("baseline_steps"),
                 "error": graded.get("error"),
                 "eval_mode": "baseline",
                 "scoring_version": graded.get("scoring_version"),
@@ -1599,6 +1626,8 @@ def _run_baseline_eval_set(
                 latency_ms=latency_ms,
                 summary=summary,
             )
+            if isinstance(graded.get("quality"), dict):
+                baseline_quality.append(graded["quality"])
             completed += 1
             if case_passed:
                 passed_count += 1
@@ -1629,7 +1658,13 @@ def _run_baseline_eval_set(
             typer.echo(f"  [{completed}] {case_id}: FAILED ({exc})")
 
     store.set_eval_run_status(eval_run_id, "completed")
+    if baseline_quality:
+        _echo_quality_summary(
+            f"Quality rubric (harness-free baseline) — {model_name}, thinking={thinking_level or 'default'}",
+            baseline_quality,
+        )
     return {
+        "quality": summarize_quality(baseline_quality) if baseline_quality else None,
         "eval_run_id": eval_run_id,
         "model": model_name,
         "thinking_level": thinking_level,
@@ -3588,6 +3623,7 @@ def _execute_harness_eval_run(
     completed = 0
     failed = 0
     all_graded: List[Dict[str, Any]] = []
+    all_quality: List[Dict[str, Any]] = []
     all_latencies: List[float] = []
     backend_usage_counts: Dict[str, int] = {}
     backend_fallback_cases = 0
@@ -3694,6 +3730,9 @@ def _execute_harness_eval_run(
                 mapping_agreement=graded.get("mapping_agreement"),
                 scoring_version=DEFAULT_SCORING_VERSION,
             )
+            if expected:
+                summary["quality"] = quality_or_error(snapshot, expected)
+                all_quality.append(summary["quality"])
             chemistry = summary.get("chemistry_backend") if isinstance(summary.get("chemistry_backend"), dict) else {}
             if chemistry:
                 used_counts = chemistry.get("backend_used_counts")
@@ -3765,33 +3804,8 @@ def _execute_harness_eval_run(
 
     store.set_eval_run_status(eval_run_id, "completed")
 
-    if all_graded and not json_output:
-        pts = _graded_to_clawdiators_pts(all_graded, all_latencies)
-        sep = "=" * 60
-        typer.echo("")
-        typer.echo(sep)
-        typer.echo(f"  Score Summary (harness eval) — {model_name}")
-        typer.echo(sep)
-        typer.echo(f"  Product Accuracy     : {pts['n_product_hit']:2}/{pts['n_total']} reached   → {pts['product']:3} pts  (30%)")
-        typer.echo(f"  Pathway Coverage     : avg {pts['pathway']/300:.3f}           → {pts['pathway']:3} pts  (30%)")
-        typer.echo(f"  Electron Push Quality: avg {pts['push']/200:.3f}           → {pts['push']:3} pts  (20%)")
-        typer.echo(f"  Speed                : avg {pts['avg_latency_ms']/1000:.1f}s/case       → {pts['speed']:3} pts  (10%)")
-        typer.echo(f"  Methodology          : present              → {pts['methodology']:3} pts  (10%)")
-        typer.echo(sep)
-        typer.echo(f"  TOTAL            : {pts['total']:4} / 1000")
-        typer.echo(f"  PREDICTED OUTCOME: {pts['outcome']}  (win ≥700 / draw 400-699 / loss <400)")
-        typer.echo(sep)
-        typer.echo("")
-        if HARNESS_SPEED_CALIBRATION_MS <= 0:
-            typer.echo("  NOTE: HARNESS_SPEED_CALIBRATION_MS not set — speed is uncalibrated (100 pts).")
-            typer.echo("        Run opus-4.6 dry-run and set constant in main.py to enable live speed scoring.")
-        else:
-            typer.echo(f"  Speed calibration: {HARNESS_SPEED_CALIBRATION_MS}ms/case (opus-4.6 benchmark = 75 pts)")
-        typer.echo("  Harness proxy mapping:")
-        typer.echo("    Product Accuracy  ← final_product_reached (harness path score)")
-        typer.echo("    Pathway Coverage  ← known_alignment_component (step alignment avg)")
-        typer.echo("    Push Quality      ← step_validity_component (validation+mapping avg)")
-        typer.echo(sep)
+    if all_quality and not json_output:
+        _echo_quality_summary(f"Quality rubric (harness eval) — {model_name}, thinking={thinking_level or 'default'}", all_quality)
 
     result_obj = {
         "eval_run_id": eval_run_id,
@@ -3810,10 +3824,33 @@ def _execute_harness_eval_run(
         "backend_fallback_cases": backend_fallback_cases,
         "backend_error_counts": backend_error_counts,
         "planner_metadata": planner_metadata or {},
+        "quality": summarize_quality(all_quality) if all_quality else None,
     }
     if json_output:
         typer.echo(json.dumps(result_obj, indent=2))
     return result_obj
+
+
+@app.command(name="rescore-quality")
+def rescore_quality_cmd(
+    eval_run_ids: List[str] = typer.Option(..., "--eval-run-id", help="Eval run(s) to score; repeatable."),
+    apply: bool = typer.Option(False, "--apply", help="Save summary.quality on each result (default: report only)."),
+) -> None:
+    """Score stored eval results with the quality_v1 rubric (harness from snapshots, baselines from saved steps)."""
+    from mechanistic_agent.quality_scoring import rescore_quality
+
+    base = Path(__file__).resolve().parent
+    store = RunStore(resolve_db_path(base))
+    rows = rescore_quality(store, eval_run_ids, write=apply)
+    for row in rows:
+        detail = f"{row['points']:7.1f} passed={row['passed']}" if row.get("status") == "scored" else row.get("status")
+        typer.echo(f"  {row['eval_run_id'][:8]} {row['mode']:<8} {row['case_id']}: {detail}")
+    scored = [r for r in rows if r.get("status") == "scored"]
+    if scored:
+        mean = sum(float(r["points"] or 0.0) for r in scored) / len(scored)
+        typer.echo(f"quality_v1: {len(scored)} scored, mean {mean:.1f}/1000, "
+                   f"{sum(1 for r in scored if r['passed'])} passed; {len(rows) - len(scored)} legacy/unscorable"
+                   + ("" if apply else " (report only; pass --apply to save)"))
 
 
 @app.command(name="rescore-eval-results")

@@ -68,9 +68,30 @@ _GRADES = {
 _KNOWN = {"c_easy": 1, "c_hard": 4, "c_fail": 6}
 
 
+def _quality(points: float, passed: bool, reached: bool, valid: int, steps: int) -> Dict[str, Any]:
+    components = {k: round(points * w / 1000.0, 1) for k, w in rp.QUALITY_WEIGHTS.items()}
+    return {"version": rp.QUALITY_VERSION, "points": points, "passed": passed, "components": components,
+            "targets": {"all_reached": reached}, "valid_steps": valid, "step_count": steps}
+
+
+_QUALITY = {
+    "r1": _quality(990.0, True, True, 1, 1),
+    "r2": _quality(910.0, True, True, 5, 5),
+    "r3": _quality(300.0, False, False, 1, 2),
+}
+
+
 @pytest.fixture(autouse=True)
 def _stub_grading(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rp, "score_snapshot_against_known", lambda snap, expected, **_: dict(_GRADES[snap["id"]]))
+    real_case_quality = rp._case_quality
+
+    def fake_case_quality(summary, snapshot, expected):
+        if snapshot and snapshot.get("id") in _QUALITY:
+            return dict(_QUALITY[snapshot["id"]])
+        return real_case_quality(summary, snapshot, expected)
+
+    monkeypatch.setattr(rp, "_case_quality", fake_case_quality)
     monkeypatch.setattr(rp, "_accepted_path_record", lambda snap: [{"step_index": 1, "current_state": ["CO"],
                                                                      "resulting_state": ["C=O"]}])
     monkeypatch.setattr(rp, "_git_commit", lambda base: "deadbee")
@@ -87,9 +108,15 @@ def test_export_record_shape_scores_and_hardest_case() -> None:
     assert record["harness"] == "jev_reaction_type"
     assert record["tier"] == "hard"
     assert record["origin"]["declared_underlying_model"].startswith("claude-opus-5-5")
+    assert record["scoring"] == rp.QUALITY_VERSION
     summary = record["summary"]
     assert (summary["cases"], summary["targets_reached"], summary["passed"]) == (3, 2, 2)
-    assert summary["points"] == graded_to_points(list(_GRADES.values()), [60_000, 120_000, 90_000])["total"]
+    assert summary["points"] == round((990 + 910 + 300) / 3)
+    assert summary["valid_step_fraction"] == round(7 / 8, 4)
+    assert set(summary["components"]) == set(rp.QUALITY_WEIGHTS)
+    # The old Clawdiators-style rubric survives only as the record's legacy block.
+    assert record["legacy"]["points"] == graded_to_points(list(_GRADES.values()), [60_000, 120_000, 90_000])["total"]
+    assert {c["case_id"]: c["quality_points"] for c in record["cases"]}["c_hard"] == 910.0
     # Hardest = passed case with the longest reference mechanism (c_fail is longer but failed).
     hardest = record["hardest_solved"]
     assert hardest["case_id"] == "c_hard"
@@ -144,8 +171,9 @@ def test_regenerate_boards_is_idempotent_and_splices_readme(tmp_path: Path) -> N
 
     assert first == second
     leaderboard, readme = first
-    assert "| easy | **Claude Opus 5.5** | **940**/1000" in leaderboard
-    assert "| hard | **Claude Opus 5.5** † | **823**/1000" in leaderboard
+    assert "| easy | **Claude Opus 5.5** | default | **940**/1000" in leaderboard
+    assert "| hard | **Claude Opus 5.5** † | default | **823**/1000" in leaderboard
+    assert "quality_v1" in leaderboard and "Speed" not in leaderboard.split("## Legacy scores")[0]
     assert "| medium | — |" in leaderboard
     assert readme.startswith("# Title\n\nIntro.") and readme.rstrip().endswith("Footer.")
     assert "old" not in readme and "LEADERBOARD.md#" in readme
@@ -305,7 +333,7 @@ def test_holdout_baseline_record_has_no_chemistry(tmp_path: Path) -> None:
     assert "conjugate addition" not in dumped
 
 
-def test_baselines_render_in_their_own_section_not_best_by_tier(tmp_path: Path) -> None:
+def test_legacy_baselines_render_as_legacy_not_best_by_tier(tmp_path: Path) -> None:
     _write_records(tmp_path)
     seeds = [
         ("harness_free_baseline_easy", "general", "anthropic/claude-opus-4.6", "high", None),
@@ -320,8 +348,7 @@ def test_baselines_render_in_their_own_section_not_best_by_tier(tmp_path: Path) 
             db_dir, run_group=group, purpose=purpose, model=model, thinking=thinking, origin=origin,
         )
         record = rp.export_eval_run(store, eval_run_id)
-        if origin:
-            record["summary"]["mean_score"], record["summary"]["points"] = 0.95, 950
+        assert record["scoring"] == "legacy"  # no saved steps: nothing to re-check
         rp.write_record(record, tmp_path, render_image=False)
 
     records = rp.load_records(tmp_path)
@@ -330,22 +357,38 @@ def test_baselines_render_in_their_own_section_not_best_by_tier(tmp_path: Path) 
     assert all(r.get("kind") != "baseline" for r in best.values())
 
     board = rp.render_leaderboard_markdown(records)
-    assert '<a id="best-model-by-tier"></a>' in board
-    assert '<a id="harness-free-baselines"></a>' in board
-    assert board.index("## Best model by tier") < board.index("## Harness-free baselines") < board.index(
+    for anchor in ("best-model-by-tier", "harness-vs-baseline", "harness-free-baselines", "legacy-scores"):
+        assert f'<a id="{anchor}"></a>' in board
+    assert board.index("## Best model by tier") < board.index("## Harness vs harness-free baseline") < board.index(
         "## Published runs"
-    )
-    section = board.split("## Harness-free baselines", 1)[1].split("## Published runs", 1)[0]
-    rows = [line for line in section.splitlines() if line.startswith("| **")]
+    ) < board.index("## Legacy scores")
+    comparison = board.split("## Harness vs harness-free baseline", 1)[1].split("## Published runs", 1)[0]
+    assert "baseline |" not in comparison  # legacy baselines are not mixed with quality_v1 rows
+    legacy = board.split("## Legacy scores", 1)[1]
+    rows = [line for line in legacy.splitlines() if line.startswith("| ") and "baseline" in line]
     assert len(rows) == 4
-    # Sorted by tier (easy, medium, hard, holdout), then score descending: the bridge row leads easy.
-    assert rows[0].startswith("| **Claude Opus 5.5** † | — | easy | 3 | 950 | 1/3 |")
-    assert "| easy |" in rows[1] and "| hard |" in rows[2] and "| holdout |" in rows[3]
-    assert "not validator-checked" in section
+    assert any("**Claude Opus 5.5** †" in row for row in rows)
+    assert "mean case score × 1000" in legacy
     assert board.count(rp.PROVENANCE_NOTE) == 1
-    # Baselines get no per-run harness section.
-    published = board.split("## Published runs", 1)[1]
+    published = board.split("## Published runs", 1)[1].split("## Legacy scores", 1)[0]
     assert "harness_free_baseline" not in published
+
+
+def test_baseline_with_saved_steps_is_scored_like_a_harness_run(tmp_path: Path) -> None:
+    store, eval_run_id = _seed_baseline(tmp_path, run_group="harness_free_baseline_easy")
+    for result in store.list_eval_run_results(eval_run_id):
+        summary = dict(result["summary"])
+        summary["quality"] = _quality(620.0, False, True, 2, 3)
+        store.update_eval_run_result(result["id"], score=result["score"], passed=False, summary=summary)
+
+    record = rp.export_eval_run(store, eval_run_id)
+    assert record["scoring"] == rp.QUALITY_VERSION
+    assert record["summary"]["points"] == 620 and record["summary"]["valid_step_fraction"] == round(6 / 9, 4)
+    assert record["legacy"]["points"] == 400
+    rp.write_record(record, tmp_path, render_image=False)
+    board = rp.render_leaderboard_markdown(rp.load_records(tmp_path))
+    comparison = board.split("## Harness vs harness-free baseline", 1)[1].split("## Published runs", 1)[0]
+    assert "| easy | **Claude Opus 4.6** | baseline | high | 3 | **620** |" in comparison
 
 
 def test_combined_runs_later_run_wins_per_case() -> None:
