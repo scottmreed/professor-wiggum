@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -12,12 +13,24 @@ _EVAL_SET_PATH = _PROJECT_ROOT / "training_data" / "eval_set.json"
 _EVAL_TIERS_PATH = _PROJECT_ROOT / "training_data" / "eval_tiers.json"
 _BASELINE_TIERS_PATH = _PROJECT_ROOT / "training_data" / "baseline_tiers_clawdiator.json"
 # Gitignored, generated, local/CI-optional: holds the actual medium/hard (3-step /
-# 4+-step) records that training_data/eval_tiers.json and
+# 4-10-step) records that training_data/eval_tiers.json and
 # training_data/baseline_tiers_clawdiator.json reference by ID. Not shipped in git
 # (training_data/* is gitignored except an explicit allow-list — see .gitignore), so
 # any check that reads it must skip cleanly when it is absent (fresh checkout / CI
 # without training_data/REGENERATE.md having been run).
 _MULTISTEP_PATH = _PROJECT_ROOT / "training_data" / "flower_mechanisms_multistep.json"
+_PRACTICE_SET_PATH = _PROJECT_ROOT / "training_data" / "practice_eval" / "practice_set.json"
+
+# Tier lists are append-only so 10-case slices already run stay comparable.
+# sha256(json.dumps(ids)) of the lists before the 2026-10-04 extension.
+_FROZEN_PREFIXES = {
+    "medium": (20, "2611391df3fd30bd5da47fe0fe632df299fb68fdaab531c0aacd73a51bec6b03"),
+    "hard": (60, "c346f7d7a71f47495e6cf154c49b5fc25add6e88697ecfe1eabac10c7c66fed2"),
+}
+_EXPECTED_SIZES = {"easy": 100, "medium": 40, "hard": 112}
+# Hard step bands in tier order: (steps, count). FlowER train has only 5 / 7
+# convertible 9- / 10-step mechanisms (see eval_tiers.json _meta).
+_HARD_BANDS = [(4, 20), (5, 20), (6, 20), (7, 20), (8, 20), (9, 5), (10, 7)]
 
 _skip_no_files = pytest.mark.skipif(
     not (_EVAL_SET_PATH.exists() and _EVAL_TIERS_PATH.exists()),
@@ -69,7 +82,7 @@ class TestEvalTiersStructure:
 
     `easy` is sourced from `training_data/eval_set.json` (single-step FlowER
     defaults, always tracked in git). `medium`/`hard` are sourced from
-    `training_data/flower_mechanisms_multistep.json` (3-step / 4+-step FlowER
+    `training_data/flower_mechanisms_multistep.json` (3-step / 4-10-step FlowER
     conversions), which is a gitignored, generated artifact — see
     `training_data/REGENERATE.md`. Checks that need that file are marked with
     `_skip_no_multistep` and skip cleanly when it is absent; checks that only need
@@ -172,6 +185,56 @@ class TestEvalTiersStructure:
             "eval_tiers.json hard should match baseline_tiers_clawdiator.json hard"
         )
 
+    def test_tier_sizes(self) -> None:
+        with open(_EVAL_TIERS_PATH) as f:
+            tiers = json.load(f)
+        for tier, size in _EXPECTED_SIZES.items():
+            assert len(tiers[tier]) == size, f"{tier}: expected {size} IDs, got {len(tiers[tier])}"
+        assert tiers["_meta"]["tier_sizes"] == _EXPECTED_SIZES
+        bands = [(b["steps"], b["count"]) for b in tiers["_meta"]["step_bands"]["hard"]]
+        assert bands == _HARD_BANDS
+        assert sum(count for _, count in bands) == len(tiers["hard"])
+
+    def test_medium_and_hard_are_append_only(self) -> None:
+        """Existing positions never move: the pre-extension lists are a frozen prefix."""
+        for path in (_EVAL_TIERS_PATH, _BASELINE_TIERS_PATH):
+            with open(path) as f:
+                tiers = json.load(f)
+            for tier, (length, digest) in _FROZEN_PREFIXES.items():
+                prefix = tiers[tier][:length]
+                assert hashlib.sha256(json.dumps(prefix).encode()).hexdigest() == digest, (
+                    f"{path.name} {tier}: first {length} IDs changed; tiers are append-only"
+                )
+            assert tiers["medium"][0] == "flower_254799" and tiers["hard"][0] == "flower_160564"
+
+    def test_tiers_disjoint_from_eval_set_and_practice_set(self) -> None:
+        with open(_EVAL_TIERS_PATH) as f:
+            tiers = json.load(f)
+        with open(_EVAL_SET_PATH) as f:
+            eval_ids = {r["id"] for r in json.load(f)}
+        with open(_PRACTICE_SET_PATH) as f:
+            practice_ids = {r["id"] for r in json.load(f)}
+        for tier in ("medium", "hard"):
+            assert not set(tiers[tier]) & eval_ids, f"{tier} overlaps eval_set.json"
+        # flower_254799 predates the practice set and is documented in
+        # practice_eval/README.md; nothing else may overlap.
+        overlap = (set(tiers["medium"]) | set(tiers["hard"])) & practice_ids
+        assert overlap <= {"flower_254799"}, overlap
+
+    @_skip_no_multistep
+    def test_hard_tier_step_bands_in_order(self) -> None:
+        """Each hard ID's mechanism length equals its band, bands in tier order."""
+        with open(_EVAL_TIERS_PATH) as f:
+            tiers = json.load(f)
+        with open(_MULTISTEP_PATH) as f:
+            by_id = {r["id"]: r for r in json.load(f)}
+        expected = [steps for steps, count in _HARD_BANDS for _ in range(count)]
+        observed = [int(by_id[rid]["n_mechanistic_steps"]) for rid in tiers["hard"]]
+        assert observed == expected
+        for rid in tiers["hard"]:
+            steps = by_id[rid]["verified_mechanism"]["steps"]
+            assert len(steps) == int(by_id[rid]["n_mechanistic_steps"]), rid
+
     @_skip_no_multistep
     def test_medium_tier_ids_exist_in_multistep_file(self) -> None:
         with open(_EVAL_TIERS_PATH) as f:
@@ -208,7 +271,7 @@ class TestEvalTiersStructure:
             by_id = {r["id"]: r for r in json.load(f)}
         for rid in tiers["hard"]:
             steps = by_id[rid].get("n_mechanistic_steps", 0)
-            assert steps >= 4, f"Hard tier {rid} has {steps} steps (expected 4+)"
+            assert 4 <= steps <= 10, f"Hard tier {rid} has {steps} steps (expected 4-10)"
 
     def test_medium_and_hard_ids_disjoint_from_holdout(self) -> None:
         """medium/hard must not leak official holdout cases into the development tiers.

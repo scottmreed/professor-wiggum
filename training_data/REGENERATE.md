@@ -40,6 +40,26 @@ See [docs/DATA_SETUP.md](../docs/DATA_SETUP.md) for checkout layout.
 - **Evolve harness** (`python scripts/evolve_harness.py`): Required.
 - **Building new eval sets**: Required.
 
+## flower_mechanisms_multistep.json (medium/hard tier cases)
+
+The records behind the `medium` (3-step) and `hard` (4-10-step) development tiers. Gitignored; generated from the index above. Built once with `--mode stratified --per-step 20 --max-step 6`, then grown append-only:
+
+```bash
+# Grow tiers to the given totals. Existing rows stay verbatim and in place; new rows are the
+# next lowest-ranked successful conversions per step-count tier, skipping IDs in eval_set.json,
+# flower_mechanisms_100.json, the practice set, both tier files and the holdout.
+python scripts/build_flower_mechanism_dataset.py --mode extend \
+  --dataset-output training_data/flower_mechanisms_multistep.json \
+  --dataset-report training_data/flower_mechanisms_multistep_report.json \
+  --extend-step 3=40 --extend-step 7=20 --extend-step 8=20 --extend-step 9=20 --extend-step 10=20
+
+# Append the new tier IDs' cases to the existing medium/hard eval sets in the DB (same eval_set_id;
+# version bumped, sha256 = content hash). Dry run without --apply. Back up the DB first.
+python scripts/sync_dev_tier_eval_sets.py --apply
+```
+
+Each extension is recorded under `extensions` in the report (targets, IDs added per step, attempts, conversion failures). FlowER train has only 5 convertible 9-step and 7 convertible 10-step mechanisms (every indexed group was attempted), so those bands hold fewer than 20. Append the new IDs to the end of the tier lists in both `eval_tiers.json` and `baseline_tiers_clawdiator.json`.
+
 ## Reaction PNGs
 
 PNG visualizations live in the bulk data checkout (`flower_curriculum_pngs/`, `eval_set_pngs/`) — see [docs/DATA_SETUP.md](../docs/DATA_SETUP.md).

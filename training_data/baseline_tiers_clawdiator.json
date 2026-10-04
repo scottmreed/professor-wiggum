@@ -1,13 +1,66 @@
 {
   "_meta": {
-    "description": "Step-band groupings derived from the ranked FlowER 100 defaults.",
+    "description": "Step-band groupings: easy = ranked FlowER 100 defaults (eval_set.json order); medium/hard = stratified multistep sample (flower_mechanisms_multistep.json).",
     "source": "FlowER flower_new_dataset train.txt",
     "difficulty_criteria": {
       "easy": "Mechanistic steps 1-2",
       "medium": "Mechanistic steps 3",
-      "hard": "Mechanistic steps 4+"
+      "hard": "Mechanistic steps 4-10"
     },
-    "ordering": "IDs remain in ranked order from eval_set.json"
+    "ordering": "easy IDs remain in ranked order from eval_set.json; medium/hard IDs are in step-band order, lowest-ranked first within a band, append-only.",
+    "tier_sizes": {
+      "easy": 100,
+      "medium": 40,
+      "hard": 112
+    },
+    "step_bands": {
+      "medium": [
+        {
+          "steps": 3,
+          "positions": "1-40",
+          "count": 40
+        }
+      ],
+      "hard": [
+        {
+          "steps": 4,
+          "positions": "1-20",
+          "count": 20
+        },
+        {
+          "steps": 5,
+          "positions": "21-40",
+          "count": 20
+        },
+        {
+          "steps": 6,
+          "positions": "41-60",
+          "count": 20
+        },
+        {
+          "steps": 7,
+          "positions": "61-80",
+          "count": 20
+        },
+        {
+          "steps": 8,
+          "positions": "81-100",
+          "count": 20
+        },
+        {
+          "steps": 9,
+          "positions": "101-105",
+          "count": 5
+        },
+        {
+          "steps": 10,
+          "positions": "106-112",
+          "count": 7
+        }
+      ]
+    },
+    "append_only": "Positions are stable: IDs are only ever appended, so 10-case slices already run stay comparable. 2026-10-04 extension appended medium positions 21-40 (3-step) and hard positions 61-112 (7/8/9/10-step bands); medium 1-20 and hard 1-60 are unchanged.",
+    "extension_2026_10_04": "Appended with scripts/build_flower_mechanism_dataset.py --mode extend --extend-step 3=40 --extend-step 7=20 --extend-step 8=20 --extend-step 9=20 --extend-step 10=20: the same stratified policy continued (next lowest-ranked successful conversions per step-count tier of flower_mechanism_index.jsonl), skipping IDs already selected or previously failed and any ID in eval_set.json, flower_mechanisms_100.json, practice_eval/practice_set.json, eval_tiers.json, baseline_tiers_clawdiator.json or the holdout. FlowER train holds only 5 convertible 9-step and 7 convertible 10-step mechanisms (all 6479 / 5716 indexed groups attempted; the rest fail conversion, mostly state_discontinuity), so those bands are short of 20. The 9-step band is all Pd-catalysed Suzuki couplings and the 10-step band is all borane reductions of carboxylic acids."
   },
   "easy": [
     "flower_135501",
@@ -131,7 +184,27 @@
     "flower_230891",
     "flower_022054",
     "flower_183585",
-    "flower_064346"
+    "flower_064346",
+    "flower_001122",
+    "flower_165218",
+    "flower_198929",
+    "flower_207444",
+    "flower_015676",
+    "flower_002140",
+    "flower_166490",
+    "flower_254163",
+    "flower_105552",
+    "flower_012341",
+    "flower_049520",
+    "flower_197980",
+    "flower_226873",
+    "flower_006281",
+    "flower_127789",
+    "flower_223690",
+    "flower_109840",
+    "flower_248177",
+    "flower_041231",
+    "flower_021992"
   ],
   "hard": [
     "flower_160564",
@@ -193,6 +266,58 @@
     "flower_047524",
     "flower_055530",
     "flower_112483",
-    "flower_176022"
+    "flower_176022",
+    "flower_145141",
+    "flower_102507",
+    "flower_248362",
+    "flower_055615",
+    "flower_105344",
+    "flower_101401",
+    "flower_251590",
+    "flower_069755",
+    "flower_238357",
+    "flower_189258",
+    "flower_192768",
+    "flower_086897",
+    "flower_209909",
+    "flower_253626",
+    "flower_055424",
+    "flower_092203",
+    "flower_043864",
+    "flower_153759",
+    "flower_145868",
+    "flower_163258",
+    "flower_016082",
+    "flower_021466",
+    "flower_025845",
+    "flower_077912",
+    "flower_100468",
+    "flower_202389",
+    "flower_204822",
+    "flower_215118",
+    "flower_257947",
+    "flower_007831",
+    "flower_067880",
+    "flower_086268",
+    "flower_132190",
+    "flower_177337",
+    "flower_192817",
+    "flower_198509",
+    "flower_222771",
+    "flower_011210",
+    "flower_058957",
+    "flower_064616",
+    "flower_077834",
+    "flower_016404",
+    "flower_223582",
+    "flower_020948",
+    "flower_198884",
+    "flower_017599",
+    "flower_188338",
+    "flower_230070",
+    "flower_067967",
+    "flower_227760",
+    "flower_090575",
+    "flower_068638"
   ]
 }

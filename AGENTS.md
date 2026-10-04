@@ -267,7 +267,7 @@ See [SOUL.md](SOUL.md) for the philosophy behind how this system evolves. Key po
 - Deterministic chemistry validation (RDKit) is the final arbiter — LLM confidence does not override it.
 - Prompt changes without approved trace evidence do not merge.
 - The model catalog (`model_pricing.json`) is the single source of truth for model capabilities and pricing.
-- The default eval set (`training_data/eval_set.json`, generated from `training_data/flower_mechanisms_100.json`) and eval tiers (`training_data/eval_tiers.json`, fixed 10 easy + 10 medium + 10 hard, with 1-2 / 3 / 4-8 step bands) are the memory of what the system cares about. PR approval gates on eval tier scores, not individual reaction results.
+- The default eval set (`training_data/eval_set.json`, generated from `training_data/flower_mechanisms_100.json`) and eval tiers (`training_data/eval_tiers.json`: 100 easy / 40 medium / 112 hard case IDs with 1-2 / 3 / 4-10 step bands, append-only, run as 10-case slices; see `docs/eval_tiers.md`) are the memory of what the system cares about. PR approval gates on eval tier scores, not individual reaction results.
 
 The system is currently at **Stage 0** (human approves traces, opens PRs). Stages 1–4 move progressively toward automated approval, automated PR generation, and fully autonomous merge. All guardrails are designed to make Stage 4 safe.
 
@@ -400,7 +400,7 @@ See `docs/cursor_remote_bootstrap.md` for the full checklist.
 ├── training_data/                  # Eval dataset and user-provided reactions
 │   ├── flower_mechanisms_100.json  # Repo-tracked default FlowER mechanism menu + eval source
 │   ├── eval_set.json               # Default FlowER-derived eval benchmark
-│   ├── eval_tiers.json             # Tiered eval definitions: fixed 10 easy + 10 medium + 10 hard (1-2 / 3 / 4-8 steps)
+│   ├── eval_tiers.json             # Tiered eval definitions: 100 easy / 40 medium / 112 hard IDs (1-2 / 3 / 4-10 steps), append-only
 │   ├── local_legacy/               # Ignored local-only HumanBenchmark + old built-in example files
 │   └── my_reactions_template.json  # Minimal template for hand-authored reactions
 ├── traces/                         # Run traces + PR evidence traces

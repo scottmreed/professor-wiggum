@@ -9,7 +9,7 @@ import pytest
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _TRAINING = _PROJECT_ROOT / "training_data"
 # Gitignored, generated, local/CI-optional artifact holding the actual medium (3-step)
-# / hard (4+-step) records that eval_tiers.json references by ID. Not shipped in git
+# / hard (4-10-step) records that eval_tiers.json references by ID. Not shipped in git
 # (training_data/* is gitignored except an explicit allow-list) -- see
 # training_data/REGENERATE.md and docs/eval_tiers.md.
 _MULTISTEP = _TRAINING / "flower_mechanisms_multistep.json"
