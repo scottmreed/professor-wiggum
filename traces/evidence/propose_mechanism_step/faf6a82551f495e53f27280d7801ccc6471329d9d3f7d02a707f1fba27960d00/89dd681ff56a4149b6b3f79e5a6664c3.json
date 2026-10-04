@@ -1,0 +1,507 @@
+{
+  "approval_label": "intermolecular_pt_trial_c",
+  "approval_notes": "Keyless hard trial arm C 2026-10-04 (run group trial_opus55_hard_v3_c, eval run e203f280): refined intermolecular proton-transfer guidance + opus-5.5 lane + tie-break; blind subagent responder, responder_saw_ground_truth=false, transcript audit 22/22 clean. flower_038130 0.977 (intramolecular shift only where no shuttle was available), flower_151603 0.979 (TFA-mediated intermolecular transfers). Prepared by Claude Code; pending maintainer review.",
+  "approved_at": 1791138711.1922328,
+  "approved_bool": true,
+  "approved_by": "claude-code (pending scottmreed review)",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1791138711.2066822,
+  "exported_by": "claude-code",
+  "model_version": {
+    "created_at": 1790723193.89483,
+    "family": "agent",
+    "id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "pricing_sha256": "121eeae6157a8a24877a551130e236232df2d8de5146d885c6fd3ecb7ab5d48f",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "hard trial arm C (lane + refined PT guidance + intermolecular tie-break + scoring v3) (c): fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "9a5b31d2c2f443439426e1a0e76f14e71eae7bdb122eb3fd263d4e5bc6529181",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "c7511046f1034964b1347921d7e526ba",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "faf6a82551f495e53f27280d7801ccc6471329d9d3f7d02a707f1fba27960d00",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "c7511046f1034964b1347921d7e526ba",
+  "responder_saw_ground_truth": false,
+  "run_id": "3c1660d9b3544601a587051ae5cbb2ab",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 4,
+    "captured_at": 1791138358.669997,
+    "cost": null,
+    "duration_human": "58.5s",
+    "duration_seconds": 58.5263249874115,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:1>17",
+              "source_atom": "1",
+              "target_atom": "17"
+            }
+          ],
+          "inferred_dbe": "1-1:-2;1-17:+2",
+          "intermediate_smiles": "O=C(O)[NH2+]C1CC2(CC2)C1",
+          "intermediate_type": "protonated_carbamic_acid",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": "Sets up decarboxylation through an available acid/base shuttle: next, trifluoroacetate deprotonates O10-H, and the zwitterion then loses CO2.",
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Proton transfer. The N1 lone pair takes the acidic proton from the TFA hydroxyl O17. The O17-H bond electrons stay on O17, giving trifluoroacetate. Bond formed: N1-H. Bond broken: O17-H. Charge: two neutral species become an ammonium cation and a carboxylate anion.",
+          "reaction_smirks": "[O:8]=[C:9]([OH:10])[NH:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1.[O:15]=[C:16]([OH:17])[C:18]([F:19])([F:20])[F:21]>>[O:8]=[C:9]([OH:10])[NH2+:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1.[O:15]=[C:16]([O-:17])[C:18]([F:19])([F:20])[F:21] |mech:v1;lp:1>17|",
+          "resulting_state": [
+            "O=C(O)[NH2+]C1CC2(CC2)C1",
+            "O=C([O-])C(F)(F)F",
+            "C=C(C)C"
+          ],
+          "template_alignment": "aligned",
+          "template_alignment_reason": null
+        },
+        {
+          "confidence": "low",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:1>10",
+              "source_atom": "1",
+              "target_atom": "10"
+            },
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:10>9",
+              "source_atom": "10",
+              "target_atom": "9"
+            },
+            {
+              "electrons": 2,
+              "kind": "sigma_bond",
+              "notation": "sigma:9-1>1",
+              "source_bond": [
+                "9",
+                "1"
+              ],
+              "target_atom": "1",
+              "through_atom": "1"
+            }
+          ],
+          "inferred_dbe": "1-10:+2;9-1:-2;10-9:+2;10-10:-2",
+          "intermediate_smiles": "NC1CC2(CC2)C1",
+          "intermediate_type": "free_amine",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": "Reaches all targets in one step, but needs a strained four-membered proton-transfer transition state, even though TFA is available as a shuttle.",
+          "rank": 2,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Concerted decarboxylation through a four-membered transition state. The N1 lone pair takes the O10-H proton. O10 uses its lone pair to form the C9=O10 pi bond, and the C9-N1 sigma bond breaks with its electrons going to N1. Products are CO2 and the neutral amine. Bonds broken: O10-H and C9-N1. Bonds formed: N1-H and the C9=O10 pi bond.",
+          "reaction_smirks": "[O:8]=[C:9]([OH:10])[NH:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1>>[O:8]=[C:9]=[O:10].[NH2:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1 |mech:v1;lp:1>10;lp:10>9;sigma:9-1>1|",
+          "resulting_state": [
+            "NC1CC2(CC2)C1",
+            "O=C=O",
+            "C=C(C)C",
+            "O=C(O)C(F)(F)F"
+          ],
+          "template_alignment": "partial",
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "O=C(O)NC1CC2(CC2)C1",
+        "C=C(C)C",
+        "O=C(O)C(F)(F)F"
+      ],
+      "executable_candidate_count": 2,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 2,
+      "llm_reasoning": "The tert-butyl group has left (as isobutylene), so the carbamic acid O=C(O)NR is what remains. It still has to lose CO2 to give the free amine. In TFA the carbamic acid nitrogen is protonated first: TFA's O17-H proton is transferred to the N1 lone pair, giving the N-protonated carbamic acid and trifluoroacetate. Next, trifluoroacetate takes the O10-H proton, which gives the zwitterion R-NH2+-COO-. The carboxylate lone pair then re-forms C=O and breaks the C9-N1 bond, releasing CO2 and the neutral amine, and TFA is regenerated. This stepwise shuttle through TFA and trifluoroacetate is better than a concerted four-membered-ring decarboxylation, which is listed as the alternative.",
+      "message": "Proposed 2 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "O=C(O)[NH2+]C1CC2(CC2)C1",
+        "NC1CC2(CC2)C1"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"O=C(O)[NH2+]C1CC2(CC2)C1\",\n      \"reaction_description\": \"Proton transfer. The N1 lone pair takes the acidic proton from the TFA hydroxyl O17. The O17-H bond electrons stay on O17, giving trifluoroacetate. Bond formed: N1-H. Bond broken: O17-H. Charge: two neutral species become an ammonium cation and a carboxylate anion.\",\n      \"reaction_smirks\": \"[O:8]=[C:9]([OH:10])[NH:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1.[O:15]=[C:16]([OH:17])[C:18]([F:19])([F:20])[F:21]>>[O:8]=[C:9]([OH:10])[NH2+:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1.[O:15]=[C:16]([O-:17])[C:18]([F:19])([F:20])[F:21] |mech:v1;lp:1>17|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"17\",\n          \"electrons\": 2,\n          \"source_atom\": \"1\",\n          \"notation\": \"lp:1>17\"\n        }\n      ],\n      \"resulting_state\": [\n        \"O=C(O)[NH2+]C1CC2(CC2)C1\",\n        \"O=C([O-])C(F)(F)F\",\n        \"C=C(C)C\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": \"aligned\",\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"protonated_carbamic_acid\",\n      \"note\": \"Sets up decarboxylation through an available acid/base shuttle: next, trifluoroacetate deprotonates O10-H, and the zwitterion then loses CO2.\"\n    },\n    {\n      \"rank\": 2,\n      \"intermediate_smiles\": \"NC1CC2(CC2)C1\",\n      \"reaction_description\": \"Concerted decarboxylation through a four-membered transition state. The N1 lone pair takes the O10-H proton. O10 uses its lone pair to form the C9=O10 pi bond, and the C9-N1 sigma bond breaks with its electrons going to N1. Products are CO2 and the neutral amine. Bonds broken: O10-H and C9-N1. Bonds formed: N1-H and the C9=O10 pi bond.\",\n      \"reaction_smirks\": \"[O:8]=[C:9]([OH:10])[NH:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1>>[O:8]=[C:9]=[O:10].[NH2:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1 |mech:v1;lp:1>10;lp:10>9;sigma:9-1>1|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"10\",\n          \"electrons\": 2,\n          \"source_atom\": \"1\",\n          \"notation\": \"lp:1>10\"\n        },\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"9\",\n          \"electrons\": 2,\n          \"source_atom\": \"10\",\n          \"notation\": \"lp:10>9\"\n        },\n        {\n          \"kind\": \"sigma_bond\",\n          \"target_atom\": \"1\",\n          \"electrons\": 2,\n          \"source_bond\": [\n            \"9\",\n            \"1\"\n          ],\n          \"through_atom\": \"1\",\n          \"notation\": \"sigma:9-1>1\"\n        }\n      ],\n      \"resulting_state\": [\n        \"NC1CC2(CC2)C1\",\n        \"O=C=O\",\n        \"C=C(C)C\",\n        \"O=C(O)C(F)(F)F\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"low\",\n      \"template_alignment\": \"partial\",\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"free_amine\",\n      \"note\": \"Reaches all targets in one step, but needs a strained four-membered proton-transfer transition state, even though TFA is available as a shuttle.\"\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"The tert-butyl group has left (as isobutylene), so the carbamic acid O=C(O)NR is what remains. It still has to lose CO2 to give the free amine. In TFA the carbamic acid nitrogen is protonated first: TFA's O17-H proton is transferred to the N1 lone pair, giving the N-protonated carbamic acid and trifluoroacetate. Next, trifluoroacetate takes the O10-H proton, which gives the zwitterion R-NH2+-COO-. The carboxylate lone pair then re-forms C=O and breaks the C9-N1 bond, releasing CO2 and the neutral amine, and TFA is regenerated. This stepwise shuttle through TFA and trifluoroacetate is better than a concerted four-membered-ring decarboxylation, which is listed as the alternative.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "The tert-butyl group has left (as isobutylene), so the carbamic acid O=C(O)NR is what remains. It still has to lose CO2 to give the free amine. In TFA the carbamic acid nitrogen is protonated first: TFA's O17-H proton is transferred to the N1 lone pair, giving the N-protonated carbamic acid and trifluoroacetate. Next, trifluoroacetate takes the O10-H proton, which gives the zwitterion R-NH2+-COO-. The carboxylate lone pair then re-forms C=O and breaks the C9-N1 bond, releasing CO2 and the neutral amine, and TFA is regenerated. This stepwise shuttle through TFA and trifluoroacetate is better than a concerted four-membered-ring decarboxylation, which is listed as the alternative.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:1>17",
+                "source_atom": "1",
+                "target_atom": "17"
+              }
+            ],
+            "inferred_dbe": "1-1:-2;1-17:+2",
+            "intermediate_smiles": "O=C(O)[NH2+]C1CC2(CC2)C1",
+            "intermediate_type": "protonated_carbamic_acid",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": "Sets up decarboxylation through an available acid/base shuttle: next, trifluoroacetate deprotonates O10-H, and the zwitterion then loses CO2.",
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Proton transfer. The N1 lone pair takes the acidic proton from the TFA hydroxyl O17. The O17-H bond electrons stay on O17, giving trifluoroacetate. Bond formed: N1-H. Bond broken: O17-H. Charge: two neutral species become an ammonium cation and a carboxylate anion.",
+            "reaction_smirks": "[O:8]=[C:9]([OH:10])[NH:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1.[O:15]=[C:16]([OH:17])[C:18]([F:19])([F:20])[F:21]>>[O:8]=[C:9]([OH:10])[NH2+:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1.[O:15]=[C:16]([O-:17])[C:18]([F:19])([F:20])[F:21] |mech:v1;lp:1>17|",
+            "resulting_state": [
+              "O=C(O)[NH2+]C1CC2(CC2)C1",
+              "O=C([O-])C(F)(F)F",
+              "C=C(C)C"
+            ],
+            "template_alignment": "aligned",
+            "template_alignment_reason": null
+          },
+          {
+            "confidence": "low",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:1>10",
+                "source_atom": "1",
+                "target_atom": "10"
+              },
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:10>9",
+                "source_atom": "10",
+                "target_atom": "9"
+              },
+              {
+                "electrons": 2,
+                "kind": "sigma_bond",
+                "notation": "sigma:9-1>1",
+                "source_bond": [
+                  "9",
+                  "1"
+                ],
+                "target_atom": "1",
+                "through_atom": "1"
+              }
+            ],
+            "inferred_dbe": "1-10:+2;9-1:-2;10-9:+2;10-10:-2",
+            "intermediate_smiles": "NC1CC2(CC2)C1",
+            "intermediate_type": "free_amine",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": "Reaches all targets in one step, but needs a strained four-membered proton-transfer transition state, even though TFA is available as a shuttle.",
+            "rank": 2,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Concerted decarboxylation through a four-membered transition state. The N1 lone pair takes the O10-H proton. O10 uses its lone pair to form the C9=O10 pi bond, and the C9-N1 sigma bond breaks with its electrons going to N1. Products are CO2 and the neutral amine. Bonds broken: O10-H and C9-N1. Bonds formed: N1-H and the C9=O10 pi bond.",
+            "reaction_smirks": "[O:8]=[C:9]([OH:10])[NH:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1>>[O:8]=[C:9]=[O:10].[NH2:1][CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1 |mech:v1;lp:1>10;lp:10>9;sigma:9-1>1|",
+            "resulting_state": [
+              "NC1CC2(CC2)C1",
+              "O=C=O",
+              "C=C(C)C",
+              "O=C(O)C(F)(F)F"
+            ],
+            "template_alignment": "partial",
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "backend": "rdkit_cli",
+          "canonical": "O=C(O)[NH2+]C1CC2(CC2)C1",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "note": "Sets up decarboxylation through an available acid/base shuttle: next, trifluoroacetate deprotonates O10-H, and the zwitterion then loses CO2.",
+          "raw": "O=C(O)[NH2+]C1CC2(CC2)C1",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "O=C(O)[NH2+]C1CC2(CC2)C1",
+                  "canonical_smiles": "O=C(O)[NH2+]C1CC2(CC2)C1",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "hydroxy compound (alcohol or phenol)",
+                    "alcohol",
+                    "primary amine",
+                    "primary aliphatic amine",
+                    "quaternary ammonium",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "carboxylic acid",
+                    "primary amide",
+                    "secondary amide",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative"
+                  ],
+                  "functional_groups": [
+                    "carboxylic_acid",
+                    "quaternary_ammonium"
+                  ],
+                  "heavy_atoms": 10,
+                  "rings": 2,
+                  "score": 13.5,
+                  "source": "raw",
+                  "valid": true
+                },
+                {
+                  "candidate": "O=C(O)[NH2+]C1CC2(CC)C1",
+                  "error": "rdkit_parse_failed",
+                  "source": "ring_digit_trim",
+                  "valid": false
+                }
+              ],
+              "best_candidate": {
+                "candidate": "O=C(O)[NH2+]C1CC2(CC2)C1",
+                "canonical_smiles": "O=C(O)[NH2+]C1CC2(CC2)C1",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "hydroxy compound (alcohol or phenol)",
+                  "alcohol",
+                  "primary amine",
+                  "primary aliphatic amine",
+                  "quaternary ammonium",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "carboxylic acid",
+                  "primary amide",
+                  "secondary amide",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "thiocarbamic-acid derivative"
+                ],
+                "functional_groups": [
+                  "carboxylic_acid",
+                  "quaternary_ammonium"
+                ],
+                "heavy_atoms": 10,
+                "rings": 2,
+                "score": 13.5,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "O=C(O)[NH2+]C1CC2(CC2)C1",
+              "confidence": 0.9,
+              "confidence_label": "high",
+              "input": "O=C(O)[NH2+]C1CC2(CC2)C1",
+              "intent": {
+                "estimated_atom_tokens": 11,
+                "expected_rings": 2,
+                "fg_hints": [
+                  "amine_like",
+                  "oxygenated"
+                ],
+                "raw": "O=C(O)[NH2+]C1CC2(CC2)C1"
+              },
+              "repaired_smiles": "O=C(O)[NH2+]C1CC2(CC2)C1",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "protonated_carbamic_acid",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        },
+        {
+          "backend": "rdkit_cli",
+          "canonical": "NC1CC2(CC2)C1",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "note": "Reaches all targets in one step, but needs a strained four-membered proton-transfer transition state, even though TFA is available as a shuttle.",
+          "raw": "NC1CC2(CC2)C1",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "NC1CC2(CC2)C1",
+                  "canonical_smiles": "NC1CC2(CC2)C1",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "amine (generic)",
+                    "primary amine",
+                    "primary aliphatic amine",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative"
+                  ],
+                  "functional_groups": [
+                    "amine"
+                  ],
+                  "heavy_atoms": 7,
+                  "rings": 2,
+                  "score": 13,
+                  "source": "raw",
+                  "valid": true
+                }
+              ],
+              "best_candidate": {
+                "candidate": "NC1CC2(CC2)C1",
+                "canonical_smiles": "NC1CC2(CC2)C1",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "amine (generic)",
+                  "primary amine",
+                  "primary aliphatic amine",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "thiocarbamic-acid derivative"
+                ],
+                "functional_groups": [
+                  "amine"
+                ],
+                "heavy_atoms": 7,
+                "rings": 2,
+                "score": 13,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "NC1CC2(CC2)C1",
+              "confidence": 0.9,
+              "confidence_label": "high",
+              "input": "NC1CC2(CC2)C1",
+              "intent": {
+                "estimated_atom_tokens": 7,
+                "expected_rings": 2,
+                "fg_hints": [
+                  "amine_like"
+                ],
+                "raw": "NC1CC2(CC2)C1"
+              },
+              "repaired_smiles": "NC1CC2(CC2)C1",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "free_amine",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "89dd681ff56a4149b6b3f79e5a6664c3"
+}
