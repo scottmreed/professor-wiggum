@@ -207,17 +207,20 @@ def _rescored_summary(
     return out
 
 
-def _version_independent_without_trace(summary: Dict[str, Any], old_score: Optional[float]) -> bool:
+def _version_independent_without_trace(
+    summary: Dict[str, Any], old_score: Optional[float], scoring_version: str = "v2"
+) -> bool:
     """True when a trace-less result provably scores the same under v1 and v2.
 
     * A case that failed before producing a trace is recorded with score 0.
     * A harness-free baseline has no step-mapping module: every accepted step
       (index >= 1) got the neutral 0.5 mapping component under v1, which is
-      also what v2 assigns without a predicted mapping.
+      also what v2 assigns without a predicted mapping. Not under v3, whose
+      proton-agnostic alignment needs the accepted path's states.
     """
     if (old_score or 0.0) == 0.0 and summary.get("error"):
         return True
-    if str(summary.get("eval_mode") or "") != "baseline":
+    if str(summary.get("eval_mode") or "") != "baseline" or scoring_version not in ("v1", "v2"):
         return False
     breakdown = summary.get("scoring_breakdown") if isinstance(summary.get("scoring_breakdown"), dict) else {}
     steps = breakdown.get("step_breakdown")
@@ -268,7 +271,7 @@ def rescore_eval_results(
             run_id = str(result.get("run_id") or "")
             snapshot = store.get_run_snapshot(run_id) if run_id else None
             if not snapshot:
-                if _version_independent_without_trace(summary, old_score):
+                if _version_independent_without_trace(summary, old_score, version):
                     outcome.status = "version_independent"
                     outcome.v1_score = outcome.new_score = old_score
                     if write and old_version != version:
