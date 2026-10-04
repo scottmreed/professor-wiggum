@@ -346,3 +346,18 @@ def test_baselines_render_in_their_own_section_not_best_by_tier(tmp_path: Path) 
     # Baselines get no per-run harness section.
     published = board.split("## Published runs", 1)[1]
     assert "harness_free_baseline" not in published
+
+
+def test_combined_runs_later_run_wins_per_case() -> None:
+    class _Resumed(_FakeStore):
+        def list_eval_run_results(self, eval_run_id: str) -> List[Dict[str, Any]]:
+            if eval_run_id == "first":
+                return [dict(r) for r in self.results]  # c_fail came from a responder outage
+            return [{"case_id": "c_fail", "run_id": "r2", "score": 0.9, "pass_bool": True, "latency_ms": 100_000}]
+
+    record = rp.export_eval_run(_Resumed(), ["first", "resume"], expected_resolver=_resolver)
+    assert record["eval_run_id"] == "resume"
+    assert record["run_group"] == "grp+resumed"
+    by_case = {c["case_id"]: c for c in record["cases"]}
+    assert by_case["c_fail"]["passed"] is True  # replaced by the resumed result
+    assert [s["cases"] for s in record["sources"]] == [["c_easy", "c_hard"], ["c_fail"]]

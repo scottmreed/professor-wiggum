@@ -219,9 +219,22 @@ def assess_target_product_state(
             item for item in productive_targets if heavy_atom_count_for_matching(item) == max_heavy_atoms
         ]
 
-    matched_targets = [item for item in target_signatures if item in resulting_signatures]
-    matched_primary_targets = [item for item in primary_targets if item in resulting_signatures]
-    missing_targets = [item for item in productive_targets if item not in resulting_signatures]
+    # A small target (<= 1 heavy atom: water, HCl) present only as its conjugate
+    # (H3O+ for a water target) counts as reached; it is reported in
+    # targets_as_conjugate. Larger products must appear exactly: a protonated
+    # product still needs its deprotonation step.
+    resulting_parents = {neutral_parent_signature(item): item for item in resulting_signatures}
+    targets_as_conjugate = [
+        item
+        for item in target_signatures
+        if item not in resulting_signatures
+        and heavy_atom_count_for_matching(item) <= 1
+        and neutral_parent_signature(item) in resulting_parents
+    ]
+    present = set(resulting_signatures) | set(targets_as_conjugate)
+    matched_targets = [item for item in target_signatures if item in present]
+    matched_primary_targets = [item for item in primary_targets if item in present]
+    missing_targets = [item for item in productive_targets if item not in present]
     all_targets_reached = bool(productive_targets) and not missing_targets
     unexpected_species = [
         item
@@ -237,7 +250,12 @@ def assess_target_product_state(
         neutral_parent_signature(item)
         for item in (*target_signatures, *starting_signatures, *allowed_signatures)
     }
-    tolerated_species = [item for item in unexpected_species if _tolerated_extra(item, reference_parents)]
+    conjugate_stand_ins = {resulting_parents[neutral_parent_signature(item)] for item in targets_as_conjugate}
+    tolerated_species = [
+        item
+        for item in unexpected_species
+        if item in conjugate_stand_ins or _tolerated_extra(item, reference_parents)
+    ]
     blocking_species = [item for item in unexpected_species if item not in tolerated_species]
 
     return {
@@ -248,6 +266,7 @@ def assess_target_product_state(
         "missing_target_products": missing_targets,
         "unexpected_species": unexpected_species,
         "tolerated_species": tolerated_species,
+        "targets_as_conjugate": targets_as_conjugate,
         "matched_primary_target_products": matched_primary_targets,
         "primary_target_products": primary_targets,
         "productive_target_products": productive_targets,

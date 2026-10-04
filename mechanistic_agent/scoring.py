@@ -4,7 +4,12 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Mapping, Optional
 
-from mechanistic_agent.smiles_utils import normalize_species_for_matching, species_match_signature
+from mechanistic_agent.smiles_utils import (
+    heavy_atom_count_for_matching,
+    neutral_parent_signature,
+    normalize_species_for_matching,
+    species_match_signature,
+)
 
 
 # Canonical ordered list of subagent IDs used in the harness.
@@ -421,14 +426,29 @@ def score_snapshot_against_known(
     )
     if final_known_product and final_known_product not in expected_targets:
         expected_targets.append(final_known_product)
-    targets_present = [item for item in expected_targets if item in final_resulting]
+    # Same rule as the completion check (smiles_utils.assess_target_product_state):
+    # a small target (<= 1 heavy atom, e.g. water) present only as its conjugate
+    # (H3O+) counts as reached; the main product must match exactly.
+    final_parents = {neutral_parent_signature(item): item for item in final_resulting}
+    targets_as_conjugate = [
+        item
+        for item in expected_targets
+        if item not in final_resulting
+        and heavy_atom_count_for_matching(item) <= 1
+        and neutral_parent_signature(item) in final_parents
+    ]
+    conjugate_stand_ins = {final_parents[neutral_parent_signature(item)] for item in targets_as_conjugate}
+    targets_present = [item for item in expected_targets if item in final_resulting or item in targets_as_conjugate]
     target_fraction = (len(targets_present) / len(expected_targets)) if expected_targets else (1.0 if final_reached else 0.0)
     all_targets_reached = bool(expected_targets) and len(targets_present) == len(expected_targets)
     final_component = target_fraction if final_reached else 0.0
     unexpected_final_species = [
         item
         for item in final_resulting
-        if item not in expected_targets and item not in starting_pool and item not in expected_products
+        if item not in expected_targets
+        and item not in starting_pool
+        and item not in expected_products
+        and item not in conjugate_stand_ins
     ] if accepted else []
 
     step_breakdown: List[Dict[str, Any]] = []
@@ -568,6 +588,7 @@ def score_snapshot_against_known(
         "all_target_products_reached": all_targets_reached,
         "expected_target_products": expected_targets,
         "missing_target_products": [item for item in expected_targets if item not in targets_present],
+        "targets_as_conjugate": targets_as_conjugate,
         "unexpected_final_species": unexpected_final_species,
         "overall_balance_grade": balance_grade,
         "overall_balance_component": round(balance_component, 6),

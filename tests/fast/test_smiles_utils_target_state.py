@@ -29,3 +29,51 @@ def test_unrelated_extra_species_still_blocks_completion() -> None:
     result = _check([PRODUCT, "CCCC"])
     assert result["contains_target_product"] is False
     assert result["tolerated_species"] == []
+
+
+def test_water_target_present_as_hydronium_counts_as_reached() -> None:
+    result = assess_target_product_state(
+        current_state=["CC(=O)NNC(=[OH+])c1ccccc1", "O"],
+        resulting_state=["CC(=O)NNC(=O)c1ccccc1", "[OH3+]"],
+        target_products=["CC(=O)NNC(=O)c1ccccc1", "O"],
+        starting_materials=["CC(=O)NN", "O=C(O)c1ccccc1"],
+    )
+    assert result["contains_target_product"] is True
+    assert result["targets_as_conjugate"] == ["O"]
+    assert result["missing_target_products"] == []
+
+
+def test_protonated_main_product_is_not_the_product() -> None:
+    # hard rerun of flower_002647 stopped one step early on the protonated amide.
+    result = assess_target_product_state(
+        current_state=["CC(=O)NNC(O)(O)c1ccccc1"],
+        resulting_state=["CC(=O)NNC(=[OH+])c1ccccc1", "[OH-]"],
+        target_products=["CC(=O)NNC(=O)c1ccccc1", "O"],
+        starting_materials=["CC(=O)NN", "O=C(O)c1ccccc1"],
+    )
+    assert result["contains_target_product"] is False
+    assert "CC(=O)NNC(=O)c1ccccc1" in result["missing_target_products"]
+
+
+def test_scorer_counts_water_target_present_as_hydronium() -> None:
+    from mechanistic_agent.scoring import score_snapshot_against_known
+
+    product = "CC(=O)NNc1ccc([N+](=O)[O-])cc1"
+    snapshot = {
+        "input": {"starting_materials": ["CC(=O)O", "NNc1ccc([N+](=O)[O-])cc1"]},
+        "events": [
+            {
+                "seq": 1,
+                "event_type": "mechanism_step_accepted",
+                "payload": {"step_index": 1, "current_state": ["CC(=O)O"], "resulting_state": [product, "[OH3+]"],
+                            "validation_summary": {"passed": True, "checks": []}},
+            }
+        ],
+        "step_outputs": [],
+        "overall_balance": {"grade": "reconciled", "balanced": True},
+    }
+    expected = {"products": [product, "O"], "verified_mechanism": {"steps": [{"target_smiles": product}]}}
+    graded = score_snapshot_against_known(snapshot, expected)
+    assert graded["all_target_products_reached"] is True
+    assert graded["targets_as_conjugate"] == ["O"]
+    assert graded["unexpected_final_species"] == []
