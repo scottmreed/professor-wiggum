@@ -70,8 +70,8 @@ Full setup: [SETUP.md](SETUP.md). Data layout (sibling `wiggum-data` checkout or
 ![Harness flow diagram](docs/diagrams/Harness_Configuration_Flowchart.png)
 
 - **Pre-loop** (runs once): check atom balance → identify functional groups → recommend pH → assess conditions → predict missing reagents → map atoms → map to reaction type (LLM, or a Jev decision in the `jev_reaction_type` harness)
-- **Loop**: propose next mechanism step (LLM) → bond/electron, atom-balance, and state-progress validators → retry, backtrack, or continue → target products reached?
-- **Post-loop**: overall balance reconciliation and re-evaluation of any soft-advanced steps
+- **Loop**: propose next mechanism step (LLM) → bond/electron, atom-balance, and state-progress validators → retry, backtrack, or continue → target products reached? A step whose only failure is atom balance is accepted with a flag (`balance_mode: deferred`) rather than rejected.
+- **Post-loop**: the mechanism audit nets out the chosen path — regenerated catalysts, conjugate acid/base pairs, proton bookkeeping, recorded reagent additions — resolves each balance flag or fails the case, and reports redundant steps (undo steps, repeated states, mergeable proton transfers)
 
 Harness variants live under `harness_versions/` (`default`, `jev_reaction_type`, `permissive_default`, ablations). Regenerate the diagram with `python scripts/capture_harness_mermaid.py`.
 
