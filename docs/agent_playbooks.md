@@ -76,7 +76,7 @@ Steps:
 My harness change: <describe the change — e.g. "add a reagent pre-check module before atom mapping" or "switch to decentralized_mas topology with 3 agents">
 ```
 
-Notes: `--island-mode` in `scripts/evolve_harness.py` enables archive-based parent selection (see `mechanistic_agent/core/archive.py`). Topology is set at run time via `coordination_topology` in the request, so a basic topology experiment needs no harness file change; tuning per-harness `topology_profiles` defaults does, and goes through the harness gate.
+Notes: Topology is set at run time via `coordination_topology` in the request, so a basic topology experiment needs no harness file change; tuning per-harness `topology_profiles` defaults does, and goes through the harness gate.
 
 ---
 

@@ -181,7 +181,7 @@ Post-step validators (`bond_electron_validation`, `atom_balance_validation`, `st
 
 LLM-backed subagents use **forced tool calling** to get structured responses. Key conventions:
 
-- **Tool schemas** live in `mechanistic_agent/tool_schemas.py` — one OpenAI-format schema per LLM-backed subagent. Current schemas: `ASSESS_CONDITIONS_TOOL`, `MISSING_REAGENTS_TOOL`, `ATOM_MAPPING_TOOL`, `INTERMEDIATES_TOOL`, `MECHANISM_STEP_PROPOSAL_TOOL`, `REACTION_TYPE_SELECTION_TOOL`, `PREDICT_FULL_MECHANISM_TOOL`, and `HARNESS_MUTATION_TOOL` (used by the opt-in LLM harness-mutation proposer in `scripts/evolve_harness.py`, not by a runtime subagent).
+- **Tool schemas** live in `mechanistic_agent/tool_schemas.py` — one OpenAI-format schema per LLM-backed subagent. Current schemas: `ASSESS_CONDITIONS_TOOL`, `MISSING_REAGENTS_TOOL`, `ATOM_MAPPING_TOOL`, `INTERMEDIATES_TOOL`, `MECHANISM_STEP_PROPOSAL_TOOL`, `REACTION_TYPE_SELECTION_TOOL`, `PREDICT_FULL_MECHANISM_TOOL`, and `HARNESS_MUTATION_TOOL` (used by the opt-in LLM harness-mutation proposer of overnight Ralph, `mechanistic_agent/core/llm_mutator.py`, not by a runtime subagent).
 - **Routing**: Use `adapter_supports_forced_tools(model_name)` from `llm.py` to check if the adapter supports forced tools at runtime. Only OLMo falls back to text-based JSON parsing.
 - **`text` field**: Every tool schema includes a `text` property (not required) so verbose models can provide reasoning without disrupting structured output. Extract and log it separately from the structured fields.
 - **Gemini**: Uses `_GeminiChatAdapter` which converts OpenAI-format schemas via `_openai_tools_to_gemini()` and calls `generate_content()` with `ToolConfig(function_calling_config=FunctionCallingConfig(mode=FunctionCallingConfigMode.ANY, ...))` from the `google-genai` SDK.
@@ -514,23 +514,6 @@ Harnesses without a `topology_profiles` section (schema v2.0) automatically fall
 - **Feedback Loop**: Human feedback through git PRs modifying prompt bases/few-shot, memories, or harness configs
 - **Performance Tracking**: Leaderboard comparing model+harness versions
 - **Preloaded Examples**: Dropdown examples serve as initial evaluation set with provisional verified steps
-
-### Island-Based Archive Evolution
-
-Inspired by [ShinkaEvolve](https://arxiv.org/abs/2509.19349) (arxiv:2509.19349), the `--island-mode` flag in `scripts/evolve_harness.py` enables archive-based parent selection with domain-specific islands:
-
-| Island | Mutation target | Eval filter |
-|--------|----------------|-------------|
-| `mapping` | atom_mapping + select_reaction_type prompts/few-shots | all tiers |
-| `reagent_conditions` | predict_missing_reagents + assess_initial_conditions | all tiers |
-| `topology` | topology profiles + module enabled flags | all tiers |
-| `hard_multistep` | all mutation types | hard tier only (9-19 steps) |
-
-**Parent selection** uses weighted sampling: `weight = sigmoid((score - median) / MAD) * (1 / (1 + children_count))`, combining exploitation (high score) with exploration (underexplored configurations).
-
-**Migration** between islands is gated on real eval improvement — an entry only migrates if it beats the target island's current best score.
-
-Key files: `mechanistic_agent/core/archive.py` (archive + parent selection), `mechanistic_agent/core/types.py` (ArchiveEntry, IslandConfig), `mechanistic_agent/core/db.py` (archive_entries table).
 
 ## Development Guidelines
 

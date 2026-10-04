@@ -10,7 +10,6 @@ from mechanistic_agent.core.llm_mutator import (
     MutationProposal,
     ProposalRejected,
     build_failure_digest,
-    digest_from_case_results,
 )
 from mechanistic_agent.core.overnight_ralph import load_overnight_program
 from mechanistic_agent.tool_schemas import HARNESS_MUTATION_TOOL
@@ -105,12 +104,6 @@ def test_failure_digest_is_compact_and_model_visible_only() -> None:
     assert "Cl: 2->4" in entry["failure_examples"][0]["error"]
     serialized = json.dumps(digest)
     assert "verified_mechanism" not in serialized and "known_mechanism" not in serialized
-
-
-def test_digest_from_case_results_adapts_evolve_harness_shape() -> None:
-    results = [{"case_id": "c1", "passed": False, "run_status": "failed", "error": "boom", "input_payload": {"starting_materials": ["A"], "products": ["B"]}, "step_outputs": []}]
-    digest = digest_from_case_results(results)
-    assert digest[0]["terminal_reason"] == "run_failed:boom"
 
 
 def test_llm_mutator_applies_harness_proposal_and_records_changelog(tmp_path: Path) -> None:

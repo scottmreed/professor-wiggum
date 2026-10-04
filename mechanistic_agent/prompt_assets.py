@@ -225,7 +225,7 @@ def _parse_skill_md_frontmatter(text: str) -> Dict[str, str]:
 
 
 # Process-wide, evaluation-scoped replacements for one call's prompt or few-shot
-# file. Evolution loops (island mode, overnight Ralph) write mutated variants as
+# file. Evolution loops (overnight Ralph) write mutated variants as
 # sibling files; ``call_asset_overrides`` makes an in-process evaluation resolve
 # those variants instead of the committed assets, without touching the files.
 # Keyed by (call_name, "prompt" | "few_shot", scope), where scope is ``None`` for

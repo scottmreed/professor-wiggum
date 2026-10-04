@@ -141,28 +141,6 @@ def build_failure_digest(snapshots: Iterable[Dict[str, Any]], *, max_runs: int =
     return digest
 
 
-def digest_from_case_results(case_results: Iterable[Dict[str, Any]], *, max_runs: int = 8) -> List[Dict[str, Any]]:
-    """Adapt evolve_harness case-result dicts (step_outputs + error) into a digest."""
-    snapshots: List[Dict[str, Any]] = []
-    for result in list(case_results)[:max_runs]:
-        if not isinstance(result, dict):
-            continue
-        snapshots.append(
-            {
-                "id": result.get("run_id") or result.get("case_id"),
-                "status": result.get("run_status") or ("completed" if result.get("passed") else "failed"),
-                "input": result.get("input_payload") or {},
-                "step_outputs": result.get("step_outputs") or [],
-                "events": (
-                    [{"event_type": "run_failed", "payload": {"reason": result.get("error")}}]
-                    if result.get("error")
-                    else []
-                ),
-            }
-        )
-    return build_failure_digest(snapshots, max_runs=max_runs)
-
-
 # ---------------------------------------------------------------------------
 # Proposal application
 # ---------------------------------------------------------------------------

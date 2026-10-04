@@ -29,10 +29,6 @@ Two proposers are available (program key `mutation_proposer`, CLI `--mutation-pr
   scheduled lane runs instead (the ledger summary records the rejection). The keep/discard
   acceptance rule below is unchanged: the model proposes, the eval decides.
 
-The same proposer is available to the island loop: `scripts/evolve_harness.py --island-mode
---mutation-proposer llm [--mutation-model <id>]`, where the digest comes from the previous
-generation's case results for that island.
-
 ## Freeze Policy
 
 Overnight Ralph must not mutate deterministic validators, scoring logic, holdout data, or model pricing.

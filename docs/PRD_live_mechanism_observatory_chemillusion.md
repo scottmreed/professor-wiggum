@@ -113,7 +113,7 @@ The two repositories have different responsibilities.
 - model and harness evaluation;
 - prompt/few-shot evolution;
 - Jev experiments;
-- RAlph / island evolution;
+- RAlph evolution;
 - benchmark and scoring logic;
 - training/eval data;
 - promotion of approved runtime releases.
@@ -1737,7 +1737,6 @@ The runtime container should copy/import only production-required code and asset
 - scoring against ground truth;
 - leaderboard routes;
 - curriculum publication;
-- island evolution;
 - RAlph mutation/evolution controls;
 - prompt/harness editing;
 - PR creation;
