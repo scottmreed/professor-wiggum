@@ -542,7 +542,10 @@ def _sweep(relpath: str, route: str, *, policy: str = "auto", every: int = 1) ->
 _ROUTE_B_FLOOR = {
     "training_data/eval_set.json": 0.92,
     "training_data/practice_eval/practice_set.json": 58 / 60,
-    _MULTISTEP: 419 / 420,
+    # 419/420 on the original 120 cases; 887/895 after the 2026-10-04 tier
+    # extension (+3/7/8/9/10-step cases). The 7 new misses are steps 4 and 8 of
+    # the 9-step Suzuki couplings, all under-specified mech blocks.
+    _MULTISTEP: 887 / 895,
 }
 
 

@@ -2654,6 +2654,79 @@ class RunStore:
             conn.commit()
         return eval_set_id
 
+    def append_eval_set_cases(
+        self,
+        eval_set_id: str,
+        cases: List[Dict[str, Any]],
+        *,
+        version: Optional[str] = None,
+        sha256: Optional[str] = None,
+        allow_holdout: bool = False,
+    ) -> Dict[str, Any]:
+        """Append cases to an existing eval set in place, keeping its id.
+
+        Keeping the id keeps leaderboard history (eval runs reference the set by
+        id) together when a development tier grows. Existing cases are never
+        modified: a ``case_id`` already in the set is skipped and reported.
+        ``version`` / ``sha256``, when given, replace the set's metadata in the
+        same transaction. Appending to a ``leaderboard_holdout`` set requires
+        ``allow_holdout=True``.
+        """
+
+        with self._lock, self._connect() as conn:
+            row = conn.execute(
+                "SELECT purpose FROM eval_sets WHERE id = ? LIMIT 1",
+                (eval_set_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown eval set: {eval_set_id}")
+            if str(row["purpose"]) == "leaderboard_holdout" and not allow_holdout:
+                raise ValueError(f"Refusing to append cases to holdout eval set {eval_set_id}")
+            existing = {
+                str(r["case_id"])
+                for r in conn.execute(
+                    "SELECT case_id FROM eval_set_cases WHERE eval_set_id = ?",
+                    (eval_set_id,),
+                ).fetchall()
+            }
+            added: List[str] = []
+            skipped: List[str] = []
+            for case in cases:
+                case_id = str(case.get("case_id") or case.get("id") or "").strip()
+                if not case_id:
+                    raise ValueError("Every appended eval case needs a case_id")
+                if case_id in existing:
+                    skipped.append(case_id)
+                    continue
+                expected_payload = case.get("expected")
+                conn.execute(
+                    """
+                    INSERT INTO eval_set_cases(id, eval_set_id, case_id, input_json, expected_json, tags_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        uuid.uuid4().hex,
+                        eval_set_id,
+                        case_id,
+                        self._json_dumps(case.get("input", {})),
+                        self._json_dumps(expected_payload) if expected_payload is not None else None,
+                        self._json_dumps(case.get("tags") or []),
+                    ),
+                )
+                existing.add(case_id)
+                added.append(case_id)
+            if version is not None:
+                conn.execute("UPDATE eval_sets SET version = ? WHERE id = ?", (str(version), eval_set_id))
+            if sha256 is not None:
+                conn.execute("UPDATE eval_sets SET sha256 = ? WHERE id = ?", (str(sha256), eval_set_id))
+            conn.commit()
+        return {
+            "eval_set_id": eval_set_id,
+            "added_case_ids": added,
+            "skipped_existing_case_ids": skipped,
+            "case_count": len(existing),
+        }
+
     def list_eval_sets(
         self,
         *,

@@ -148,7 +148,7 @@ class TestEvalTierMedium:
 
 
 class TestEvalTierHard:
-    """Run the hard eval tier (4-8 step reactions).
+    """Run the hard eval tier (4-10 step reactions).
 
     Required for: SOTA improvement claims; if leaderboard shows >=80% on hard
     for a given model, improving that score is required.
@@ -159,6 +159,6 @@ class TestEvalTierHard:
         assert len(reactions) == 10
         for r in reactions:
             steps = r.get("n_mechanistic_steps", 0)
-            assert 4 <= steps <= 8, (
-                f"Hard tier reaction {r['id']} has {steps} steps (expected 4-8)"
+            assert 4 <= steps <= 10, (
+                f"Hard tier reaction {r['id']} has {steps} steps (expected 4-10)"
             )

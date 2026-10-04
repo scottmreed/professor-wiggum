@@ -51,6 +51,8 @@ Current defaults:
 
 This supports the current repo state where `easy` may intentionally expose more eval-visible mechanisms while `medium` and `hard` remain Clawdiator-backed until the eval-facing tiers are prepared.
 
+Tier lists are **append-only**: routes take slices from the front of a tier's canonical order, so an ID never moves once listed and slices already run stay comparable. Today `medium` has 40 IDs (3-step) and `hard` 112 IDs in step-band order: 20 each of 4, 5, 6, 7 and 8 steps, then 5 nine-step and 7 ten-step cases. When a tier grows, the DB eval set mapped in `training_data/baseline_tier_eval_set_map.json` must grow too (`scripts/sync_dev_tier_eval_sets.py`), because the planner only runs tier IDs present in that eval set. See [eval_tiers.md](eval_tiers.md).
+
 ## Routes
 
 When no qualifying canonical row exists for the `model + thinking` scope:

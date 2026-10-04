@@ -49,8 +49,11 @@ So today, concretely:
 | Tier | Active source file | Case IDs |
 | --- | --- | --- |
 | `easy` | `eval_tiers.json` | 100 IDs (all of `eval_set.json`, 1-2 step FlowER defaults) |
-| `medium` | `baseline_tiers_clawdiator.json` | 20 IDs (3-step) |
-| `hard` | `baseline_tiers_clawdiator.json` | 60 IDs (4-6 step) |
+| `medium` | `baseline_tiers_clawdiator.json` | 40 IDs (3-step) |
+| `hard` | `baseline_tiers_clawdiator.json` | 112 IDs (4-10 step, in step-band order) |
+
+(Sizes as of the 2026-10-04 extension; see "Extension 2026-10-04" below. The rest of
+this note describes the PR that first populated the lists at 20 / 60.)
 
 The actual eval-set rows to run against come from a **third**, separate file,
 [`training_data/baseline_tier_eval_set_map.json`](../training_data/baseline_tier_eval_set_map.json),
@@ -206,3 +209,61 @@ here since the holdout file is not committed.
 - `eval --tier <t>` and `--leaderboard-status-only` now fail loudly, before any
   harness run, if the *requested* tier's active source resolves to 0 cases —
   regardless of which file that source is.
+
+## Extension 2026-10-04: medium 40, hard 4-10 steps
+
+Tier lists are **append-only**. Route slices are taken from the front of a tier's
+canonical order, so already-run slices (medium 1-10; hard 1-10, 21-30, 41-50) keep
+their exact IDs. `tests/fast/test_eval_tiers_structure.py` pins the pre-extension
+lists as a hashed prefix of both tier files.
+
+| Tier | Positions | Steps | Cases |
+| --- | --- | --- | --- |
+| `medium` | 1-20 (unchanged) | 3 | 20 |
+| `medium` | 21-40 (new) | 3 | 20 |
+| `hard` | 1-60 (unchanged) | 4 / 5 / 6 | 20 each |
+| `hard` | 61-80 (new) | 7 | 20 |
+| `hard` | 81-100 (new) | 8 | 20 |
+| `hard` | 101-105 (new) | 9 | 5 |
+| `hard` | 106-112 (new) | 10 | 7 |
+
+**Selection policy** — the same stratified policy, continued:
+`scripts/build_flower_mechanism_dataset.py --mode extend --extend-step 3=40
+--extend-step 7=20 --extend-step 8=20 --extend-step 9=20 --extend-step 10=20`. Per
+step-count tier it converts the next lowest-ranked mechanisms of
+`flower_mechanism_index.jsonl` (`rank_within_step_count` order) until the tier
+holds the target, skipping IDs already selected, IDs that failed conversion before,
+and any ID in `eval_set.json`, `flower_mechanisms_100.json`,
+`practice_eval/practice_set.json`, either tier file, or the holdout. Every new
+case's converted step count equals its tier. Re-converting the original 3- and
+6-step cases with today's converter reproduces them byte for byte, so the
+continuation is consistent with the first build. The run is logged under
+`extensions` in `flower_mechanisms_multistep_report.json`.
+
+**Why 9 and 10 are short.** FlowER train indexes 6,479 nine-step and 5,716 ten-step
+groups; the builder attempted all of them and only 5 and 7 convert (the rest fail,
+almost all with `state_discontinuity`). Those bands are therefore 5 and 7 cases. They
+are also narrow chemically: every 9-step case is a Pd-catalysed Suzuki coupling and
+every 10-step case is a borane reduction of a carboxylic acid. The 7-step band needed
+1,507 attempts for 20 conversions, the 8-step band 89.
+
+**Ground-truth checks.** All 895 ground-truth steps of the extended file reproduce via
+their SMIRKS (route A in `test_persistent_atom_identity.py`). Via the electron
+pushes (route B) the new 9-step cases miss steps 4 and/or 8 (7 steps, all
+under-specified `mech:` blocks), so the route B floor for the multistep file is now
+887/895.
+
+**Holdout.** None of the 72 new IDs is `flower_test_*`, and none of the new reactions
+matches a holdout reaction by canonical reactant/product sets (checked against the 98
+cases of `eval_set_holdout.json`). None overlaps `eval_set.json`, the practice set,
+or the existing tiers by ID or reaction.
+
+**DB eval sets.** The planner only runs tier IDs that exist in the mapped eval set,
+so `scripts/sync_dev_tier_eval_sets.py --apply` appended the new cases to the
+existing sets in place (`RunStore.append_eval_set_cases`): same `eval_set_id`
+(leaderboard history stays together), existing case rows untouched, version
+`v1 -> v2`, `sha256` = content hash of the set's cases. Medium
+`003aae89…` now holds 40 cases, hard `5e2bb46a…` 112.
+
+Note for 10-step cases: `eval --max-steps` defaults to 10, which leaves no slack for a
+10-step ground truth; raise it when running that band.

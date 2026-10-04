@@ -6,7 +6,7 @@ A local-first agent that predicts **arrow-pushing (elementary-step) mechanisms**
 
 ## Leaderboard
 
-We are focusing on one top-tier model — currently **Claude Opus 5.5** — to improve the harness, and will back-fill cheaper models later. Scores are the 1000-point eval rubric on FlowER-derived tiers of 10 cases each (easy = 1–2 steps, medium = 3, hard = 4–8; WIN ≥ 700). Links: [Claude Opus 5.5 by tier](LEADERBOARD.md#best-model-by-tier) · [harness-free baselines (Opus 5.5 vs Opus 4.6)](LEADERBOARD.md#harness-free-baselines).
+We are focusing on one top-tier model — currently **Claude Opus 5.5** — to improve the harness, and will back-fill cheaper models later. Scores are the 1000-point eval rubric on 10-case slices of FlowER-derived tiers (easy = 1–2 steps, medium = 3, hard = 4–10; WIN ≥ 700). Links: [Claude Opus 5.5 by tier](LEADERBOARD.md#best-model-by-tier) · [harness-free baselines (Opus 5.5 vs Opus 4.6)](LEADERBOARD.md#harness-free-baselines).
 
 <!-- leaderboard:start -->
 | Tier | Best model | Score | Targets reached | Passed | Harness | Date | Details |
