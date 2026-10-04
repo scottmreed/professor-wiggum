@@ -387,6 +387,17 @@ def _leaderboard_row_to_pts(row: Dict[str, Any]) -> Dict[str, Any]:
     return {"total": total, "outcome": outcome}
 
 
+def _leaderboard_row_via_bridge(row: Dict[str, Any]) -> bool:
+    """True when a leaderboard row came from the keyless agent bridge.
+
+    Rows carry ``via_bridge`` (bridge runs are listed under their declared
+    model); rows built before that flag fall back to the bridge model name.
+    """
+    if "via_bridge" in row:
+        return bool(row.get("via_bridge"))
+    return is_agent_bridge_model(str(row.get("model_name") or row.get("model") or ""))
+
+
 def _render_leaderboard_markdown(
     eval_set_id: str,
     items: List[Dict[str, object]],
@@ -427,7 +438,7 @@ def _render_leaderboard_markdown(
             [
                 "## Current SOTA",
                 "",
-                f"- Model: `{top_model}`",
+                f"- Model: `{top_model}`" + (" †" if _leaderboard_row_via_bridge(top) else ""),
                 f"- Thinking: `{top_thinking}`",
                 f"- Score: `{top_pts['total']}/1000` ({top_pts['outcome']})",
                 f"- Deterministic pass rate: `{top_pass_rate:.1f}%`",
@@ -477,7 +488,7 @@ def _render_leaderboard_markdown(
     has_bridge_origin = False
     for index, row in enumerate(items, 1):
         model = str(row.get("model_name") or row.get("model") or "unknown")
-        is_bridge = is_agent_bridge_model(model)
+        is_bridge = _leaderboard_row_via_bridge(row)
         if is_bridge:
             has_bridge_origin = True
         model_cell = f"`{model}`" + (" †" if is_bridge else "")
@@ -515,12 +526,15 @@ def _render_leaderboard_markdown(
                 "",
                 "> † **Agent-bridge origin.** Rows marked † were produced by the keyless "
                 "`agent-bridge` provider — a *delegated system* in which an external "
-                "agent/subagent answers each model call, not a hosted model. Deterministic "
-                "RDKit validation gates these runs exactly like any other, so the score is "
-                "directly comparable; but cost is `budget_observability: opaque` (no API "
-                "spend is recorded, and inner agent spend is not measured), so agent-bridge "
-                "rows are **not eligible for cost-class SOTA claims**. The declared "
-                "origin is recorded in each run's `config.origin`.",
+                "agent/subagent answers each model call, not a hosted model. Keyless "
+                "agent-bridge runs are listed under the responder's declared model and "
+                "marked †; runs with an undeclared model keep the `agent-bridge` label. "
+                "Deterministic RDKit validation gates these runs exactly like any other, so "
+                "the score is directly comparable; but cost is `budget_observability: opaque` "
+                "(no API spend is recorded, and inner agent spend is not measured), so "
+                "agent-bridge rows are **not eligible for cost-class SOTA claims**. The "
+                "declared origin is recorded in each run's `config.origin` (baseline runs: "
+                "the eval run's `metadata.origin`).",
             ]
         )
     return "\n".join(lines)
@@ -3130,6 +3144,8 @@ def leaderboard(
             # Truncate model name if too long
             if len(model) > 25:
                 model = model[:22] + "..."
+            if _leaderboard_row_via_bridge(row):
+                model = f"{model[:23]} †"
             thinking = row.get("thinking_level") or "none"
             run_type = "Baseline" if row.get("is_baseline") else "Harness"
             pts = _leaderboard_row_to_pts(row)
@@ -3286,7 +3302,8 @@ def _arena_table_from_leaderboard_items(items: List[Dict[str, Any]]) -> str:
         avg_ms = float(row.get("avg_latency_ms") or 0.0)
         avg_s = f"{avg_ms / 1000:.1f}s" if avg_ms > 0 else "—"
         group = str(row.get("run_group_name") or "n/a")
-        lines.append(f"| {date_str} | `{model}` | {score_display} | {outcome} | {pass_rate} | {avg_s} | `{group}` |")
+        model_cell = f"`{model}`" + (" †" if _leaderboard_row_via_bridge(row) else "")
+        lines.append(f"| {date_str} | {model_cell} | {score_display} | {outcome} | {pass_rate} | {avg_s} | `{group}` |")
     return "\n".join(lines)
 
 

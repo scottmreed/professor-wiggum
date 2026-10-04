@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -353,11 +354,58 @@ def origin_for_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return None
 
 
+# `claude-opus-5-5` -> `claude-opus-5.5`: responders declare API-style ids, the
+# catalog keys versions with dots.
+_VERSION_DASH = re.compile(r"(\d)-(\d)")
+
+
+def _normalised_model_id(name: str) -> str:
+    """Provider- and separator-insensitive id (`anthropic/claude-opus-5.5` == `claude-opus-5-5`)."""
+    return str(name or "").split("/")[-1].strip().lower().replace(".", "-")
+
+
+def declared_model_key(origin: Any) -> Optional[str]:
+    """Catalog key of the model a bridge responder declared, or ``None``.
+
+    Lets a keyless run be listed under the model that actually answered. The
+    declared id may carry a free-text note (``"claude-opus-5-5 (headless ...)"``),
+    which is dropped. A resolution is accepted only when it names the same model
+    (the catalog resolver's prefix/trim fallbacks would map ``gpt-5-5`` to
+    ``gpt-5``); an id unknown to the catalog is returned as declared. Returns
+    ``None`` for non-bridge origins and undeclared (or bridge-named) models.
+    """
+    if not isinstance(origin, dict) or origin.get("responder") != "agent-bridge":
+        return None
+    declared = str(origin.get("declared_underlying_model") or "").split(" (")[0].strip()
+    if not declared or declared.lower() == "undeclared":
+        return None
+    from .model_registry import get_model_catalog, resolve_model_key
+
+    wanted = _normalised_model_id(declared)
+    candidates = [declared, _VERSION_DASH.sub(r"\1.\2", declared)]
+    candidates += [f"anthropic/{candidate}" for candidate in candidates if "/" not in candidate]
+    resolved: Optional[str] = None
+    for candidate in candidates:
+        try:
+            key = resolve_model_key(candidate)
+        except ValueError:
+            continue
+        if _normalised_model_id(key) == wanted:
+            resolved = key
+            break
+    if resolved is None:
+        resolved = next((key for key in get_model_catalog() if _normalised_model_id(key) == wanted), None)
+    if resolved is not None and is_agent_bridge_model(resolved):
+        return None
+    return resolved or declared
+
+
 __all__ = [
     "AgentBridgeAdapter",
     "AgentBridgeResponderError",
     "build_model_input",
     "build_origin_provenance",
+    "declared_model_key",
     "origin_for_config",
     "pending_requests",
     "read_request",
