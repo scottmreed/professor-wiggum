@@ -367,6 +367,103 @@ def test_run_baseline_eval_set_tracks_completed_passed_failed(tmp_path: Path) ->
     assert result["errored"] == 0
 
 
+def test_run_baseline_eval_set_stamps_bridge_origin(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    monkeypatch.setenv("MECHANISTIC_AGENT_BRIDGE_DECLARED_MODEL", "claude-opus-5-5")
+    monkeypatch.setenv("MECHANISTIC_AGENT_BRIDGE_RESPONDER_KIND", "orchestrator_subagents")
+    monkeypatch.setenv("MECHANISTIC_AGENT_BRIDGE_SAW_GROUND_TRUTH", "false")
+    store = RunStore(tmp_path / "data" / "mechanistic.db")
+    eval_set_id = _seed_eval_set(store, name="bridge_baseline", case_id="case_a")
+    resolved_eval_set = SimpleNamespace(
+        eval_set_id=eval_set_id,
+        purpose="general",
+        cases=[
+            {
+                "case_id": "case_a",
+                "input": {"starting_materials": ["CCBr"], "products": ["CCCl"]},
+                "expected": {},
+            }
+        ],
+    )
+
+    class _Runner:
+        def run_case(self, **_kwargs):  # noqa: ANN003
+            return {"latency_ms": 1.0}
+
+    def _score(_result, _expected):  # noqa: ANN001
+        return {"score": 0.5, "passed": False, "scoring_breakdown": {}, "error": None}
+
+    result = _run_baseline_eval_set(
+        runner=_Runner(),
+        score_baseline_result_fn=_score,
+        store=store,
+        run_group_name="harness_free_baseline_easy",
+        resolved_eval_set=resolved_eval_set,
+        model_name="agent-bridge",
+        model_family="agent-bridge",
+        thinking_level=None,
+        temperature=25.0,
+        ph=None,
+        max_cases=10,
+        timeout=10.0,
+        llm_seed=42,
+        llm_temperature=0.0,
+        sampling_policy="fixed",
+        harness_hash="bundle-hash",
+    )
+
+    eval_run = store.get_eval_run(result["eval_run_id"])
+    origin = eval_run["metadata"]["origin"]
+    assert origin["responder"] == "agent-bridge"
+    assert origin["declared_underlying_model"] == "claude-opus-5-5"
+    assert origin["responder_saw_ground_truth"] is False
+    (row,) = store.list_eval_run_results(result["eval_run_id"])
+    assert row["summary"]["run_metadata"]["origin"] == origin
+
+
+def test_run_baseline_eval_set_hosted_model_has_no_origin(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "data" / "mechanistic.db")
+    eval_set_id = _seed_eval_set(store, name="hosted_baseline", case_id="case_a")
+    resolved_eval_set = SimpleNamespace(
+        eval_set_id=eval_set_id,
+        purpose="general",
+        cases=[
+            {
+                "case_id": "case_a",
+                "input": {"starting_materials": ["CCBr"], "products": ["CCCl"]},
+                "expected": {},
+            }
+        ],
+    )
+
+    class _Runner:
+        def run_case(self, **_kwargs):  # noqa: ANN003
+            return {"latency_ms": 1.0}
+
+    def _score(_result, _expected):  # noqa: ANN001
+        return {"score": 0.5, "passed": False, "scoring_breakdown": {}, "error": None}
+
+    result = _run_baseline_eval_set(
+        runner=_Runner(),
+        score_baseline_result_fn=_score,
+        store=store,
+        run_group_name="harness_free_baseline_easy",
+        resolved_eval_set=resolved_eval_set,
+        model_name="anthropic/claude-opus-4.6",
+        model_family="claude",
+        thinking_level="high",
+        temperature=25.0,
+        ph=None,
+        max_cases=10,
+        timeout=10.0,
+        llm_seed=42,
+        llm_temperature=0.0,
+        sampling_policy="fixed",
+        harness_hash="bundle-hash",
+    )
+
+    assert "origin" not in store.get_eval_run(result["eval_run_id"])["metadata"]
+
+
 def test_build_baseline_tier_execution_plan_rejects_unknown_eval_set_id(tmp_path: Path) -> None:
     base = tmp_path
     _write_eval_tiers(base, easy=["case_easy"], medium=[], hard=[])

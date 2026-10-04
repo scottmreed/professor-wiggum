@@ -33,6 +33,7 @@ from mechanistic_agent.model_registry import (
     resolve_model_key,
     to_internal_reasoning_level,
 )
+from mechanistic_agent.agent_bridge import build_origin_provenance
 from mechanistic_agent.llm import is_agent_bridge_model
 from mechanistic_agent.data_paths import db_path as resolve_db_path, holdout_eval_set_path
 from mechanistic_agent.eval_set_resolution import (
@@ -1477,6 +1478,9 @@ def _run_baseline_eval_set(
     api_keys: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Execute one baseline eval run and persist leaderboard results."""
+    # Baseline results have no run row, so a keyless run's declared origin is
+    # kept on the eval run and on each result instead of a run config.
+    origin = build_origin_provenance(model_name) if is_agent_bridge_model(model_name) else None
     eval_run_id = store.create_eval_run(
         eval_set_id=str(resolved_eval_set.eval_set_id),
         run_group_name=run_group_name,
@@ -1485,6 +1489,7 @@ def _run_baseline_eval_set(
         model_family=model_family,
         thinking_level=thinking_level,
         harness_bundle_hash=harness_hash,
+        metadata=({"origin": origin} if origin else None),
         status="running",
     )
 
@@ -1560,6 +1565,7 @@ def _run_baseline_eval_set(
                     "prompt_hash": result.get("prompt_hash"),
                     "prompt_system_hash": result.get("prompt_system_hash"),
                     "prompt_user_hash": result.get("prompt_user_hash"),
+                    **({"origin": origin} if origin else {}),
                 },
                 "subagent_scores": {
                     "full_mechanism_baseline": {
