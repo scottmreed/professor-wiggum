@@ -19,14 +19,15 @@
   "eval_set_id": "003aae8966184aa2a2874dbf3e0f510f",
   "case_ids_hash": "055031c6e73c0930a73ae786ae5117369459e7eee2a2761c0e8fd60bc4ba0918",
   "holdout": false,
-  "scoring_version": "v2",
-  "git_commit": "71bdae4",
+  "scoring_version": "v3",
+  "git_commit": "22f391a",
+  "sources": null,
   "summary": {
-    "points": 904,
+    "points": 950,
     "outcome": "WIN",
     "breakdown": {
       "product": 300,
-      "pathway": 254,
+      "pathway": 300,
       "push": 191,
       "speed": 59,
       "methodology": 100
@@ -34,7 +35,7 @@
     "cases": 10,
     "targets_reached": 10,
     "passed": 10,
-    "mean_score": 0.9462,
+    "mean_score": 0.9842,
     "avg_latency_s": 164.1
   },
   "cases": [
@@ -44,7 +45,7 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
-      "score": 0.9513,
+      "score": 0.9825,
       "latency_s": 189.6,
       "run_status": "completed"
     },
@@ -54,7 +55,7 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
-      "score": 0.9513,
+      "score": 0.9825,
       "latency_s": 126.5,
       "run_status": "completed"
     },
@@ -64,7 +65,7 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
-      "score": 0.8525,
+      "score": 0.965,
       "latency_s": 148.8,
       "run_status": "completed"
     },
@@ -74,7 +75,7 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
-      "score": 0.9513,
+      "score": 0.9825,
       "latency_s": 148.1,
       "run_status": "completed"
     },
@@ -84,7 +85,7 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
-      "score": 0.8525,
+      "score": 0.965,
       "latency_s": 139.9,
       "run_status": "completed"
     },
@@ -104,7 +105,7 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
-      "score": 0.9513,
+      "score": 0.9825,
       "latency_s": 138.7,
       "run_status": "completed"
     },
@@ -114,7 +115,7 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
-      "score": 0.9513,
+      "score": 0.9825,
       "latency_s": 149.3,
       "run_status": "completed"
     },
