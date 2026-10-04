@@ -15,13 +15,18 @@ import pytest
 
 from mechanistic_agent.agent_bridge import (
     MODEL_INPUT_KEYS,
+    RESPONDER_INTEGRITY_KEY,
     REQUEST_SCHEMA,
     AgentBridgeAdapter,
     declared_model_key,
+    origin_integrity_contaminated,
+    origin_integrity_status,
     pending_requests,
     read_request,
+    responder_view,
     write_response,
 )
+from mechanistic_agent.core.call_recorder import call_context
 from mechanistic_agent.llm import (
     get_chat_model,
     get_model_api_key,
@@ -57,7 +62,8 @@ def test_request_exposes_only_model_visible_inputs(tmp_path) -> None:
     payload = read_request(request_path)
 
     # Envelope holds only non-task routing metadata + the model_input block.
-    assert set(payload.keys()) == {"schema", "request_id", "model", "model_input"}
+    assert set(payload.keys()) == {"schema", "request_id", "model", "model_input", "context"}
+    assert payload["context"] == {}  # no run step open -> nothing to attribute
     assert payload["schema"] == REQUEST_SCHEMA
     assert payload["model"] == "agent-bridge"
 
@@ -67,6 +73,38 @@ def test_request_exposes_only_model_visible_inputs(tmp_path) -> None:
     assert set(model_input.keys()) == set(MODEL_INPUT_KEYS)
     assert model_input["tools"] == SAMPLE_TOOLS
     assert model_input["tool_choice"] == SAMPLE_TOOL_CHOICE
+
+
+def test_request_context_attributes_the_call_outside_model_input(tmp_path) -> None:
+    """Run/step attribution rides in a top-level ``context`` block, never in ``model_input``."""
+    adapter = _adapter(tmp_path)
+    with call_context(run_id="run-123", step_name="mechanism_step_proposal", attempt=2, retry_index=1):
+        request_path = adapter._write_request(SAMPLE_MESSAGES, SAMPLE_TOOLS, SAMPLE_TOOL_CHOICE)
+    payload = read_request(request_path)
+    assert payload["context"] == {
+        "run_id": "run-123",
+        "step_name": "mechanism_step_proposal",
+        "attempt": 2,
+        "retry_index": 1,
+    }
+    assert set(payload["model_input"].keys()) == set(MODEL_INPUT_KEYS)
+    assert "run-123" not in json.dumps(payload["model_input"])
+    # What a responder is handed drops the attribution block entirely.
+    view = responder_view(payload)
+    assert "context" not in view
+    assert view["model_input"] == payload["model_input"]
+    assert view["request_id"] == payload["request_id"]
+
+
+def test_origin_integrity_helpers() -> None:
+    assert RESPONDER_INTEGRITY_KEY == "responder_integrity"
+    assert origin_integrity_status(None) is None
+    assert origin_integrity_status({}) is None
+    assert origin_integrity_status({"responder_integrity": {"status": "clean"}}) == "clean"
+    assert not origin_integrity_contaminated({"responder_integrity": {"status": "procedural"}})
+    assert not origin_integrity_contaminated({"responder_integrity": "garbage"})
+    assert origin_integrity_contaminated({"responder_integrity": {"status": "contaminated"}})
+    assert origin_integrity_contaminated({"responder_integrity": {"status": " Contaminated "}})
 
 
 def test_messages_serialised_identically_to_hosted_adapter(tmp_path) -> None:

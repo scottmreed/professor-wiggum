@@ -28,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
+from mechanistic_agent.agent_bridge import origin_integrity_contaminated
 from mechanistic_agent.rescoring import default_expected_resolver
 from mechanistic_agent.scoring import (
     DEFAULT_SCORING_VERSION,
@@ -128,6 +129,15 @@ def _record_date(run: Dict[str, Any]) -> str:
 def _refuse_ground_truth(origin: Optional[Dict[str, Any]], eval_run_id: str, where: str) -> None:
     if origin and _truthy(origin.get("responder_saw_ground_truth")):
         raise PublishError(f"eval run {eval_run_id} is a ground-truth replay ({where}); refusing to publish")
+    _refuse_contaminated(origin, eval_run_id, where)
+
+
+def _refuse_contaminated(block: Optional[Dict[str, Any]], eval_run_id: str, where: str) -> None:
+    """Refuse runs a responder-integrity audit marked contaminated (origin or eval-run metadata)."""
+    if origin_integrity_contaminated(block):
+        raise PublishError(
+            f"eval run {eval_run_id} is contaminated per the responder-integrity audit ({where}); refusing to publish"
+        )
 
 
 def is_baseline_eval_run(run: Dict[str, Any], results: Sequence[Dict[str, Any]]) -> bool:
@@ -280,6 +290,8 @@ def export_eval_run(
     runs, pairs, sources = _combined_results(store, ids)
     run = runs[0]
     eval_run_id = ids[-1] if len(ids) > 1 else ids[0]
+    for source_run in runs:
+        _refuse_contaminated(source_run.get("metadata"), str(source_run.get("id") or eval_run_id), "eval run metadata")
     results = [result for _, result in pairs]
     run_for_result = {id(result): src for src, result in pairs}
     eval_set = store.get_eval_set(str(run.get("eval_set_id") or "")) or {}
@@ -302,10 +314,7 @@ def export_eval_run(
         snapshot = store.get_run_snapshot(run_id) if run_id else None
         config = (snapshot or {}).get("config") if isinstance((snapshot or {}).get("config"), dict) else {}
         case_origin = config.get("origin") if isinstance(config.get("origin"), dict) else None
-        if case_origin and _truthy(case_origin.get("responder_saw_ground_truth")):
-            raise PublishError(
-                f"eval run {eval_run_id} is a ground-truth replay (case {result.get('case_id')}); refusing to publish"
-            )
+        _refuse_ground_truth(case_origin, eval_run_id, f"case {result.get('case_id')}")
         origin = origin or case_origin
         harness_name = harness_name or config.get("harness_name")
         latency = float(result.get("latency_ms") or 0.0)

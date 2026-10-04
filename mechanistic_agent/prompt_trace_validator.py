@@ -211,6 +211,11 @@ def validate_evidence_for_calls(
                 # of model capability and undeclared exposure is not accepted.
                 rejections.append(f"{path.name}: responder_saw_ground_truth={exposure!r} (must be false)")
                 continue
+            if evidence_integrity_contaminated(payload):
+                # A responder-integrity audit found the bridge responder looked
+                # beyond its prompt (repo, DB, web): its answers are not evidence.
+                rejections.append(f"{path.name}: responder_integrity=contaminated (audit found prompt contamination)")
+                continue
             prompt_block = payload.get("prompt_version")
             if not isinstance(prompt_block, dict):
                 continue
@@ -295,3 +300,16 @@ def evidence_ground_truth_exposure(payload: Dict[str, object]) -> object:
     if text in {"false", "0", "no"}:
         return False
     return "undeclared"
+
+
+def evidence_integrity_contaminated(payload: Dict[str, object]) -> bool:
+    """True when the evidence's run was marked contaminated by a responder-integrity audit.
+
+    Accepted locations: top-level ``responder_integrity`` or
+    ``origin.responder_integrity`` (the exporter copies the run's ``config.origin``).
+    """
+    from mechanistic_agent.agent_bridge import origin_integrity_contaminated
+
+    if not isinstance(payload, dict):
+        return False
+    return origin_integrity_contaminated(payload) or origin_integrity_contaminated(payload.get("origin"))

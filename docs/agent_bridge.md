@@ -31,6 +31,13 @@ block:
 }
 ```
 
+The request also carries a top-level `context` block (`run_id`, `step_name`,
+`attempt`, `retry_index` from the call recorder; `{}` outside a run step). It is
+**not** model input: it exists only so the responder-integrity audit can say which
+run a call belonged to. `bridge-serve --command` strips it before piping the
+request to the responder (`agent_bridge.responder_view`), and
+`scripts/bridge_responder.py prep` copies only `model_input` into `prompt.md`.
+
 `messages` are serialised with the *same* `serialise_chat_messages` helper the
 OpenAI adapter uses, so the responder sees byte-for-byte the message view a
 keyed model would — **and nothing else**. No run state, eval ground truth,
@@ -233,6 +240,41 @@ into its answers is producing a *replay*, not a capability measurement, and must
 declare `true`. The fast suite (`tests/fast/test_ground_truth_provenance.py`)
 drives a real run through the bridge and asserts that no request ever contains
 the verified or known mechanism, so a blind responder cannot see it by accident.
+
+## Responder integrity audit (blind subagents)
+
+When a Claude Code session answers calls with spawned subagents, use
+`scripts/bridge_responder.py` (`serve` / `prompt <stem>` / `audit`) and follow
+the project skill `.claude/skills/bridge-responder/SKILL.md`. Each call gets one
+fresh subagent that may only Read its `calls/<stem>/prompt.md` and Write its
+`calls/<stem>/answer.json`.
+
+After the runs finish, the **mandatory** audit reads the subagent transcripts
+(Claude Code JSONL; `--transcripts <session tasks dir>`), matches each one to its
+call through the `prompt.md` path in its first prompt, and classifies every tool
+call:
+
+- `clean`: nothing beyond the allowed Read and Write.
+- `procedural`: a rule slip that touched only that call's own files, such as a
+  Bash heredoc into `answer.json` or a `json.load` check of it. The result is
+  still usable.
+- `contaminated`: any other path (repo, `training_data/`, data checkout, DB,
+  `traces/`, another call), a disallowed command or python module, web access,
+  a subagent spawn, or an MCP or unknown tool. Disregard the result.
+- `unaudited`: the call was answered but no transcript was found, so the result
+  cannot be claimed blind.
+
+The audit exits non-zero when any call is contaminated. With `audit --mark`
+(explicit opt-in) the verdict is written as
+`responder_integrity = {status, audited_at, violations, ...}` onto each run's
+`config.origin` (attributed through the request `context.run_id`) and onto its
+eval run's `metadata`. `agent_bridge.origin_integrity_contaminated` then makes
+three consumers ignore contaminated runs: `RunStore.leaderboard` drops them,
+`prompt_trace_validator` rejects evidence exported from them, and
+`results_publish` refuses to publish them. `serve --transcripts ...` also
+rejects an answer, and re-dispatches the call, when its transcript is already
+contaminated at response time. The post-run audit is still required, because it
+covers tool calls made after the answer was written.
 
 ## Attribution
 
