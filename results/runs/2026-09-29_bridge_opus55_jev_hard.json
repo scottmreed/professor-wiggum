@@ -19,14 +19,15 @@
   "eval_set_id": "5e2bb46a40134277926f9403330afee7",
   "case_ids_hash": "f5fed8810a911fe14fc591f224a1c34c3da936adbd3295ee1515b08665bf9af0",
   "holdout": false,
-  "scoring_version": "v2",
-  "git_commit": "71bdae4",
+  "scoring_version": "v3",
+  "git_commit": "22f391a",
+  "sources": null,
   "summary": {
-    "points": 823,
+    "points": 852,
     "outcome": "WIN",
     "breakdown": {
       "product": 300,
-      "pathway": 220,
+      "pathway": 249,
       "push": 187,
       "speed": 16,
       "methodology": 100
@@ -34,7 +35,7 @@
     "cases": 10,
     "targets_reached": 10,
     "passed": 9,
-    "mean_score": 0.8363,
+    "mean_score": 0.8723,
     "avg_latency_s": 334.1
   },
   "cases": [
@@ -74,7 +75,7 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
-      "score": 0.8125,
+      "score": 0.9025,
       "latency_s": 376.9,
       "run_status": "completed"
     },
@@ -84,7 +85,7 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
-      "score": 0.8125,
+      "score": 0.9025,
       "latency_s": 360.4,
       "run_status": "completed"
     },
@@ -94,7 +95,7 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
-      "score": 0.8125,
+      "score": 0.9025,
       "latency_s": 358.2,
       "run_status": "completed"
     },
@@ -134,7 +135,7 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
-      "score": 0.8125,
+      "score": 0.9025,
       "latency_s": 364.8,
       "run_status": "completed"
     }

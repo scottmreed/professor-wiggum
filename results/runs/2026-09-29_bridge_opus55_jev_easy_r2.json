@@ -19,14 +19,15 @@
   "eval_set_id": "b8855f9de2c741e6bf2d74117eeada70",
   "case_ids_hash": "2ed6a67fa0f530dbe9522930eaac73afda031df3a503539779e9927935f62a24",
   "holdout": false,
-  "scoring_version": "v2",
-  "git_commit": "71bdae4",
+  "scoring_version": "v3",
+  "git_commit": "22f391a",
+  "sources": null,
   "summary": {
-    "points": 939,
+    "points": 970,
     "outcome": "WIN",
     "breakdown": {
       "product": 300,
-      "pathway": 269,
+      "pathway": 300,
       "push": 196,
       "speed": 74,
       "methodology": 100
@@ -34,7 +35,7 @@
     "cases": 10,
     "targets_reached": 10,
     "passed": 10,
-    "mean_score": 0.9452,
+    "mean_score": 0.993,
     "avg_latency_s": 104.7
   },
   "cases": [
@@ -94,7 +95,7 @@
       "accepted_steps": 3,
       "target_reached": true,
       "passed": true,
-      "score": 0.7258,
+      "score": 0.965,
       "latency_s": 239.2,
       "run_status": "failed"
     },
@@ -104,7 +105,7 @@
       "accepted_steps": 3,
       "target_reached": true,
       "passed": true,
-      "score": 0.7258,
+      "score": 0.965,
       "latency_s": 224.7,
       "run_status": "failed"
     },
