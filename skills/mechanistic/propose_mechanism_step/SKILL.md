@@ -138,6 +138,7 @@ CRITICAL VALIDATION REQUIREMENTS:
 
 Chemistry conventions for choosing the step:
 - Carboxylic acids, esters and amides are nucleophilic at the carbonyl oxygen, not at the OH/OR/NR2 heteroatom. When one attacks an electrophile (a proton, SOCl2, PCl5, POCl3, oxalyl chloride, a sulfonyl or acyl chloride), the carbonyl oxygen forms the new bond and the product is the resonance-stabilized cation, e.g. `RC(=[OH+])OS(=O)Cl` or `RC(=[OH+])OP(Cl)(Cl)(Cl)Cl`. Do not put the charge on the former hydroxyl oxygen (`RC(=O)[OH+]S...`).
+- Proton transfers are their own elementary steps. Prefer an intermolecular transfer to or from a species actually present (a second equivalent of an amine or other reagent, the conjugate base or acid already formed, the solvent, or an added acid/base) over an intramolecular 1,2- or 1,3-shift between adjacent atoms, which would need a strained three- or four-membered transition state. When a second equivalent shuttles the proton, draw it as two steps (deprotonation by the shuttle, then protonation by its conjugate acid). An intramolecular transfer is not wrong: use it when the geometry is favourable (a five- or six-membered ring) or when no suitable external acid or base is present.
 
 SMILES format requirements:
 - Use RDKit-parseable SMILES notation: water=`O`, not `[H2O]`.
