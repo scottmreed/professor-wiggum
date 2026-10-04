@@ -70,6 +70,12 @@ def _git_sha(base: Path) -> Optional[str]:
     env_value = os.getenv(RUNTIME_GIT_SHA_ENV)
     if env_value:
         return env_value.strip()
+    # Pinned product builds (ChemIllusion's Dockerfile.api) drop .git and record the sha here.
+    sha_file = base / "RUNTIME_GIT_SHA"
+    if sha_file.is_file():
+        recorded = sha_file.read_text(encoding="utf-8").strip()
+        if recorded:
+            return recorded
     try:
         out = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=str(base), capture_output=True, text=True, timeout=3, check=False

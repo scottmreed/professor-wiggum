@@ -17,6 +17,8 @@ These reactions are drawn from the same FlowER `train.txt` source as the develop
 - `training_data/eval_set.json` (the development eval set)
 - The leaderboard holdout set (private)
 
+One case, `flower_254799`, is also in the medium development tier (`training_data/eval_tiers.json`).
+
 ## Usage
 
 Run the practice eval to test your changes locally:
