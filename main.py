@@ -3934,7 +3934,8 @@ def eval_cmd(
         None, "--max-per-tier",
         help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
     ),
-    max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
+    # 14 leaves slack above the 10-step hard band (training_data/eval_tiers.json).
+    max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(1200.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",
@@ -4528,7 +4529,7 @@ def eval_runset_official_cmd(
         "--num-examples",
         help="Max cases/examples to run (default: 20).",
     ),
-    max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
+    max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",

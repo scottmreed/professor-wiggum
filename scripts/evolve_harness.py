@@ -1788,7 +1788,7 @@ def main() -> None:
     parser.add_argument("--min-score-threshold", type=float, default=0.2, help="Stop mining if the batch mean score drops below this.")
     parser.add_argument("--mining-score-threshold", type=float, default=0.5, help="Only mine few-shots from sufficiently strong batches.")
     parser.add_argument("--max-few-shots-per-step", type=int, default=3, help="Max new examples per subagent per batch.")
-    parser.add_argument("--max-steps", type=int, default=10, help="Max mechanism steps per case.")
+    parser.add_argument("--max-steps", type=int, default=14, help="Max mechanism steps per case (slack above the 10-step hard band).")
     parser.add_argument("--max-runtime", type=float, default=600.0, help="Per-case timeout in seconds.")
     parser.add_argument("--retry-same-candidate-max", type=int, default=1, help="Retries per candidate before moving on.")
     parser.add_argument("--repeat-failure-signature-limit", type=int, default=2, help="Repeat count of same validation signature before forced reproposal.")
