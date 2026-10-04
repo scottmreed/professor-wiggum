@@ -2227,6 +2227,7 @@ def bridge_serve(
     from mechanistic_agent.agent_bridge import (
         pending_requests,
         read_request,
+        responder_view,
         write_response,
     )
 
@@ -2263,7 +2264,8 @@ def bridge_serve(
         proc = subprocess.run(
             command,
             shell=True,
-            input=json.dumps(request),
+            # Audit-only attribution (run/step) is never handed to the responder.
+            input=json.dumps(responder_view(request)),
             capture_output=True,
             text=True,
         )

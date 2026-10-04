@@ -48,13 +48,16 @@ frontend/dist
 # IDEs and editors
 .idea/
 .vscode/
-# Claude Code — ignore local workspace except the tracked shared PR skill
+# Claude Code — ignore local workspace except the tracked shared skills
 .claude/*
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/pr-creation-helper/
 .claude/skills/pr-creation-helper/*
 !.claude/skills/pr-creation-helper/SKILL.md
+!.claude/skills/bridge-responder/
+.claude/skills/bridge-responder/*
+!.claude/skills/bridge-responder/SKILL.md
 .cursorrules
 *.swp
 *.swo

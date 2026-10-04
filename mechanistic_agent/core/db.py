@@ -813,6 +813,29 @@ class RunStore:
             )
             conn.commit()
 
+    def set_run_responder_integrity(self, run_id: str, integrity: Dict[str, Any]) -> bool:
+        """Record a responder-integrity audit verdict on ``config.origin.responder_integrity``.
+
+        Written by ``scripts/bridge_responder.py audit --mark``; consumers drop runs
+        whose status is ``contaminated`` (``agent_bridge.origin_integrity_contaminated``).
+        Returns False when the run does not exist.
+        """
+        from mechanistic_agent.agent_bridge import RESPONDER_INTEGRITY_KEY
+
+        with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT config_json FROM runs WHERE id = ?", (run_id,)).fetchone()
+            if row is None:
+                return False
+            config = self._json_loads(row[0], {})
+            origin = config.get("origin")
+            if not isinstance(origin, dict):
+                origin = {}
+            origin[RESPONDER_INTEGRITY_KEY] = dict(integrity)
+            config["origin"] = origin
+            conn.execute("UPDATE runs SET config_json = ? WHERE id = ?", (self._json_dumps(config), run_id))
+            conn.commit()
+        return True
+
     def append_event(
         self,
         run_id: str,
@@ -2826,6 +2849,37 @@ class RunStore:
             )
             conn.commit()
 
+    def set_eval_run_responder_integrity(self, eval_run_id: str, integrity: Dict[str, Any]) -> bool:
+        """Record a responder-integrity verdict on an eval run's ``metadata`` (and its ``metadata.origin``)."""
+        from mechanistic_agent.agent_bridge import RESPONDER_INTEGRITY_KEY
+
+        with self._lock, self._connect() as conn:
+            row = conn.execute("SELECT metadata_json FROM eval_runs WHERE id = ?", (eval_run_id,)).fetchone()
+            if row is None:
+                return False
+            metadata = self._json_loads(row[0], {})
+            metadata[RESPONDER_INTEGRITY_KEY] = dict(integrity)
+            if isinstance(metadata.get("origin"), dict):
+                metadata["origin"][RESPONDER_INTEGRITY_KEY] = dict(integrity)
+            conn.execute(
+                "UPDATE eval_runs SET metadata_json = ? WHERE id = ?",
+                (self._json_dumps(metadata), eval_run_id),
+            )
+            conn.commit()
+        return True
+
+    def eval_refs_for_runs(self, run_ids: List[str]) -> List[Dict[str, Any]]:
+        """Eval run / case each run id was recorded under (``eval_run_results``), in input order."""
+        refs: List[Dict[str, Any]] = []
+        with self._connect() as conn:
+            for run_id in run_ids:
+                rows = conn.execute(
+                    "SELECT run_id, eval_run_id, case_id FROM eval_run_results WHERE run_id = ?",
+                    (run_id,),
+                ).fetchall()
+                refs.extend({"run_id": r[0], "eval_run_id": r[1], "case_id": r[2]} for r in rows)
+        return refs
+
     def record_eval_run_result(
         self,
         *,
@@ -3292,6 +3346,16 @@ class RunStore:
         return False
 
     @staticmethod
+    def _eval_run_contaminated(run: Dict[str, Any], origins: List[Dict[str, Any]]) -> bool:
+        """True when a responder-integrity audit marked the eval run or any of its case runs contaminated."""
+        from mechanistic_agent.agent_bridge import origin_integrity_contaminated
+
+        metadata = run.get("metadata")
+        if origin_integrity_contaminated(metadata):
+            return True
+        return any(origin_integrity_contaminated(origin) for origin in origins)
+
+    @staticmethod
     def _bridge_row_identity(run: Dict[str, Any], origins: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Leaderboard identity of an eval run, listing keyless runs under their declared model.
 
@@ -3358,6 +3422,10 @@ class RunStore:
             # ground-truth replays, not capability measurements: never rank them.
             origins = self._eval_run_origins(run, results)
             if self._origins_saw_ground_truth(origins):
+                continue
+            # Rows an integrity audit found contaminated (the responder looked
+            # beyond its prompt) are disregarded the same way.
+            if self._eval_run_contaminated(run, origins):
                 continue
             scores = [float(item["score"]) for item in results if isinstance(item.get("score"), (int, float))]
             if not scores:
