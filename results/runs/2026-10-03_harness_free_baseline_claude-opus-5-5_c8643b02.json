@@ -1,0 +1,35 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "kind": "baseline",
+  "eval_run_id": "c8643b0241f94367ada18d68be88a788",
+  "run_group": "harness_free_baseline",
+  "date": "2026-10-03",
+  "model": "agent-bridge",
+  "thinking_level": null,
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "harness": null,
+  "tier": "holdout",
+  "eval_set_id": "4e11fec749974f049f54739c9f4c50e8",
+  "case_ids_hash": "425a41c29650f9df150721b8605abd8b368bf2ddf5f11a177ffce89181a04fde",
+  "holdout": true,
+  "scoring_version": "v2",
+  "git_commit": "b3c84db",
+  "summary": {
+    "points": 646,
+    "outcome": "baseline",
+    "cases": 20,
+    "targets_reached": 20,
+    "passed": 0,
+    "errors": 0,
+    "mean_score": 0.6458,
+    "avg_latency_s": 68.3
+  }
+}

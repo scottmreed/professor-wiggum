@@ -1,0 +1,27 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "kind": "baseline",
+  "eval_run_id": "feb0680ce6e6471585f2a7ac95da5f4e",
+  "run_group": "harness_free_baseline",
+  "date": "2026-03-15",
+  "model": "anthropic/claude-opus-4.6",
+  "thinking_level": "high",
+  "origin": null,
+  "harness": null,
+  "tier": "holdout",
+  "eval_set_id": "4e11fec749974f049f54739c9f4c50e8",
+  "case_ids_hash": "425a41c29650f9df150721b8605abd8b368bf2ddf5f11a177ffce89181a04fde",
+  "holdout": true,
+  "scoring_version": "v2",
+  "git_commit": "4d70319",
+  "summary": {
+    "points": 613,
+    "outcome": "baseline",
+    "cases": 20,
+    "targets_reached": 20,
+    "passed": 0,
+    "errors": 0,
+    "mean_score": 0.6126,
+    "avg_latency_s": 27.8
+  }
+}

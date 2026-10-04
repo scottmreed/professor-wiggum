@@ -1,0 +1,84 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "kind": "baseline",
+  "eval_run_id": "cddfd30c050f42b4b90fb35b60113da7",
+  "run_group": "harness_free_baseline_medium",
+  "date": "2026-03-17",
+  "model": "anthropic/claude-opus-4.6",
+  "thinking_level": "high",
+  "origin": null,
+  "harness": null,
+  "tier": "medium",
+  "eval_set_id": "003aae8966184aa2a2874dbf3e0f510f",
+  "case_ids_hash": "2f665dce1d406ecc1e35a0a7dec3a9977b7cba4a7be1c910d45a895bafc89da3",
+  "holdout": false,
+  "scoring_version": "v2",
+  "git_commit": "4d70319",
+  "summary": {
+    "points": 572,
+    "outcome": "baseline",
+    "cases": 5,
+    "targets_reached": 5,
+    "passed": 0,
+    "errors": 0,
+    "mean_score": 0.5725,
+    "avg_latency_s": 15.7
+  },
+  "cases": [
+    {
+      "case_id": "flower_022054",
+      "score": 0.5725,
+      "target_reached": true,
+      "alignment": 0.55,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 13.9,
+      "mechanism_type": "Nucleophilic addition to isocyanate",
+      "error": null
+    },
+    {
+      "case_id": "flower_064346",
+      "score": 0.5725,
+      "target_reached": true,
+      "alignment": 0.55,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 18.4,
+      "mechanism_type": "Nucleophilic addition to isothiocyanate",
+      "error": null
+    },
+    {
+      "case_id": "flower_134963",
+      "score": 0.5725,
+      "target_reached": true,
+      "alignment": 0.55,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 15.9,
+      "mechanism_type": "Nucleophilic addition to isocyanate",
+      "error": null
+    },
+    {
+      "case_id": "flower_183585",
+      "score": 0.5725,
+      "target_reached": true,
+      "alignment": 0.55,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 14.5,
+      "mechanism_type": "Nucleophilic addition to isocyanate",
+      "error": null
+    },
+    {
+      "case_id": "flower_230891",
+      "score": 0.5725,
+      "target_reached": true,
+      "alignment": 0.55,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 16.0,
+      "mechanism_type": "Nucleophilic addition to isocyanate",
+      "error": null
+    }
+  ]
+}

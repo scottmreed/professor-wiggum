@@ -1,0 +1,147 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "kind": "baseline",
+  "eval_run_id": "cc605f07d6c747bbb5b8ab6e867d935e",
+  "run_group": "harness_free_baseline_medium",
+  "date": "2026-10-03",
+  "model": "agent-bridge",
+  "thinking_level": null,
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "harness": null,
+  "tier": "medium",
+  "eval_set_id": "003aae8966184aa2a2874dbf3e0f510f",
+  "case_ids_hash": "055031c6e73c0930a73ae786ae5117369459e7eee2a2761c0e8fd60bc4ba0918",
+  "holdout": false,
+  "scoring_version": "v2",
+  "git_commit": "4d70319",
+  "summary": {
+    "points": 647,
+    "outcome": "baseline",
+    "cases": 10,
+    "targets_reached": 10,
+    "passed": 0,
+    "errors": 0,
+    "mean_score": 0.6469,
+    "avg_latency_s": 49.0
+  },
+  "cases": [
+    {
+      "case_id": "flower_058277",
+      "score": 0.6538,
+      "target_reached": true,
+      "alignment": 0.875,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 36.0,
+      "mechanism_type": "nucleophilic addition of alcohol to isocyanate (carbamate formation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_077973",
+      "score": 0.6538,
+      "target_reached": true,
+      "alignment": 0.875,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 59.0,
+      "mechanism_type": "nucleophilic addition of amine to isocyanate (urea formation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_102973",
+      "score": 0.5725,
+      "target_reached": true,
+      "alignment": 0.55,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 42.0,
+      "mechanism_type": "nucleophilic addition of amine to isothiocyanate (thiourea formation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_103167",
+      "score": 0.6538,
+      "target_reached": true,
+      "alignment": 0.875,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 36.0,
+      "mechanism_type": "nucleophilic addition of amine to isocyanate (urea formation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_122060",
+      "score": 0.5725,
+      "target_reached": true,
+      "alignment": 0.55,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 33.1,
+      "mechanism_type": "nucleophilic addition to isothiocyanate (thiourea formation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_138321",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 3,
+      "predicted_steps": 3,
+      "latency_s": 42.2,
+      "mechanism_type": "nucleophilic acyl substitution (carbamate aminolysis to urea)",
+      "error": null
+    },
+    {
+      "case_id": "flower_156414",
+      "score": 0.6538,
+      "target_reached": true,
+      "alignment": 0.875,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 36.2,
+      "mechanism_type": "nucleophilic addition of amine to isocyanate (urea formation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_175010",
+      "score": 0.6538,
+      "target_reached": true,
+      "alignment": 0.875,
+      "known_steps": 3,
+      "predicted_steps": 2,
+      "latency_s": 45.2,
+      "mechanism_type": "nucleophilic addition of amine to isocyanate (urea formation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_184403",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 3,
+      "predicted_steps": 3,
+      "latency_s": 47.8,
+      "mechanism_type": "nucleophilic aromatic substitution (SNAr, addition-elimination)",
+      "error": null
+    },
+    {
+      "case_id": "flower_254799",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 3,
+      "predicted_steps": 3,
+      "latency_s": 112.8,
+      "mechanism_type": "nucleophilic acyl substitution (addition-elimination)",
+      "error": null
+    }
+  ]
+}

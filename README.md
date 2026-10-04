@@ -6,7 +6,7 @@ A local-first agent that predicts **arrow-pushing (elementary-step) mechanisms**
 
 ## Leaderboard
 
-We are focusing on one top-tier model — currently **Claude Opus 5.5** — to improve the harness, and will back-fill cheaper models later. Scores are the 1000-point eval rubric on FlowER-derived tiers of 10 cases each (easy = 1–2 steps, medium = 3, hard = 4–8; WIN ≥ 700).
+We are focusing on one top-tier model — currently **Claude Opus 5.5** — to improve the harness, and will back-fill cheaper models later. Scores are the 1000-point eval rubric on FlowER-derived tiers of 10 cases each (easy = 1–2 steps, medium = 3, hard = 4–8; WIN ≥ 700). Links: [Claude Opus 5.5 by tier](LEADERBOARD.md#best-model-by-tier) · [harness-free baselines (Opus 5.5 vs Opus 4.6)](LEADERBOARD.md#harness-free-baselines).
 
 <!-- leaderboard:start -->
 | Tier | Best model | Score | Targets reached | Passed | Harness | Date | Details |
@@ -17,7 +17,7 @@ We are focusing on one top-tier model — currently **Claude Opus 5.5** — to i
 
 Hardest mechanism solved so far: [`flower_002647`, a 4-step mechanism (hard tier, Claude Opus 5.5)](results/mechanisms/bridge_opus55_jev_hard__flower_002647.png). Full results: [LEADERBOARD.md](LEADERBOARD.md).
 
-† Answered through the [agent bridge](docs/agent_bridge.md): each model call went to the declared model in a fresh session that saw only the harness prompt (`responder_saw_ground_truth: false`). Cost is opaque, so these rows make no cost claim.
+† Answered through the [agent bridge](docs/agent_bridge.md): each model call went to the declared model in a fresh session that saw only the prompt (`responder_saw_ground_truth: false`). Cost is opaque, so these rows make no cost claim.
 <!-- leaderboard:end -->
 
 ## Run types
@@ -28,17 +28,17 @@ All results land in the local SQLite database (`../wiggum-data/data/mechanistic.
 |---|---|---|
 | Single reaction | `python main.py run --starting "CCO" --products "CC=O"` (add `--mode verified` to submit your own steps) | none |
 | Web UI | `python main.py serve` → `http://127.0.0.1:8010/` (unverified mode only; `/?run=<id>` replays a run) | none |
-| Harness dev eval | `python main.py eval --tier easy\|medium\|hard --model <id> [--harness <name>]` or `--all-tiers` | development leaderboard (local): `python main.py leaderboard --eval-set-id <id>`, UI, `GET /api/evals/leaderboard` |
-| Harness-free baseline | `python main.py baseline --tier <tier> --model <id>` (or `--all-tiers`) | development leaderboard, type `Baseline` |
-| Official holdout | `python main.py eval-runset-official --model-name <id>` and `baseline-runset-official` | official leaderboard: `python main.py leaderboard-official`; `update-leaderboard-artifacts` refreshes the [legacy Arena table](docs/legacy/clawdiators_leaderboard.md) |
+| Harness dev eval | `python main.py eval --tier easy\|medium\|hard --model <id> [--harness <name>]` or `--all-tiers` | [Opus 5.5 by tier](LEADERBOARD.md#best-model-by-tier) (published runs); local: `python main.py leaderboard --eval-set-id <id>`, UI, `GET /api/evals/leaderboard` |
+| Harness-free baseline | `python main.py baseline --tier <tier> --model <id>` (or `--all-tiers`) | [Harness-free baselines](LEADERBOARD.md#harness-free-baselines) (Opus 5.5 vs Opus 4.6); local: development leaderboard, type `Baseline` |
+| Official holdout | `python main.py eval-runset-official --model-name <id>` and `baseline-runset-official` | official leaderboard: `python main.py leaderboard-official`; holdout baselines are on the [baseline board](LEADERBOARD.md#harness-free-baselines) |
 | Publish results | `python main.py publish-results --eval-run-id <id> [--open-pr]`, or `eval ... --publish [--open-pr]` | public [LEADERBOARD.md](LEADERBOARD.md) and the board above, from committed `results/runs/*.json` |
-| Keyless (agent bridge) | any of the above with `--model agent-bridge`, answered by `python main.py bridge-serve --command "<responder>"` | same leaderboards, model column `agent-bridge` † |
 | Curriculum checkpoints | `python main.py curriculum submit\|publish\|render-readme --model-name <id>` | `curriculum/generated/leaderboard_*.json`, [curriculum/STATUS.md](curriculum/STATUS.md) |
 | Harness evolution | `python scripts/evolve_harness.py [--island-mode]`, `python main.py overnight-ralph`, `python main.py vote` | evolution archive (holdout sets are rejected) |
 
 Notes:
 - `eval --tier` goes through the development-leaderboard planner, which may re-route a run (for example to repeat the current tier). Pass `--leaderboard-route next` to move up a tier or `custom` to keep your own selection; see [docs/development_leaderboard_routes.md](docs/development_leaderboard_routes.md).
 - `publish-results` exports an eval run to `results/runs/` (scores, per-case table, the hardest mechanism solved as an image) and regenerates `LEADERBOARD.md` and the board above. `--open-pr` branches from `origin/main`, commits only those files, and opens a PR; it never merges. Ground-truth replays are refused, and holdout runs publish aggregates only.
+- Keyless runs (any eval or baseline above with `--model agent-bridge`, answered by `python main.py bridge-serve --command "<responder>"` or by subagents; see [docs/agent_bridge.md](docs/agent_bridge.md)) are not a separate run type: every leaderboard lists them under the responder's declared model, marked †.
 - Leaderboards drop eval runs whose responder declares it saw the ground truth.
 - Custom eval sets without FlowER data: [docs/custom_eval_sets.md](docs/custom_eval_sets.md). Keyless runs: [docs/agent_bridge.md](docs/agent_bridge.md).
 
@@ -82,4 +82,4 @@ Harness variants live under `harness_versions/` (`default`, `jev_reaction_type`,
 - Evidence policy: [docs/change_evidence_policy.md](docs/change_evidence_policy.md)
 - Curriculum lanes and checkpoints: [curriculum/STATUS.md](curriculum/STATUS.md)
 
-The 1000-point rubric originated with the Clawdiators arena; that material is kept in [docs/legacy/clawdiators_leaderboard.md](docs/legacy/clawdiators_leaderboard.md).
+The 1000-point rubric originated with the Clawdiators arena.
