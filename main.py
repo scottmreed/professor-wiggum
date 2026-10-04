@@ -3817,7 +3817,7 @@ def _execute_harness_eval_run(
 @app.command(name="rescore-eval-results")
 def rescore_eval_results_cmd(
     scoring_version: str = typer.Option(
-        "v2", "--scoring-version", help="Scoring version to recompute under (v1 or v2)."
+        "v3", "--scoring-version", help="Scoring version to recompute under (v1, v2 or v3)."
     ),
     eval_set_id: Optional[str] = typer.Option(None, "--eval-set-id", help="Restrict to one eval set."),
     eval_run_ids: Optional[List[str]] = typer.Option(

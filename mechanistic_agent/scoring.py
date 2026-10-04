@@ -4,7 +4,9 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Mapping, Optional
 
+from mechanistic_agent.skeleton_alignment import proton_agnostic_alignment
 from mechanistic_agent.smiles_utils import (
+    _tolerated_extra,
     heavy_atom_count_for_matching,
     neutral_parent_signature,
     normalize_species_for_matching,
@@ -53,10 +55,18 @@ _DETERMINISTIC_SUBAGENTS = frozenset(
 #       mapping agreement when the case has a benchmark mapping, else the
 #       stored ``rdkit-agent atom-map check`` pass/fail, else a neutral 0.5.
 #       Every component carries ``mapping_component_source``.
+#   v3: v2 plus proton-transfer / shuttle agnostic alignment against the
+#       reference path (``skeleton_alignment``): the alignment component is
+#       max(exact per-step alignment, heavy-atom skeleton alignment), and when
+#       the skeleton basis wins the extra-steps penalty compares collapsed
+#       (proton-move-free) step counts. A route that moves protons through
+#       water / TFA / a second amine instead of the substrate (or vice versa)
+#       is not penalized relative to the FlowER reference.
 SCORING_V1 = "v1"
 SCORING_V2 = "v2"
-SCORING_VERSIONS = (SCORING_V1, SCORING_V2)
-DEFAULT_SCORING_VERSION = SCORING_V2
+SCORING_V3 = "v3"
+SCORING_VERSIONS = (SCORING_V1, SCORING_V2, SCORING_V3)
+DEFAULT_SCORING_VERSION = SCORING_V3
 LEGACY_SCORING_VERSION = SCORING_V1  # results recorded before versioning
 
 MAPPING_SOURCE_BENCHMARK = "benchmark_agreement"
@@ -64,6 +74,9 @@ MAPPING_SOURCE_ATOM_MAP_CHECK = "atom_map_check"
 MAPPING_SOURCE_NEUTRAL = "neutral_default"
 MAPPING_SOURCE_SELF_REPORTED = "self_reported_confidence"  # v1 only
 _NEUTRAL_MAPPING_COMPONENT = 0.5
+
+ALIGNMENT_BASIS_EXACT = "exact"
+ALIGNMENT_BASIS_PROTON_AGNOSTIC = "proton_agnostic"
 
 
 def normalize_scoring_version(value: Any) -> str:
@@ -367,6 +380,43 @@ def _known_targets(expected: Mapping[str, Any] | None) -> List[Dict[str, Any]]:
     return []
 
 
+def _reference_path_states(
+    expected: Mapping[str, Any] | None, fallback_start: List[str]
+) -> Optional[List[List[str]]]:
+    """Starting state + every reference step's full resulting state, or None.
+
+    Needs ``verified_mechanism.steps[*].resulting_state`` (FlowER cases carry
+    it); ``known_mechanism`` target-only references cannot be compared as states.
+    """
+    if not isinstance(expected, Mapping):
+        return None
+    verified = expected.get("verified_mechanism")
+    steps = verified.get("steps") if isinstance(verified, Mapping) else None
+    if not isinstance(steps, list) or not steps:
+        return None
+    ordered = sorted(
+        (step for step in steps if isinstance(step, Mapping)),
+        key=lambda step: int(step.get("step_index") or 0),
+    )
+    if not ordered or any(not isinstance(step.get("resulting_state"), list) for step in ordered):
+        return None
+    start = ordered[0].get("current_state")
+    if not isinstance(start, list) or not start:
+        start = expected.get("starting_materials")
+    if not isinstance(start, list) or not start:
+        start = fallback_start
+    if not start:
+        return None
+    return [[str(item) for item in start]] + [
+        [str(item) for item in step["resulting_state"]] for step in ordered
+    ]
+
+
+def _predicted_path_states(accepted: List[Dict[str, Any]], fallback_start: List[str]) -> List[List[str]]:
+    start = list(accepted[0].get("current_state") or []) if accepted else []
+    return [start or list(fallback_start)] + [list(step.get("resulting_state") or []) for step in accepted]
+
+
 def compute_mapping_agreement(
     snapshot: Mapping[str, Any],
     expected: Mapping[str, Any] | None,
@@ -394,7 +444,9 @@ def score_snapshot_against_known(
     """Return deterministic score + breakdown for leaderboard/eval use.
 
     ``scoring_version`` selects how the mapping part of per-step validity is
-    computed (see ``SCORING_VERSIONS``); everything else is identical.
+    computed (v1 vs v2+) and whether the alignment component may use the
+    proton-transfer / shuttle agnostic skeleton basis (v3, see
+    ``SCORING_VERSIONS``); everything else is identical.
     """
     scoring_version = normalize_scoring_version(scoring_version)
     accepted = extract_accepted_path(snapshot)
@@ -450,6 +502,20 @@ def score_snapshot_against_known(
         and item not in expected_products
         and item not in conjugate_stand_ins
     ] if accepted else []
+    # v3: a leftover proton carrier (H2O, H3O+, OH-, H+) or a conjugate acid/base
+    # form of a known species (trifluoroacetate from TFA) is shuttle residue, as
+    # in the completion check; it is not penalized as an unexpected species.
+    tolerated_final_species: List[str] = []
+    if scoring_version == SCORING_V3 and unexpected_final_species:
+        reference_parents = {
+            neutral_parent_signature(item) for item in expected_targets + starting_pool + expected_products
+        }
+        tolerated_final_species = [
+            item for item in unexpected_final_species if _tolerated_extra(item, reference_parents)
+        ]
+        unexpected_final_species = [
+            item for item in unexpected_final_species if item not in tolerated_final_species
+        ]
 
     step_breakdown: List[Dict[str, Any]] = []
     validity_scores: List[float] = []
@@ -466,6 +532,16 @@ def score_snapshot_against_known(
         expected_future[idx] = [expected_by_idx[j] for j in sorted(expected_by_idx) if j > idx]
 
     min_steps = int(((expected or {}).get("known_mechanism") or {}).get("min_steps") or len(known_steps) or 0)
+
+    # v3: proton-transfer / shuttle agnostic alignment on heavy-atom skeleton states.
+    skeleton: Optional[Dict[str, Any]] = None
+    if scoring_version == SCORING_V3 and accepted:
+        reference_path = _reference_path_states(expected, starting_pool)
+        if reference_path is not None:
+            skeleton = proton_agnostic_alignment(
+                _predicted_path_states(accepted, reference_path[0]), reference_path
+            )
+    skeleton_labels: List[str] = list((skeleton or {}).get("step_labels") or [])
 
     for step in accepted:
         step_index = int(step.get("step_index") or 0)
@@ -533,9 +609,31 @@ def score_snapshot_against_known(
                 "resulting_state": resulting_state,
             }
         )
+        if skeleton is not None:
+            position = len(step_breakdown) - 1
+            step_breakdown[-1]["skeleton_label"] = (
+                skeleton_labels[position] if position < len(skeleton_labels) else None
+            )
         prior_resulting = resulting_state
 
-    if min_steps and len(accepted) > min_steps:
+    exact_alignment_component = (sum(alignment_scores) / len(alignment_scores)) if alignment_scores else 0.0
+    proton_agnostic_component = float(skeleton["score"]) if skeleton is not None else None
+    alignment_basis = ALIGNMENT_BASIS_EXACT
+    alignment_component = exact_alignment_component
+    if proton_agnostic_component is not None and proton_agnostic_component > exact_alignment_component:
+        alignment_basis = ALIGNMENT_BASIS_PROTON_AGNOSTIC
+        alignment_component = proton_agnostic_component
+
+    if alignment_basis == ALIGNMENT_BASIS_PROTON_AGNOSTIC and skeleton is not None:
+        # Compare collapsed counts: proton-transfer-only steps are free either way.
+        extra = int(skeleton["predicted_skeleton_steps"]) - int(skeleton["reference_skeleton_steps"])
+        if extra > 0:
+            value = min(0.03 * extra, 0.2)
+            penalty_total += value
+            penalty_items.append(
+                {"type": "extra_steps", "count": extra, "basis": alignment_basis, "value": round(value, 4)}
+            )
+    elif min_steps and len(accepted) > min_steps:
         extra = len(accepted) - min_steps
         value = min(0.03 * extra, 0.2)
         penalty_total += value
@@ -556,7 +654,6 @@ def score_snapshot_against_known(
         )
 
     validity_component = (sum(validity_scores) / len(validity_scores)) if validity_scores else 0.0
-    alignment_component = (sum(alignment_scores) / len(alignment_scores)) if alignment_scores else 0.0
     balance_payload = _overall_balance_payload(snapshot)
     balance_component = _overall_balance_component(balance_payload)
     balance_penalty_total, balance_penalty_items = _overall_balance_penalty(balance_payload)
@@ -580,7 +677,7 @@ def score_snapshot_against_known(
         and overall >= 0.70
         and balance_grade in {"exact", "reconciled"}
     )
-    return {
+    result: Dict[str, Any] = {
         "score": round(overall, 6),
         "passed": passed,
         "final_product_component": round(final_component, 6),
@@ -605,6 +702,19 @@ def score_snapshot_against_known(
         "mapping_component_sources": dict(sorted(mapping_source_counts.items())),
         "scoring_version": scoring_version,
     }
+    if scoring_version == SCORING_V3:
+        result["exact_alignment_component"] = round(exact_alignment_component, 6)
+        result["proton_agnostic_alignment_component"] = (
+            round(proton_agnostic_component, 6) if proton_agnostic_component is not None else None
+        )
+        result["alignment_basis"] = alignment_basis
+        result["tolerated_final_species"] = tolerated_final_species
+        result["proton_agnostic_alignment"] = (
+            {key: value for key, value in skeleton.items() if key != "step_labels"}
+            if skeleton is not None
+            else {"available": False, "reason": "no_reference_states" if accepted else "no_accepted_path"}
+        )
+    return result
 
 
 def _parse_output(raw: Any) -> Dict[str, Any]:
@@ -629,7 +739,7 @@ def score_subagents_from_step_outputs(
 
     ``step_atom_mapping`` depends on ``scoring_version``: v1 uses the mean
     self-reported confidence; v2 uses the mean v2 mapping component per mapped
-    step (benchmark agreement from ``mapping_agreement`` — the
+    step (v3 likewise; benchmark agreement from ``mapping_agreement`` — the
     ``score_snapshot_against_known`` field — else atom-map check, else 0.5)
     with ``pass_rate`` = fraction of components >= 0.5.
 
@@ -714,7 +824,7 @@ def score_subagents_from_step_outputs(
                 "retry_calls": retry_calls,
             }
 
-        elif name == "step_atom_mapping" and scoring_version == SCORING_V2:
+        elif name == "step_atom_mapping" and scoring_version != SCORING_V1:
             agreement_by_step = {
                 int(item.get("step_index") or 0): item
                 for item in ((mapping_agreement or {}).get("steps") or [])
