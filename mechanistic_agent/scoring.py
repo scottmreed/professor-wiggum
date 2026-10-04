@@ -200,6 +200,125 @@ def _overall_balance_penalty(balance: Mapping[str, Any]) -> tuple[float, List[Di
     return min(penalty_total, 0.40), penalty_items
 
 
+def _balance_residual(balance: Mapping[str, Any]) -> Dict[str, int]:
+    """Signed element residual of the overall balance (surplus positive, deficit negative)."""
+    final_balance = balance.get("final_balance") if isinstance(balance.get("final_balance"), Mapping) else {}
+    residual: Dict[str, int] = {}
+    for source, sign in ((final_balance.get("surplus"), 1), (final_balance.get("deficit"), -1)):
+        if not isinstance(source, Mapping):
+            continue
+        for element, amount in source.items():
+            try:
+                residual[str(element)] = residual.get(str(element), 0) + sign * abs(int(amount))
+            except Exception:
+                continue
+    return {key: value for key, value in residual.items() if value}
+
+
+def _residual_charge(balance: Mapping[str, Any], residual: Mapping[str, int]) -> Optional[int]:
+    """Net charge of the residual, from the audit's net delta when it is the same residual."""
+    audit = balance.get("audit") if isinstance(balance.get("audit"), Mapping) else {}
+    net = audit.get("net_delta") if isinstance(audit, Mapping) else None
+    if not isinstance(net, Mapping):
+        return None
+    try:
+        elements = {str(k): int(v) for k, v in net.items() if str(k) != "+" and int(v)}
+        if elements != dict(residual):
+            return None
+        return int(net.get("+") or 0)
+    except Exception:
+        return None
+
+
+def _is_proton_carrier_residual(residual: Mapping[str, int], charge: Optional[int]) -> bool:
+    """True when the residual is whole H2O / H3O+ / OH- / H+ units on one side.
+
+    Each O-containing carrier has 1-3 H and charge (n_H - 2); H+ adds one H and
+    +1. So the residual has only H and O of the same sign, |H| >= |O|, and (when
+    the charge is known) charge == H - 2*O.
+    """
+    if not residual or set(residual) - {"H", "O"}:
+        return False
+    d_h, d_o = int(residual.get("H", 0)), int(residual.get("O", 0))
+    if d_h * d_o < 0 or abs(d_h) < abs(d_o):
+        return False
+    return charge is None or charge == d_h - 2 * d_o
+
+
+def _audit_reconciled_species(audit: Mapping[str, Any]) -> List[str]:
+    out: List[str] = []
+
+    def _add(value: Any) -> None:
+        if isinstance(value, str) and value.strip() and value.strip() not in out:
+            out.append(value.strip())
+        elif isinstance(value, Mapping):
+            _add(value.get("species") or value.get("smiles"))
+
+    for key in ("catalysts", "reagents_added", "spectators", "excess_reagent_steps", "findings"):
+        for item in audit.get(key) or []:
+            _add(item)
+    _add(audit.get("excess_reagent_reconciled"))
+    for pair in audit.get("conjugate_pairs") or []:
+        if isinstance(pair, Mapping):
+            _add(pair.get("left"))
+            _add(pair.get("right"))
+    return out
+
+
+def _tolerated_balance_residual(balance: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """v3: why an overall-balance residual is proton/shuttle bookkeeping, or None.
+
+    Tolerated when the residual is only whole proton carriers, or when the audit
+    graded the run ``reconciled`` (balanced, nothing unresolved) and the residual
+    is whole equivalents (|k| <= 3) of one species the audit reconciled
+    (catalyst, added reagent, spectator, excess reagent, conjugate pair member)
+    plus proton carriers. Any other heavy-atom residual is penalized as before.
+    """
+    grade = str(balance.get("grade") or "")
+    if grade == "invalid_species":
+        return None
+    residual = _balance_residual(balance)
+    if not residual:
+        return None
+    charge = _residual_charge(balance, residual)
+    if _is_proton_carrier_residual(residual, charge):
+        return {"reason": "proton_carriers", "residual": residual, "charge": charge}
+    audit = balance.get("audit") if isinstance(balance.get("audit"), Mapping) else None
+    if grade != "reconciled" or not audit or audit.get("balanced") is not True:
+        return None
+    if audit.get("unresolved_steps") or any(
+        isinstance(flag, Mapping) and str(flag.get("resolution") or "") == "unresolved"
+        for flag in audit.get("flags") or []
+    ):
+        return None
+    try:
+        from mechanistic_agent.core.mechanism_audit import composition
+    except Exception:  # pragma: no cover - RDKit missing
+        return None
+    for species in _audit_reconciled_species(audit):
+        try:
+            formula = composition(species)
+        except Exception:
+            continue
+        for count in (1, -1, 2, -2, 3, -3):
+            remainder = dict(residual)
+            for element, amount in formula.items():
+                if element == "+":
+                    continue
+                remainder[element] = remainder.get(element, 0) - count * int(amount)
+            remainder = {key: value for key, value in remainder.items() if value}
+            remainder_charge = None if charge is None else charge - count * int(formula.get("+", 0))
+            if not remainder or _is_proton_carrier_residual(remainder, remainder_charge):
+                return {
+                    "reason": "audit_reconciled_species",
+                    "residual": residual,
+                    "charge": charge,
+                    "species": species,
+                    "count": count,
+                }
+    return None
+
+
 def _validation_check_score(validation: Mapping[str, Any] | None) -> float:
     if not isinstance(validation, Mapping):
         return 0.0
@@ -657,6 +776,13 @@ def score_snapshot_against_known(
     balance_payload = _overall_balance_payload(snapshot)
     balance_component = _overall_balance_component(balance_payload)
     balance_penalty_total, balance_penalty_items = _overall_balance_penalty(balance_payload)
+    # v3: a residual that is only proton-carrier / reconciled-shuttle bookkeeping
+    # (water consumed, H3O+ left over, an excess TFA equivalent) is not penalized.
+    balance_residual_tolerated: Optional[Dict[str, Any]] = None
+    if scoring_version == SCORING_V3 and balance_penalty_items:
+        balance_residual_tolerated = _tolerated_balance_residual(balance_payload)
+        if balance_residual_tolerated is not None:
+            balance_penalty_total, balance_penalty_items = 0.0, []
     penalty_total = min(penalty_total + balance_penalty_total, 0.4)
 
     overall = (
@@ -709,6 +835,7 @@ def score_snapshot_against_known(
         )
         result["alignment_basis"] = alignment_basis
         result["tolerated_final_species"] = tolerated_final_species
+        result["balance_residual_tolerated"] = balance_residual_tolerated
         result["proton_agnostic_alignment"] = (
             {key: value for key, value in skeleton.items() if key != "step_labels"}
             if skeleton is not None

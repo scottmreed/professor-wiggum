@@ -250,3 +250,104 @@ def test_without_reference_states_v3_falls_back_to_exact() -> None:
     assert v3["proton_agnostic_alignment_component"] is None
     assert v3["alignment_basis"] == "exact"
     assert v3["score"] == pytest.approx(v2["score"])
+
+
+# ---------------------------------------------------------------------------
+# v3: overall-balance residual made only of proton carriers / reconciled species
+# ---------------------------------------------------------------------------
+
+
+def _with_balance(snapshot: dict, *, grade: str, surplus=None, deficit=None, audit=None) -> dict:
+    snapshot = dict(snapshot)
+    snapshot["overall_balance"] = {
+        "grade": grade,
+        "balanced": grade in {"exact", "reconciled"},
+        "final_balance": {"surplus": dict(surplus or {}), "deficit": dict(deficit or {})},
+        "audit": audit or {},
+    }
+    return snapshot
+
+
+# Mirrors the real hydronium trial run (flower_038130, trial_opus55_hard_on): the path
+# ends with an H3O+ the starting materials never listed; the audit reconciles it.
+_HYDRONIUM_AUDIT = {
+    "balanced": True,
+    "grade": "reconciled",
+    "net_delta": {"+": 1, "H": 3, "O": 1},
+    "excess_reagent_reconciled": {"count": 1, "species": "O", "proton_residual": {"+": 1, "H": 1}},
+    "findings": [
+        {"type": "excess_reagent", "species": "O", "count": 1, "net_delta": {"+": 1, "H": 3, "O": 1}}
+    ],
+    "conjugate_pairs": [{"left": "O", "right": "[OH3+]", "neutral_parent": "O"}],
+    "catalysts": [],
+    "reagents_added": [],
+    "spectators": [],
+    "flags": [],
+    "unresolved_steps": [],
+}
+
+
+def _balance_penalties(scored: dict) -> list:
+    return [p for p in scored["penalties"] if p["type"].startswith("overall_balance")]
+
+
+def test_hydronium_proton_carrier_residual_is_not_a_balance_penalty_in_v3() -> None:
+    snapshot = _with_balance(
+        _snapshot(HYDRONIUM_038130), grade="reconciled", surplus={"H": 3, "O": 1}, audit=_HYDRONIUM_AUDIT
+    )
+    v2 = score_snapshot_against_known(snapshot, _expected_038130(), scoring_version="v2")
+    v3 = score_snapshot_against_known(snapshot, _expected_038130(), scoring_version="v3")
+    assert sum(p["value"] for p in _balance_penalties(v2)) == pytest.approx(0.12)
+    assert _balance_penalties(v3) == []
+    assert v3["balance_penalty_total"] == 0.0
+    assert v3["balance_residual_tolerated"]["reason"] == "proton_carriers"
+    assert v3["score"] > v2["score"] + 0.12
+
+
+def test_proton_carrier_residual_without_audit_is_tolerated_in_v3() -> None:
+    # water consumed and never regenerated: a whole H2O deficit
+    snapshot = _with_balance(_snapshot(INTRAMOLECULAR_038130), grade="exact", deficit={"H": 2, "O": 1})
+    v3 = score_snapshot_against_known(snapshot, _expected_038130())
+    assert _balance_penalties(v3) == []
+
+
+def test_excess_reagent_residual_reconciled_by_audit_is_tolerated_in_v3() -> None:
+    tfa = "OC(=O)C(F)(F)F"
+    audit = {
+        "balanced": True,
+        "grade": "reconciled",
+        "net_delta": {"C": 2, "F": 3, "H": 1, "O": 2},
+        "excess_reagent_reconciled": {"count": 1, "species": tfa},
+        "findings": [{"type": "excess_reagent", "species": tfa, "count": 1}],
+        "flags": [],
+        "unresolved_steps": [],
+    }
+    snapshot = _with_balance(
+        _snapshot(INTRAMOLECULAR_038130),
+        grade="reconciled",
+        surplus={"C": 2, "F": 3, "H": 1, "O": 2},
+        audit=audit,
+    )
+    v2 = score_snapshot_against_known(snapshot, _expected_038130(), scoring_version="v2")
+    v3 = score_snapshot_against_known(snapshot, _expected_038130())
+    assert _balance_penalties(v2)
+    assert _balance_penalties(v3) == []
+    assert v3["balance_residual_tolerated"]["reason"] == "audit_reconciled_species"
+
+
+def test_heavy_atom_imbalance_is_still_penalized_in_v3() -> None:
+    # A lost carbon is never proton bookkeeping, even when the grade says reconciled.
+    for grade, audit in (("approximate", {}), ("reconciled", _HYDRONIUM_AUDIT)):
+        snapshot = _with_balance(
+            _snapshot(INTRAMOLECULAR_038130), grade=grade, surplus={"C": 1, "H": 3, "O": 1}, audit=audit
+        )
+        v2 = score_snapshot_against_known(snapshot, _expected_038130(), scoring_version="v2")
+        v3 = score_snapshot_against_known(snapshot, _expected_038130())
+        assert _balance_penalties(v3) == _balance_penalties(v2) != []
+        assert v3["balance_residual_tolerated"] is None
+
+
+def test_oxygen_without_hydrogen_is_not_a_proton_carrier() -> None:
+    snapshot = _with_balance(_snapshot(INTRAMOLECULAR_038130), grade="approximate", surplus={"O": 1})
+    v3 = score_snapshot_against_known(snapshot, _expected_038130())
+    assert _balance_penalties(v3) != []
