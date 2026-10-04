@@ -222,9 +222,22 @@ def implausible_species(species: Iterable[str], condition_class: str) -> List[Di
 # --------------------------------------------------------------------------- per-step checks
 
 
-def _smirks_sides(reaction_smirks: str) -> Optional[Tuple[List[str], List[str]]]:
+def normalize_smirks(reaction_smirks: str) -> str:
+    """Reaction notation without representation quirks: surrounding whitespace, a CXSMILES/``mech:v1``
+    suffix (``... |...|``) and an agents field (``reactants>agents>products``) are dropped, leaving
+    ``reactants>>products`` (empty when there is no reaction arrow)."""
     text = str(reaction_smirks or "").strip().split(" ")[0].split("|")[0].strip()
-    if ">>" not in text:
+    if ">>" in text:
+        return text
+    parts = text.split(">")
+    if len(parts) == 3:
+        return f"{parts[0]}>>{parts[2]}"
+    return ""
+
+
+def _smirks_sides(reaction_smirks: str) -> Optional[Tuple[List[str], List[str]]]:
+    text = normalize_smirks(reaction_smirks)
+    if not text:
         return None
     left, _, right = text.partition(">>")
     return _canon_list([left]), _canon_list([right])
@@ -261,8 +274,7 @@ def _smirks_matches_states(step: QualityStep) -> bool:
     resulting = Counter(_canon_list(step.resulting_state))
     if left and right and not (Counter(left) - current) and not (Counter(right) - resulting):
         return True
-    text = str(step.reaction_smirks or "").strip().split(" ")[0].split("|")[0].strip()
-    raw_left, _, raw_right = text.partition(">>")
+    raw_left, _, raw_right = normalize_smirks(step.reaction_smirks).partition(">>")
     return _fragments_in_state(raw_left, step.current_state) and _fragments_in_state(raw_right, step.resulting_state)
 
 
@@ -272,10 +284,15 @@ def _bond_electron_valid(step: QualityStep) -> Tuple[bool, Optional[str]]:
     smirks = str(step.reaction_smirks or "").strip()
     if not smirks:
         return False, "reaction_smirks missing"
-    from mechanistic_agent.tools import _extract_dbe_or_infer, normalize_electron_pushes
+    from mechanistic_agent.tools import _extract_dbe_or_infer, extract_mechanism_moves, normalize_electron_pushes
 
     try:
         pushes = [move.as_dict() for move in normalize_electron_pushes(step.electron_pushes or [])]
+        if not pushes:
+            # Arrows written only in the SMIRKS ``mech:v1`` block are the same arrows (notation).
+            _mech_core, moves, _details = extract_mechanism_moves(smirks)
+            raw = [m.as_dict() if hasattr(m, "as_dict") else m for m in moves or []]
+            pushes = [move.as_dict() for move in normalize_electron_pushes(raw)]
         if not pushes:
             return False, "no valid explicit electron pushes"
         _core, _deltas, details = _extract_dbe_or_infer(smirks, electron_pushes=pushes)
@@ -288,10 +305,11 @@ def _bond_electron_valid(step: QualityStep) -> Tuple[bool, Optional[str]]:
 def _electron_conserved(step: QualityStep) -> Tuple[bool, Optional[str]]:
     from mechanistic_agent.core.bond_electron import build_bond_electron_view
 
-    if not str(step.reaction_smirks or "").strip():
+    smirks = normalize_smirks(step.reaction_smirks)
+    if not smirks:
         return False, "reaction_smirks missing"
     try:
-        view = build_bond_electron_view(step.reaction_smirks)
+        view = build_bond_electron_view(smirks)
     except Exception as exc:  # noqa: BLE001
         return False, str(exc)
     if view.get("projection_error") or view.get("error"):
