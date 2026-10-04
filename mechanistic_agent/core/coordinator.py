@@ -53,6 +53,11 @@ from .tool_executor import ToolExecutor
 from .call_recorder import close_call_context, current_call_context, open_call_context
 from .bond_electron import build_bond_electron_view
 from .reaction_focus import build_reaction_focus
+from .proton_transfer import (
+    available_shuttles,
+    choose_proton_transfer_preference,
+    classify_proton_transfer,
+)
 from .provenance import (
     assign_candidate_ids,
     new_candidate_set_id,
@@ -2690,6 +2695,88 @@ class RunCoordinator:
                 pool.setdefault(str(item["smiles"]).strip(), f"initial_conditions:{role}")
         return pool
 
+    def _proton_shuttles(self, state: RunState, current_state: Optional[List[str]] = None) -> Dict[str, str]:
+        """Proton shuttles available in the reaction (skeleton key -> SMILES): the
+        current state, the starting materials and the acid/base pool, plus their
+        conjugates (same skeleton)."""
+        try:
+            pool = list(self._balance_reagent_pool(state))
+        except Exception:  # never fail a step over the preference
+            pool = []
+        state_species = state.current_state if current_state is None else current_state
+        return available_shuttles(state_species, state.run_input.starting_materials or [], pool)
+
+    def _proton_transfer_info(
+        self,
+        state: RunState,
+        current_state: List[str],
+        resulting_state: List[str],
+        reaction_smirks: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        try:
+            info = classify_proton_transfer(
+                current_state,
+                resulting_state,
+                reaction_smirks=reaction_smirks,
+                shuttles=self._proton_shuttles(state, current_state),
+            )
+        except Exception:  # pragma: no cover - defensive; annotation only
+            return None
+        return {
+            "is_proton_transfer": bool(info.get("is_proton_transfer")),
+            "mode": info.get("mode"),
+            "shuttle": info.get("shuttle"),
+            "shuttle_available": bool(info.get("shuttle_available")),
+        }
+
+    def _apply_proton_transfer_preference(
+        self,
+        state: RunState,
+        validated: List[BranchCandidate],
+    ) -> List[BranchCandidate]:
+        """Deterministic tie-break over rank-sorted, fully validated candidates.
+
+        When the top candidate is an intramolecular proton shift and a lower-ranked
+        validated candidate is an intermolecular transfer through a shuttle available
+        in the reaction with the same heavy-atom outcome, the intermolecular one is
+        moved to the front and the intramolecular one stays as the branch
+        alternative. Different outcomes or failed candidates are never promoted.
+        """
+        if len(validated) < 2:
+            return validated
+        current = list(state.current_state)
+        try:
+            decision = choose_proton_transfer_preference(
+                current,
+                [list(c.resulting_state or []) for c in validated],
+                shuttles=self._proton_shuttles(state, current),
+                reaction_smirks=[(c.mechanism_output or {}).get("reaction_smirks") for c in validated],
+            )
+        except Exception:  # pragma: no cover - defensive; keep the rank order
+            return validated
+        if decision is None:
+            return validated
+        chosen_index = int(decision["chosen_index"])
+        chosen = validated[chosen_index]
+        displaced = validated[int(decision["displaced_index"])]
+        self.store.append_event(
+            state.run_id,
+            "proton_transfer_preference_applied",
+            {
+                "step_index": state.step_index + 1,
+                "chosen_candidate_id": chosen.candidate_id,
+                "chosen_rank": chosen.rank,
+                "chosen_mode": decision["chosen"].get("mode"),
+                "displaced_candidate_id": displaced.candidate_id,
+                "displaced_rank": displaced.rank,
+                "displaced_mode": decision["displaced"].get("mode"),
+                "shuttle": decision.get("shuttle"),
+                "reason": "equivalent_intermolecular_proton_transfer",
+            },
+            step_name="mechanism_synthesis",
+        )
+        return [chosen] + [c for idx, c in enumerate(validated) if idx != chosen_index]
+
     @staticmethod
     def _excess_reagent_for_candidate(candidate: BranchCandidate) -> Optional[Dict[str, Any]]:
         for check in (candidate.validation_summary or {}).get("checks") or []:
@@ -3191,6 +3278,12 @@ class RunCoordinator:
             "smirks_state_agreement": output.get("smirks_state_agreement"),
             "projection_error": projection_error,
         }
+        payload["proton_transfer"] = self._proton_transfer_info(
+            state,
+            payload["current_state"],
+            payload["resulting_state"],
+            smirks or None,
+        )
         try:
             self.store.append_event(state.run_id, "candidate_validation_result", payload, step_name="mechanism_synthesis")
         except Exception:  # pragma: no cover - defensive
@@ -3873,6 +3966,12 @@ class RunCoordinator:
             acceptance_kind = "backtrack_alternative"
         else:
             acceptance_kind = "validated"
+        proton_transfer = self._proton_transfer_info(
+            state,
+            previous_state,
+            list(state.current_state),
+            (candidate.mechanism_output or {}).get("reaction_smirks"),
+        )
         self.store.append_event(
             state.run_id,
             "mechanism_step_accepted",
@@ -3892,6 +3991,8 @@ class RunCoordinator:
                 "rescue_additions": dict((candidate.mechanism_output or {}).get("rescue_additions") or {}),
                 "balance_flag": self._balance_flag_for_candidate(candidate),
                 "excess_reagent_reconciled": self._excess_reagent_for_candidate(candidate),
+                "proton_transfer_mode": (proton_transfer or {}).get("mode"),
+                "proton_transfer": proton_transfer,
             },
             step_name="mechanism_synthesis",
         )
@@ -5560,6 +5661,9 @@ class RunCoordinator:
 
                 # Sort by rank and pick the top-ranked validated candidate
                 validated.sort(key=lambda bc: bc.rank)
+                # Prefer an equivalent intermolecular proton transfer through an
+                # available shuttle over a top-ranked intramolecular shift.
+                validated = self._apply_proton_transfer_preference(state, validated)
                 chosen = validated[0]
                 alternatives = validated[1:]
                 reproposal_hints.pop(state.step_index + 1, None)
