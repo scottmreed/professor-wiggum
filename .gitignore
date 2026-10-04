@@ -137,6 +137,7 @@ training_data/*
 # Dev eval set (100 reactions, full mechanisms — development set, NOT leaderboard)
 !training_data/eval_set.json
 !training_data/eval_tiers.json
+!training_data/eval_tier_main_products.json
 !training_data/eval_quality_report.json
 !training_data/baseline_tier_eval_set_map.json
 !training_data/baseline_tiers_clawdiator.json
