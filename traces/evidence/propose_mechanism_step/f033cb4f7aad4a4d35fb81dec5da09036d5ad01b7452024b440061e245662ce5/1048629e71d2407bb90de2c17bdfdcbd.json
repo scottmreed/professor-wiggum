@@ -1,0 +1,291 @@
+{
+  "approval_label": "opus55_lane_trial",
+  "approval_notes": "Keyless trial 2026-10-04: medium flower_077973/flower_102973 with the opus-5.5 propose lane in the prompt; blind subagent responder, responder_saw_ground_truth=false; scores equal to the no-lane arm (0.951/0.853).",
+  "approved_at": 1791131318.07794,
+  "approved_bool": true,
+  "approved_by": "scottmreed",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1791131372.1351008,
+  "exported_by": "scottmreed",
+  "model_version": {
+    "created_at": 1790723193.89483,
+    "family": "agent",
+    "id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "pricing_sha256": "121eeae6157a8a24877a551130e236232df2d8de5146d885c6fd3ecb7ab5d48f",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "few-shot lane trial (on): fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "65bcd0ae4b05d470263d18cd0cf01e10939606a0c699c7a016008e0d0a1c79c3",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "9176177decbc41c9b1a0c02ed811ade9",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "f033cb4f7aad4a4d35fb81dec5da09036d5ad01b7452024b440061e245662ce5",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "9176177decbc41c9b1a0c02ed811ade9",
+  "responder_saw_ground_truth": false,
+  "run_id": "25b6f60eb0d1481d802961cbb4a4a383",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 2,
+    "captured_at": 1791128232.584794,
+    "cost": null,
+    "duration_human": "36.6s",
+    "duration_seconds": 36.6096510887146,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:9>6",
+              "source_atom": "9",
+              "target_atom": "6"
+            }
+          ],
+          "inferred_dbe": "9-6:+2;9-9:-2",
+          "intermediate_smiles": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+          "intermediate_type": "neutral_product",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": null,
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Proton transfer: the N9 lone pair (amide-stabilized anion) takes an H from the N6 ammonium. The N6-H bond electrons stay on N6, which becomes the neutral thiourea NH. Bonds broken: N6-H. Bonds formed: N9-H. The net charge goes from 0 (zwitterion) to 0 (neutral).",
+          "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7](=[S:8])[N-:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH:6][C:7](=[S:8])[NH:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:9>6|",
+          "resulting_state": [
+            "CC(C)(CO)NC(=S)NC(=O)c1ccccc1"
+          ],
+          "template_alignment": null,
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1"
+      ],
+      "executable_candidate_count": 1,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 1,
+      "llm_reasoning": "The amine nitrogen (N6) has already added to the isothiocyanate carbon (C7), giving a zwitterion: an ammonium N6-H2+ and an acylthiourea anion. The negative charge is delocalized over N9 and the C10=O11 carbonyl. The only step left is a proton transfer. N9 takes a proton from N6+, which gives the neutral N-acylthiourea target. In practice this could be relayed through solvent or another amine, but the net result is the same tautomer-neutral product.",
+      "message": "Proposed 1 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "CC(C)(CO)NC(=S)NC(=O)c1ccccc1"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"CC(C)(CO)NC(=S)NC(=O)c1ccccc1\",\n      \"reaction_description\": \"Proton transfer: the N9 lone pair (amide-stabilized anion) takes an H from the N6 ammonium. The N6-H bond electrons stay on N6, which becomes the neutral thiourea NH. Bonds broken: N6-H. Bonds formed: N9-H. The net charge goes from 0 (zwitterion) to 0 (neutral).\",\n      \"reaction_smirks\": \"[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7](=[S:8])[N-:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH:6][C:7](=[S:8])[NH:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:9>6|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"6\",\n          \"electrons\": 2,\n          \"source_atom\": \"9\",\n          \"notation\": \"lp:9>6\"\n        }\n      ],\n      \"resulting_state\": [\n        \"CC(C)(CO)NC(=S)NC(=O)c1ccccc1\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": null,\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"neutral_product\",\n      \"note\": null\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"The amine nitrogen (N6) has already added to the isothiocyanate carbon (C7), giving a zwitterion: an ammonium N6-H2+ and an acylthiourea anion. The negative charge is delocalized over N9 and the C10=O11 carbonyl. The only step left is a proton transfer. N9 takes a proton from N6+, which gives the neutral N-acylthiourea target. In practice this could be relayed through solvent or another amine, but the net result is the same tautomer-neutral product.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "The amine nitrogen (N6) has already added to the isothiocyanate carbon (C7), giving a zwitterion: an ammonium N6-H2+ and an acylthiourea anion. The negative charge is delocalized over N9 and the C10=O11 carbonyl. The only step left is a proton transfer. N9 takes a proton from N6+, which gives the neutral N-acylthiourea target. In practice this could be relayed through solvent or another amine, but the net result is the same tautomer-neutral product.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:9>6",
+                "source_atom": "9",
+                "target_atom": "6"
+              }
+            ],
+            "inferred_dbe": "9-6:+2;9-9:-2",
+            "intermediate_smiles": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+            "intermediate_type": "neutral_product",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": null,
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Proton transfer: the N9 lone pair (amide-stabilized anion) takes an H from the N6 ammonium. The N6-H bond electrons stay on N6, which becomes the neutral thiourea NH. Bonds broken: N6-H. Bonds formed: N9-H. The net charge goes from 0 (zwitterion) to 0 (neutral).",
+            "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7](=[S:8])[N-:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH:6][C:7](=[S:8])[NH:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:9>6|",
+            "resulting_state": [
+              "CC(C)(CO)NC(=S)NC(=O)c1ccccc1"
+            ],
+            "template_alignment": null,
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "backend": "rdkit_cli",
+          "canonical": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "raw": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+                  "canonical_smiles": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "hydroxy compound (alcohol or phenol)",
+                    "alcohol",
+                    "primary alcohol",
+                    "amine (generic)",
+                    "secondary amine",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "amide",
+                    "primary amide",
+                    "secondary amide",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thioamide",
+                    "thiocarbamic-acid derivative",
+                    "thiourea",
+                    "aromatic system"
+                  ],
+                  "functional_groups": [
+                    "amide",
+                    "alcohol",
+                    "amine",
+                    "aromatic_ring"
+                  ],
+                  "heavy_atoms": 17,
+                  "rings": 1,
+                  "score": 12.5,
+                  "source": "raw",
+                  "valid": true
+                }
+              ],
+              "best_candidate": {
+                "candidate": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+                "canonical_smiles": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "hydroxy compound (alcohol or phenol)",
+                  "alcohol",
+                  "primary alcohol",
+                  "amine (generic)",
+                  "secondary amine",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "amide",
+                  "primary amide",
+                  "secondary amide",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "thioamide",
+                  "thiocarbamic-acid derivative",
+                  "thiourea",
+                  "aromatic system"
+                ],
+                "functional_groups": [
+                  "amide",
+                  "alcohol",
+                  "amine",
+                  "aromatic_ring"
+                ],
+                "heavy_atoms": 17,
+                "rings": 1,
+                "score": 12.5,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+              "confidence": 0.9,
+              "confidence_label": "high",
+              "input": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+              "intent": {
+                "estimated_atom_tokens": 11,
+                "expected_rings": 1,
+                "fg_hints": [
+                  "carbonyl",
+                  "amine_like",
+                  "oxygenated"
+                ],
+                "raw": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1"
+              },
+              "repaired_smiles": "CC(C)(CO)NC(=S)NC(=O)c1ccccc1",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "neutral_product",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "1048629e71d2407bb90de2c17bdfdcbd"
+}

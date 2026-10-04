@@ -2872,6 +2872,17 @@ def create_app(
         if not prompt_bundle_sha:
             raise HTTPException(status_code=400, detail=f"Trace {trace_id} prompt bundle hash missing")
 
+        def _repo_relative(path_value: Any) -> Any:
+            # Evidence is committed: keep asset paths repo-relative, never a local absolute path.
+            text = str(path_value or "")
+            if not text:
+                return path_value
+            try:
+                return str(Path(text).resolve().relative_to(base))
+            except ValueError:
+                marker = text.find("skills/")
+                return text[marker:] if marker >= 0 else Path(text).name
+
         evidence_dir = evidence_root(base) / call_name / prompt_bundle_sha
         evidence_dir.mkdir(parents=True, exist_ok=True)
         evidence_path = evidence_dir / f"{trace_id}.json"
@@ -2897,12 +2908,13 @@ def create_app(
                 "call_base_sha256": prompt_version.get("call_base_sha256"),
                 "few_shot_sha256": prompt_version.get("few_shot_sha256"),
                 "model_name": prompt_version.get("model_name"),
-                "resolved_shared_base_path": prompt_version.get("resolved_shared_base_path"),
-                "resolved_call_base_path": prompt_version.get("resolved_call_base_path"),
-                "resolved_few_shot_path": prompt_version.get("resolved_few_shot_path"),
+                "resolved_shared_base_path": _repo_relative(prompt_version.get("resolved_shared_base_path")),
+                "resolved_call_base_path": _repo_relative(prompt_version.get("resolved_call_base_path")),
+                "resolved_few_shot_path": _repo_relative(prompt_version.get("resolved_few_shot_path")),
                 "asset_scope": prompt_version.get("asset_scope"),
             },
-            "model_version": model_version,
+            # The gate (prompt_trace_validator._REQUIRED_MODEL_KEYS) reads model_version_id here.
+            "model_version": {**model_version, "model_version_id": model_version_id},
             "trace": trace_row.get("trace") or {},
             "exported_at": time.time(),
             "exported_by": created_by,

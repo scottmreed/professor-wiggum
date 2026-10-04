@@ -1,0 +1,566 @@
+{
+  "approval_label": "opus55_lane_trial",
+  "approval_notes": "Keyless trial 2026-10-04: medium flower_077973/flower_102973 with the opus-5.5 propose lane in the prompt; blind subagent responder, responder_saw_ground_truth=false; scores equal to the no-lane arm (0.951/0.853).",
+  "approved_at": 1791131318.034115,
+  "approved_bool": true,
+  "approved_by": "scottmreed",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1791131372.12417,
+  "exported_by": "scottmreed",
+  "model_version": {
+    "created_at": 1790723193.89483,
+    "family": "agent",
+    "id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "pricing_sha256": "121eeae6157a8a24877a551130e236232df2d8de5146d885c6fd3ecb7ab5d48f",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "few-shot lane trial (on): fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "65bcd0ae4b05d470263d18cd0cf01e10939606a0c699c7a016008e0d0a1c79c3",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "9176177decbc41c9b1a0c02ed811ade9",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "f033cb4f7aad4a4d35fb81dec5da09036d5ad01b7452024b440061e245662ce5",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "9176177decbc41c9b1a0c02ed811ade9",
+  "responder_saw_ground_truth": false,
+  "run_id": "43efae40f728464eac5c9222167405fb",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 1,
+    "captured_at": 1791127908.779222,
+    "cost": null,
+    "duration_human": "37.6s",
+    "duration_seconds": 37.609153032302856,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:8>6",
+              "source_atom": "8",
+              "target_atom": "6"
+            },
+            {
+              "electrons": 2,
+              "kind": "pi_bond",
+              "notation": "pi:6-5>5",
+              "source_bond": [
+                "6",
+                "5"
+              ],
+              "target_atom": "5",
+              "through_atom": "5"
+            }
+          ],
+          "inferred_dbe": "5-5:+2;6-5:-2;8-6:+2;8-8:-2",
+          "intermediate_smiles": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+          "intermediate_type": "zwitterionic_adduct",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": null,
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Nucleophilic addition: the N8 lone pair attacks isocyanate C6 and forms the N8-C6 bond. The C6=N5 pi bond electrons move onto N5, which becomes an amide anion, and N8 becomes an ammonium (NH2+). The net charge stays zero. Bonds formed: N8-C6. Bonds broken: the C6=N5 pi bond.",
+          "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]=[O:7].[NH2:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[N-:5][C:6](=[O:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:8>6;pi:6-5>5|",
+          "resulting_state": [
+            "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N"
+          ],
+          "template_alignment": null,
+          "template_alignment_reason": null
+        },
+        {
+          "confidence": "medium",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:8>6",
+              "source_atom": "8",
+              "target_atom": "6"
+            },
+            {
+              "electrons": 2,
+              "kind": "pi_bond",
+              "notation": "pi:6-7>7",
+              "source_bond": [
+                "6",
+                "7"
+              ],
+              "target_atom": "7",
+              "through_atom": "7"
+            }
+          ],
+          "inferred_dbe": "6-7:-2;7-7:+2;8-6:+2;8-8:-2",
+          "intermediate_smiles": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+          "intermediate_type": "zwitterionic_imidate",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": null,
+          "rank": 2,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Nucleophilic addition: the N8 lone pair attacks C6 and forms the N8-C6 bond. The C6=O7 pi bond electrons move onto O7, which gives an imidate alkoxide next to an ammonium N8. Bonds formed: N8-C6. Bonds broken: the C6=O7 pi bond.",
+          "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]=[O:7].[NH2:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]([O-:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:8>6;pi:6-7>7|",
+          "resulting_state": [
+            "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N"
+          ],
+          "template_alignment": null,
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "CC(C)(C)N=C=O",
+        "CC(C)(N)C#N"
+      ],
+      "executable_candidate_count": 2,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 2,
+      "llm_reasoning": "Urea formation from an amine and an isocyanate. The primary amine N8 of 2-amino-2-methylpropanenitrile uses its lone pair to attack the electrophilic central carbon C6 of tert-butyl isocyanate. The C6=N5 pi bond moves onto N5, giving a zwitterionic adduct: an ammonium N8 next to an amidate N5 anion. A proton transfer from N8+ to N5- then gives the neutral urea. An equivalent option sends the electrons onto O7 to give an imidate (O-) zwitterion, which tautomerizes through proton transfer.",
+      "message": "Proposed 2 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+        "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N\",\n      \"reaction_description\": \"Nucleophilic addition: the N8 lone pair attacks isocyanate C6 and forms the N8-C6 bond. The C6=N5 pi bond electrons move onto N5, which becomes an amide anion, and N8 becomes an ammonium (NH2+). The net charge stays zero. Bonds formed: N8-C6. Bonds broken: the C6=N5 pi bond.\",\n      \"reaction_smirks\": \"[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]=[O:7].[NH2:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[N-:5][C:6](=[O:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:8>6;pi:6-5>5|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"6\",\n          \"electrons\": 2,\n          \"source_atom\": \"8\",\n          \"notation\": \"lp:8>6\"\n        },\n        {\n          \"kind\": \"pi_bond\",\n          \"target_atom\": \"5\",\n          \"electrons\": 2,\n          \"source_bond\": [\n            \"6\",\n            \"5\"\n          ],\n          \"through_atom\": \"5\",\n          \"notation\": \"pi:6-5>5\"\n        }\n      ],\n      \"resulting_state\": [\n        \"CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": null,\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"zwitterionic_adduct\",\n      \"note\": null\n    },\n    {\n      \"rank\": 2,\n      \"intermediate_smiles\": \"CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N\",\n      \"reaction_description\": \"Nucleophilic addition: the N8 lone pair attacks C6 and forms the N8-C6 bond. The C6=O7 pi bond electrons move onto O7, which gives an imidate alkoxide next to an ammonium N8. Bonds formed: N8-C6. Bonds broken: the C6=O7 pi bond.\",\n      \"reaction_smirks\": \"[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]=[O:7].[NH2:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]([O-:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:8>6;pi:6-7>7|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"6\",\n          \"electrons\": 2,\n          \"source_atom\": \"8\",\n          \"notation\": \"lp:8>6\"\n        },\n        {\n          \"kind\": \"pi_bond\",\n          \"target_atom\": \"7\",\n          \"electrons\": 2,\n          \"source_bond\": [\n            \"6\",\n            \"7\"\n          ],\n          \"through_atom\": \"7\",\n          \"notation\": \"pi:6-7>7\"\n        }\n      ],\n      \"resulting_state\": [\n        \"CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"medium\",\n      \"template_alignment\": null,\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"zwitterionic_imidate\",\n      \"note\": null\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"Urea formation from an amine and an isocyanate. The primary amine N8 of 2-amino-2-methylpropanenitrile uses its lone pair to attack the electrophilic central carbon C6 of tert-butyl isocyanate. The C6=N5 pi bond moves onto N5, giving a zwitterionic adduct: an ammonium N8 next to an amidate N5 anion. A proton transfer from N8+ to N5- then gives the neutral urea. An equivalent option sends the electrons onto O7 to give an imidate (O-) zwitterion, which tautomerizes through proton transfer.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "Urea formation from an amine and an isocyanate. The primary amine N8 of 2-amino-2-methylpropanenitrile uses its lone pair to attack the electrophilic central carbon C6 of tert-butyl isocyanate. The C6=N5 pi bond moves onto N5, giving a zwitterionic adduct: an ammonium N8 next to an amidate N5 anion. A proton transfer from N8+ to N5- then gives the neutral urea. An equivalent option sends the electrons onto O7 to give an imidate (O-) zwitterion, which tautomerizes through proton transfer.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:8>6",
+                "source_atom": "8",
+                "target_atom": "6"
+              },
+              {
+                "electrons": 2,
+                "kind": "pi_bond",
+                "notation": "pi:6-5>5",
+                "source_bond": [
+                  "6",
+                  "5"
+                ],
+                "target_atom": "5",
+                "through_atom": "5"
+              }
+            ],
+            "inferred_dbe": "5-5:+2;6-5:-2;8-6:+2;8-8:-2",
+            "intermediate_smiles": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+            "intermediate_type": "zwitterionic_adduct",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": null,
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Nucleophilic addition: the N8 lone pair attacks isocyanate C6 and forms the N8-C6 bond. The C6=N5 pi bond electrons move onto N5, which becomes an amide anion, and N8 becomes an ammonium (NH2+). The net charge stays zero. Bonds formed: N8-C6. Bonds broken: the C6=N5 pi bond.",
+            "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]=[O:7].[NH2:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[N-:5][C:6](=[O:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:8>6;pi:6-5>5|",
+            "resulting_state": [
+              "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N"
+            ],
+            "template_alignment": null,
+            "template_alignment_reason": null
+          },
+          {
+            "confidence": "medium",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:8>6",
+                "source_atom": "8",
+                "target_atom": "6"
+              },
+              {
+                "electrons": 2,
+                "kind": "pi_bond",
+                "notation": "pi:6-7>7",
+                "source_bond": [
+                  "6",
+                  "7"
+                ],
+                "target_atom": "7",
+                "through_atom": "7"
+              }
+            ],
+            "inferred_dbe": "6-7:-2;7-7:+2;8-6:+2;8-8:-2",
+            "intermediate_smiles": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+            "intermediate_type": "zwitterionic_imidate",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": null,
+            "rank": 2,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Nucleophilic addition: the N8 lone pair attacks C6 and forms the N8-C6 bond. The C6=O7 pi bond electrons move onto O7, which gives an imidate alkoxide next to an ammonium N8. Bonds formed: N8-C6. Bonds broken: the C6=O7 pi bond.",
+            "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]=[O:7].[NH2:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[N:5]=[C:6]([O-:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:8>6;pi:6-7>7|",
+            "resulting_state": [
+              "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N"
+            ],
+            "template_alignment": null,
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "backend": "rdkit_cli",
+          "canonical": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "raw": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+                  "canonical_smiles": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "primary amine",
+                    "primary aliphatic amine",
+                    "quaternary ammonium",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "primary amide",
+                    "secondary amide",
+                    "nitrile",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative",
+                    "urea",
+                    "isonitrile (R\u2013N\u2261C)"
+                  ],
+                  "functional_groups": [
+                    "nitrile",
+                    "quaternary_ammonium"
+                  ],
+                  "heavy_atoms": 13,
+                  "rings": null,
+                  "score": 13.2,
+                  "source": "raw",
+                  "valid": true
+                },
+                {
+                  "candidate": "CC(C)(C)[N-]C(=O)[NH+]C(C)(C)C#N",
+                  "canonical_smiles": "CC(C)(C)[N-]C(=O)[NH+]C(C)(C)C#N",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "amine (generic)",
+                    "secondary amine",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "amide",
+                    "primary amide",
+                    "secondary amide",
+                    "nitrile",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative",
+                    "urea",
+                    "isonitrile (R\u2013N\u2261C)"
+                  ],
+                  "functional_groups": [
+                    "amide",
+                    "nitrile"
+                  ],
+                  "heavy_atoms": 13,
+                  "rings": null,
+                  "score": 13.2,
+                  "source": "ring_digit_trim",
+                  "valid": true
+                }
+              ],
+              "best_candidate": {
+                "candidate": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+                "canonical_smiles": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "primary amine",
+                  "primary aliphatic amine",
+                  "quaternary ammonium",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "primary amide",
+                  "secondary amide",
+                  "nitrile",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "thiocarbamic-acid derivative",
+                  "urea",
+                  "isonitrile (R\u2013N\u2261C)"
+                ],
+                "functional_groups": [
+                  "nitrile",
+                  "quaternary_ammonium"
+                ],
+                "heavy_atoms": 13,
+                "rings": null,
+                "score": 13.2,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+              "confidence": 0.5,
+              "confidence_label": "low",
+              "input": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+              "intent": {
+                "estimated_atom_tokens": 14,
+                "expected_rings": 0,
+                "fg_hints": [
+                  "carbonyl",
+                  "nitrile",
+                  "amine_like",
+                  "oxygenated"
+                ],
+                "raw": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N"
+              },
+              "repaired_smiles": "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "zwitterionic_adduct",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        },
+        {
+          "backend": "rdkit_cli",
+          "canonical": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "raw": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+                  "canonical_smiles": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "imine (C=N)",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "primary amine",
+                    "primary aliphatic amine",
+                    "quaternary ammonium",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "nitrile",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative",
+                    "isourea",
+                    "isonitrile (R\u2013N\u2261C)"
+                  ],
+                  "functional_groups": [
+                    "imine",
+                    "nitrile",
+                    "quaternary_ammonium"
+                  ],
+                  "heavy_atoms": 13,
+                  "rings": null,
+                  "score": 11.7,
+                  "source": "raw",
+                  "valid": true
+                },
+                {
+                  "candidate": "CC(C)(C)N=C([O-])[NH+]C(C)(C)C#N",
+                  "canonical_smiles": "CC(C)(C)N=C([O-])[NH+]C(C)(C)C#N",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "imine (C=N)",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "amine (generic)",
+                    "secondary amine",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "nitrile",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative",
+                    "isourea",
+                    "isonitrile (R\u2013N\u2261C)"
+                  ],
+                  "functional_groups": [
+                    "amidine",
+                    "nitrile"
+                  ],
+                  "heavy_atoms": 13,
+                  "rings": null,
+                  "score": 11.7,
+                  "source": "ring_digit_trim",
+                  "valid": true
+                }
+              ],
+              "best_candidate": {
+                "candidate": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+                "canonical_smiles": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "imine (C=N)",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "primary amine",
+                  "primary aliphatic amine",
+                  "quaternary ammonium",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "nitrile",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "thiocarbamic-acid derivative",
+                  "isourea",
+                  "isonitrile (R\u2013N\u2261C)"
+                ],
+                "functional_groups": [
+                  "imine",
+                  "nitrile",
+                  "quaternary_ammonium"
+                ],
+                "heavy_atoms": 13,
+                "rings": null,
+                "score": 11.7,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+              "confidence": 0.5,
+              "confidence_label": "low",
+              "input": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+              "intent": {
+                "estimated_atom_tokens": 14,
+                "expected_rings": 0,
+                "fg_hints": [
+                  "nitrile",
+                  "amine_like",
+                  "oxygenated"
+                ],
+                "raw": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N"
+              },
+              "repaired_smiles": "CC(C)(C)N=C([O-])[NH2+]C(C)(C)C#N",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "zwitterionic_imidate",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "9b547eebe8f843ed9f3461659b159144"
+}

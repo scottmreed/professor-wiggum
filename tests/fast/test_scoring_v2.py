@@ -88,12 +88,13 @@ def test_v1_reproduces_pre_versioning_scorer_exactly() -> None:
         assert subagents == item["v1_subagents"], item["name"]
 
 
-def test_default_scoring_version_is_v2() -> None:
-    assert DEFAULT_SCORING_VERSION == "v2"
-    assert normalize_scoring_version(None) == "v2"
-    assert score_snapshot_against_known(_synthetic_snapshot([]), _EXPECTED_NO_BENCHMARK)["scoring_version"] == "v2"
+def test_default_scoring_version_is_v3() -> None:
+    assert DEFAULT_SCORING_VERSION == "v3"
+    assert normalize_scoring_version(None) == "v3"
+    assert normalize_scoring_version("v2") == "v2"
+    assert score_snapshot_against_known(_synthetic_snapshot([]), _EXPECTED_NO_BENCHMARK)["scoring_version"] == "v3"
     with pytest.raises(ValueError):
-        normalize_scoring_version("v3")
+        normalize_scoring_version("v4")
 
 
 # ---------------------------------------------------------------------------

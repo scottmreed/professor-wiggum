@@ -27,7 +27,11 @@ the message view a keyed model would, and nothing else. No run state, eval
 ground truth, atom-map context, or scoring information is added here (the harness
 already strips privileged context before this seam; see
 ``test_tool_executor_does_not_forward_raw_mapped_prompt_context``). The envelope
-adds only non-task routing metadata (``schema``, ``request_id``, ``model``).
+adds only non-task routing metadata (``schema``, ``request_id``, ``model``) and a
+top-level ``context`` block (``run_id``, ``step_name``, ``attempt``,
+``retry_index`` from the call recorder) that exists only so a responder-integrity
+audit can attribute each call to its run. ``context`` is never part of
+``model_input``; responders are handed :func:`responder_view`, which drops it.
 
 Protocol
 --------
@@ -101,6 +105,17 @@ REQUEST_SCHEMA = "mechanistic.agent_bridge/request@1"
 # The only keys allowed inside the model-visible request block. Kept as a module
 # constant so the privacy invariant is asserted against a single source of truth.
 MODEL_INPUT_KEYS = ("messages", "tools", "tool_choice")
+
+# Top-level request key carrying non-model-visible attribution (run/step) for
+# responder-integrity audits. Stripped by :func:`responder_view`.
+REQUEST_CONTEXT_KEY = "context"
+
+# Key under a run's ``config.origin`` (and an eval run's ``metadata``) where a
+# responder-integrity audit (``scripts/bridge_responder.py audit --mark``)
+# records its verdict: ``{"status": "clean"|"procedural"|"unaudited"|
+# "contaminated", "audited_at", "violations": [...]}``.
+RESPONDER_INTEGRITY_KEY = "responder_integrity"
+INTEGRITY_CONTAMINATED = "contaminated"
 
 
 class AgentBridgeResponderError(RuntimeError):
@@ -185,6 +200,7 @@ class AgentBridgeAdapter:
             "request_id": request_id,
             "model": self._model,
             "model_input": build_model_input(messages, tools, tool_choice),
+            REQUEST_CONTEXT_KEY: _request_context(),
         }
         _write_json_atomic(path, payload)
         return path
@@ -214,6 +230,33 @@ class AgentBridgeAdapter:
     ) -> _SimpleMessage:
         request_path = self._write_request(messages, tools, tool_choice)
         return self._await_response(request_path)
+
+
+def _request_context() -> Dict[str, Any]:
+    """Attribution for the current call (run/step), or ``{}`` outside a run step.
+
+    Read from the call recorder's per-thread context. Audit-only metadata: it is
+    written beside ``model_input``, never inside it.
+    """
+    try:
+        from .core.call_recorder import current_call_context
+
+        ctx = current_call_context()
+    except Exception:  # pragma: no cover - attribution must never break a call
+        return {}
+    if ctx is None:
+        return {}
+    return {
+        "run_id": ctx.run_id,
+        "step_name": ctx.step_name,
+        "attempt": ctx.attempt,
+        "retry_index": ctx.retry_index,
+    }
+
+
+def responder_view(request: Dict[str, Any]) -> Dict[str, Any]:
+    """The request as a responder may see it: everything except the attribution ``context``."""
+    return {key: value for key, value in request.items() if key != REQUEST_CONTEXT_KEY}
 
 
 def _parse_response(response_path: Path) -> _SimpleMessage:
@@ -331,6 +374,26 @@ def build_origin_provenance(model: Optional[str] = None) -> Dict[str, Any]:
     return record
 
 
+def origin_integrity_status(origin: Any) -> Optional[str]:
+    """Responder-integrity audit status recorded on an origin/metadata block, or ``None``."""
+    if not isinstance(origin, dict):
+        return None
+    record = origin.get(RESPONDER_INTEGRITY_KEY)
+    if not isinstance(record, dict):
+        return None
+    status = str(record.get("status") or "").strip().lower()
+    return status or None
+
+
+def origin_integrity_contaminated(origin: Any) -> bool:
+    """True when an audit found the responder looked beyond its prompt (disregard the run).
+
+    Accepts a run's ``config.origin``, an eval run's ``metadata`` or an evidence
+    file's ``origin`` block — all carry ``responder_integrity`` the same way.
+    """
+    return origin_integrity_status(origin) == INTEGRITY_CONTAMINATED
+
+
 def origin_for_config(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Return an origin record iff ``config`` routes through the agent bridge.
 
@@ -407,8 +470,11 @@ __all__ = [
     "build_origin_provenance",
     "declared_model_key",
     "origin_for_config",
+    "origin_integrity_contaminated",
+    "origin_integrity_status",
     "pending_requests",
     "read_request",
+    "responder_view",
     "write_response",
     "BRIDGE_DIR_ENV",
     "BRIDGE_TIMEOUT_ENV",
@@ -416,6 +482,8 @@ __all__ = [
     "BRIDGE_RESPONDER_KIND_ENV",
     "BRIDGE_NOTES_ENV",
     "MODEL_INPUT_KEYS",
+    "REQUEST_CONTEXT_KEY",
     "REQUEST_SCHEMA",
+    "RESPONDER_INTEGRITY_KEY",
     "RESPONDER_KINDS",
 ]

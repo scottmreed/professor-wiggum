@@ -2227,6 +2227,7 @@ def bridge_serve(
     from mechanistic_agent.agent_bridge import (
         pending_requests,
         read_request,
+        responder_view,
         write_response,
     )
 
@@ -2263,7 +2264,8 @@ def bridge_serve(
         proc = subprocess.run(
             command,
             shell=True,
-            input=json.dumps(request),
+            # Audit-only attribution (run/step) is never handed to the responder.
+            input=json.dumps(responder_view(request)),
             capture_output=True,
             text=True,
         )
@@ -3817,7 +3819,7 @@ def _execute_harness_eval_run(
 @app.command(name="rescore-eval-results")
 def rescore_eval_results_cmd(
     scoring_version: str = typer.Option(
-        "v2", "--scoring-version", help="Scoring version to recompute under (v1 or v2)."
+        "v3", "--scoring-version", help="Scoring version to recompute under (v1, v2 or v3)."
     ),
     eval_set_id: Optional[str] = typer.Option(None, "--eval-set-id", help="Restrict to one eval set."),
     eval_run_ids: Optional[List[str]] = typer.Option(
@@ -3934,7 +3936,8 @@ def eval_cmd(
         None, "--max-per-tier",
         help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
     ),
-    max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
+    # 14 leaves slack above the 10-step hard band (training_data/eval_tiers.json).
+    max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(1200.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",
@@ -4528,7 +4531,7 @@ def eval_runset_official_cmd(
         "--num-examples",
         help="Max cases/examples to run (default: 20).",
     ),
-    max_steps: int = typer.Option(10, "--max-steps", help="Max mechanism steps per case"),
+    max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",

@@ -1,0 +1,594 @@
+{
+  "approval_label": "opus55_lane_trial",
+  "approval_notes": "Keyless trial 2026-10-04: medium flower_077973/flower_102973 with the opus-5.5 propose lane in the prompt; blind subagent responder, responder_saw_ground_truth=false; scores equal to the no-lane arm (0.951/0.853).",
+  "approved_at": 1791131318.066035,
+  "approved_bool": true,
+  "approved_by": "scottmreed",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1791131372.1317508,
+  "exported_by": "scottmreed",
+  "model_version": {
+    "created_at": 1790723193.89483,
+    "family": "agent",
+    "id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "pricing_sha256": "121eeae6157a8a24877a551130e236232df2d8de5146d885c6fd3ecb7ab5d48f",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "few-shot lane trial (on): fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "65bcd0ae4b05d470263d18cd0cf01e10939606a0c699c7a016008e0d0a1c79c3",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "9176177decbc41c9b1a0c02ed811ade9",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "f033cb4f7aad4a4d35fb81dec5da09036d5ad01b7452024b440061e245662ce5",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "9176177decbc41c9b1a0c02ed811ade9",
+  "responder_saw_ground_truth": false,
+  "run_id": "25b6f60eb0d1481d802961cbb4a4a383",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 1,
+    "captured_at": 1791128152.254761,
+    "cost": null,
+    "duration_human": "34.5s",
+    "duration_seconds": 34.47539401054382,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:6>7",
+              "source_atom": "6",
+              "target_atom": "7"
+            },
+            {
+              "electrons": 2,
+              "kind": "pi_bond",
+              "notation": "pi:7-9>9",
+              "source_bond": [
+                "7",
+                "9"
+              ],
+              "target_atom": "9",
+              "through_atom": "9"
+            }
+          ],
+          "inferred_dbe": "6-6:-2;6-7:+2;7-9:-2;9-9:+2",
+          "intermediate_smiles": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+          "intermediate_type": "zwitterionic_adduct",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": null,
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Nucleophilic addition: the amine N6 lone pair attacks the isothiocyanate carbon C7 and forms the N6-C7 bond. The C7=N9 pi bond breaks heterolytically onto N9, giving an acyl-stabilized amide anion. The product is a zwitterion (N6+ / N9-) with no net charge, and all atoms are balanced.",
+          "reaction_smirks": "[C:7](=[S:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1.[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2:6]>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7](=[S:8])[N-:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:6>7;pi:7-9>9|",
+          "resulting_state": [
+            "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1"
+          ],
+          "template_alignment": "aligned",
+          "template_alignment_reason": null
+        },
+        {
+          "confidence": "medium",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:6>7",
+              "source_atom": "6",
+              "target_atom": "7"
+            },
+            {
+              "electrons": 2,
+              "kind": "pi_bond",
+              "notation": "pi:7-8>8",
+              "source_bond": [
+                "7",
+                "8"
+              ],
+              "target_atom": "8",
+              "through_atom": "8"
+            }
+          ],
+          "inferred_dbe": "6-6:-2;6-7:+2;7-8:-2;8-8:+2",
+          "intermediate_smiles": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+          "intermediate_type": "zwitterionic_thiolate",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": null,
+          "rank": 2,
+          "rdkit_cli_commands": [],
+          "reaction_description": "The amine N6 attacks C7 and forms the N6-C7 bond. The C7=S8 pi bond moves onto sulfur, giving a thiolate zwitterion (an isothiourea-type resonance form). All atoms are balanced.",
+          "reaction_smirks": "[C:7](=[S:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1.[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2:6]>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7]([S-:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:6>7;pi:7-8>8|",
+          "resulting_state": [
+            "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1"
+          ],
+          "template_alignment": "partial",
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "O=C(N=C=S)c1ccccc1",
+        "CC(C)(N)CO"
+      ],
+      "executable_candidate_count": 2,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 2,
+      "llm_reasoning": "The primary amine nitrogen (N6) of 2-amino-2-methylpropan-1-ol is far more nucleophilic than the hydroxyl oxygen, so it adds to the electrophilic central carbon (C7) of benzoyl isothiocyanate. The C7=N9 pi electrons move onto N9, where the negative charge is stabilized by the adjacent benzoyl carbonyl. This gives a zwitterionic adduct. A proton transfer from N6+ to N9- in the next step then gives the neutral N-benzoyl thiourea. A second option sends the C=S pi electrons onto sulfur, giving a thiolate zwitterion.",
+      "message": "Proposed 2 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+        "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1\",\n      \"reaction_description\": \"Nucleophilic addition: the amine N6 lone pair attacks the isothiocyanate carbon C7 and forms the N6-C7 bond. The C7=N9 pi bond breaks heterolytically onto N9, giving an acyl-stabilized amide anion. The product is a zwitterion (N6+ / N9-) with no net charge, and all atoms are balanced.\",\n      \"reaction_smirks\": \"[C:7](=[S:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1.[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2:6]>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7](=[S:8])[N-:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:6>7;pi:7-9>9|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"7\",\n          \"electrons\": 2,\n          \"source_atom\": \"6\",\n          \"notation\": \"lp:6>7\"\n        },\n        {\n          \"kind\": \"pi_bond\",\n          \"target_atom\": \"9\",\n          \"electrons\": 2,\n          \"source_bond\": [\n            \"7\",\n            \"9\"\n          ],\n          \"through_atom\": \"9\",\n          \"notation\": \"pi:7-9>9\"\n        }\n      ],\n      \"resulting_state\": [\n        \"CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": \"aligned\",\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"zwitterionic_adduct\",\n      \"note\": null\n    },\n    {\n      \"rank\": 2,\n      \"intermediate_smiles\": \"CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1\",\n      \"reaction_description\": \"The amine N6 attacks C7 and forms the N6-C7 bond. The C7=S8 pi bond moves onto sulfur, giving a thiolate zwitterion (an isothiourea-type resonance form). All atoms are balanced.\",\n      \"reaction_smirks\": \"[C:7](=[S:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1.[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2:6]>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7]([S-:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:6>7;pi:7-8>8|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"7\",\n          \"electrons\": 2,\n          \"source_atom\": \"6\",\n          \"notation\": \"lp:6>7\"\n        },\n        {\n          \"kind\": \"pi_bond\",\n          \"target_atom\": \"8\",\n          \"electrons\": 2,\n          \"source_bond\": [\n            \"7\",\n            \"8\"\n          ],\n          \"through_atom\": \"8\",\n          \"notation\": \"pi:7-8>8\"\n        }\n      ],\n      \"resulting_state\": [\n        \"CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"medium\",\n      \"template_alignment\": \"partial\",\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"zwitterionic_thiolate\",\n      \"note\": null\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"The primary amine nitrogen (N6) of 2-amino-2-methylpropan-1-ol is far more nucleophilic than the hydroxyl oxygen, so it adds to the electrophilic central carbon (C7) of benzoyl isothiocyanate. The C7=N9 pi electrons move onto N9, where the negative charge is stabilized by the adjacent benzoyl carbonyl. This gives a zwitterionic adduct. A proton transfer from N6+ to N9- in the next step then gives the neutral N-benzoyl thiourea. A second option sends the C=S pi electrons onto sulfur, giving a thiolate zwitterion.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "The primary amine nitrogen (N6) of 2-amino-2-methylpropan-1-ol is far more nucleophilic than the hydroxyl oxygen, so it adds to the electrophilic central carbon (C7) of benzoyl isothiocyanate. The C7=N9 pi electrons move onto N9, where the negative charge is stabilized by the adjacent benzoyl carbonyl. This gives a zwitterionic adduct. A proton transfer from N6+ to N9- in the next step then gives the neutral N-benzoyl thiourea. A second option sends the C=S pi electrons onto sulfur, giving a thiolate zwitterion.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:6>7",
+                "source_atom": "6",
+                "target_atom": "7"
+              },
+              {
+                "electrons": 2,
+                "kind": "pi_bond",
+                "notation": "pi:7-9>9",
+                "source_bond": [
+                  "7",
+                  "9"
+                ],
+                "target_atom": "9",
+                "through_atom": "9"
+              }
+            ],
+            "inferred_dbe": "6-6:-2;6-7:+2;7-9:-2;9-9:+2",
+            "intermediate_smiles": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+            "intermediate_type": "zwitterionic_adduct",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": null,
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Nucleophilic addition: the amine N6 lone pair attacks the isothiocyanate carbon C7 and forms the N6-C7 bond. The C7=N9 pi bond breaks heterolytically onto N9, giving an acyl-stabilized amide anion. The product is a zwitterion (N6+ / N9-) with no net charge, and all atoms are balanced.",
+            "reaction_smirks": "[C:7](=[S:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1.[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2:6]>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7](=[S:8])[N-:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:6>7;pi:7-9>9|",
+            "resulting_state": [
+              "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1"
+            ],
+            "template_alignment": "aligned",
+            "template_alignment_reason": null
+          },
+          {
+            "confidence": "medium",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:6>7",
+                "source_atom": "6",
+                "target_atom": "7"
+              },
+              {
+                "electrons": 2,
+                "kind": "pi_bond",
+                "notation": "pi:7-8>8",
+                "source_bond": [
+                  "7",
+                  "8"
+                ],
+                "target_atom": "8",
+                "through_atom": "8"
+              }
+            ],
+            "inferred_dbe": "6-6:-2;6-7:+2;7-8:-2;8-8:+2",
+            "intermediate_smiles": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+            "intermediate_type": "zwitterionic_thiolate",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": null,
+            "rank": 2,
+            "rdkit_cli_commands": [],
+            "reaction_description": "The amine N6 attacks C7 and forms the N6-C7 bond. The C7=S8 pi bond moves onto sulfur, giving a thiolate zwitterion (an isothiourea-type resonance form). All atoms are balanced.",
+            "reaction_smirks": "[C:7](=[S:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1.[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2:6]>>[CH3:1][C:2]([CH3:3])([CH2:4][OH:5])[NH2+:6][C:7]([S-:8])=[N:9][C:10](=[O:11])[c:12]1[cH:13][cH:14][cH:15][cH:16][cH:17]1 |mech:v1;lp:6>7;pi:7-8>8|",
+            "resulting_state": [
+              "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1"
+            ],
+            "template_alignment": "partial",
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "backend": "rdkit_cli",
+          "canonical": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "raw": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+                  "canonical_smiles": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "hydroxy compound (alcohol or phenol)",
+                    "alcohol",
+                    "primary alcohol",
+                    "primary amine",
+                    "primary aliphatic amine",
+                    "quaternary ammonium",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "amide",
+                    "primary amide",
+                    "secondary amide",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thioamide",
+                    "thiocarbamic-acid derivative",
+                    "thiourea",
+                    "aromatic system"
+                  ],
+                  "functional_groups": [
+                    "alcohol",
+                    "quaternary_ammonium",
+                    "aromatic_ring"
+                  ],
+                  "heavy_atoms": 17,
+                  "rings": 1,
+                  "score": 13,
+                  "source": "raw",
+                  "valid": true
+                },
+                {
+                  "candidate": "CC(C)(CO)[NH+]C(=S)[N-]C(=O)c1ccccc1",
+                  "canonical_smiles": "CC(C)(CO)[NH+]C(=S)[N-]C(=O)c1ccccc1",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "hydroxy compound (alcohol or phenol)",
+                    "alcohol",
+                    "primary alcohol",
+                    "amine (generic)",
+                    "secondary amine",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "amide",
+                    "primary amide",
+                    "secondary amide",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thioamide",
+                    "thiocarbamic-acid derivative",
+                    "thiourea",
+                    "aromatic system"
+                  ],
+                  "functional_groups": [
+                    "alcohol",
+                    "ammonium",
+                    "aromatic_ring"
+                  ],
+                  "heavy_atoms": 17,
+                  "rings": 1,
+                  "score": 13,
+                  "source": "ring_digit_trim",
+                  "valid": true
+                }
+              ],
+              "best_candidate": {
+                "candidate": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+                "canonical_smiles": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "hydroxy compound (alcohol or phenol)",
+                  "alcohol",
+                  "primary alcohol",
+                  "primary amine",
+                  "primary aliphatic amine",
+                  "quaternary ammonium",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "amide",
+                  "primary amide",
+                  "secondary amide",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "thioamide",
+                  "thiocarbamic-acid derivative",
+                  "thiourea",
+                  "aromatic system"
+                ],
+                "functional_groups": [
+                  "alcohol",
+                  "quaternary_ammonium",
+                  "aromatic_ring"
+                ],
+                "heavy_atoms": 17,
+                "rings": 1,
+                "score": 13,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+              "confidence": 0.5,
+              "confidence_label": "low",
+              "input": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+              "intent": {
+                "estimated_atom_tokens": 12,
+                "expected_rings": 1,
+                "fg_hints": [
+                  "carbonyl",
+                  "amine_like",
+                  "oxygenated"
+                ],
+                "raw": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1"
+              },
+              "repaired_smiles": "CC(C)(CO)[NH2+]C(=S)[N-]C(=O)c1ccccc1",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "zwitterionic_adduct",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        },
+        {
+          "backend": "rdkit_cli",
+          "canonical": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "raw": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+                  "canonical_smiles": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "imine (C=N)",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "hydroxy compound (alcohol or phenol)",
+                    "alcohol",
+                    "primary alcohol",
+                    "primary amine",
+                    "primary aliphatic amine",
+                    "quaternary ammonium",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "amide",
+                    "primary amide",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative",
+                    "isothiourea",
+                    "aromatic system"
+                  ],
+                  "functional_groups": [
+                    "imine",
+                    "alcohol",
+                    "quaternary_ammonium",
+                    "aromatic_ring"
+                  ],
+                  "heavy_atoms": 17,
+                  "rings": 1,
+                  "score": 13,
+                  "source": "raw",
+                  "valid": true
+                },
+                {
+                  "candidate": "CC(C)(CO)[NH+]C([S-])=NC(=O)c1ccccc1",
+                  "canonical_smiles": "CC(C)(CO)[NH+]C([S-])=NC(=O)c1ccccc1",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "imine (C=N)",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "hydroxy compound (alcohol or phenol)",
+                    "alcohol",
+                    "primary alcohol",
+                    "amine (generic)",
+                    "secondary amine",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "amide",
+                    "primary amide",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative",
+                    "isothiourea",
+                    "aromatic system"
+                  ],
+                  "functional_groups": [
+                    "amidine",
+                    "alcohol",
+                    "aromatic_ring"
+                  ],
+                  "heavy_atoms": 17,
+                  "rings": 1,
+                  "score": 13,
+                  "source": "ring_digit_trim",
+                  "valid": true
+                }
+              ],
+              "best_candidate": {
+                "candidate": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+                "canonical_smiles": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "imine (C=N)",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "hydroxy compound (alcohol or phenol)",
+                  "alcohol",
+                  "primary alcohol",
+                  "primary amine",
+                  "primary aliphatic amine",
+                  "quaternary ammonium",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "amide",
+                  "primary amide",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "thiocarbamic-acid derivative",
+                  "isothiourea",
+                  "aromatic system"
+                ],
+                "functional_groups": [
+                  "imine",
+                  "alcohol",
+                  "quaternary_ammonium",
+                  "aromatic_ring"
+                ],
+                "heavy_atoms": 17,
+                "rings": 1,
+                "score": 13,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+              "confidence": 0.5,
+              "confidence_label": "low",
+              "input": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+              "intent": {
+                "estimated_atom_tokens": 12,
+                "expected_rings": 1,
+                "fg_hints": [
+                  "carbonyl",
+                  "amine_like",
+                  "oxygenated"
+                ],
+                "raw": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1"
+              },
+              "repaired_smiles": "CC(C)(CO)[NH2+]C([S-])=NC(=O)c1ccccc1",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "zwitterionic_thiolate",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "2a94601bf0cb476d8aee01415fedc1df"
+}

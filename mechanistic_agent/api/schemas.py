@@ -148,7 +148,7 @@ class EvalRunSetRequest(BaseModel):
     reasoning_level: Optional[Literal["lowest", "highest"]] = None
     mode: Literal["unverified"] = "unverified"
     max_cases: int = 25
-    max_steps: int = 6
+    max_steps: int = 14
     max_runtime_seconds: float = 180.0
     async_mode: bool = True
 
@@ -259,7 +259,7 @@ class OfficialEvalRunSetRequest(BaseModel):
     reasoning_level: Optional[Literal["lowest", "highest"]] = None
     mode: Literal["unverified"] = "unverified"
     max_cases: int = 200
-    max_steps: int = 10
+    max_steps: int = 14
     max_runtime_seconds: float = 300.0
     async_mode: bool = True
 

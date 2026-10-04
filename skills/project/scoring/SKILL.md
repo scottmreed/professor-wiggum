@@ -37,6 +37,8 @@ Per accepted step:
 
 This allows high (not perfect) scores for chemically reasonable alternate pathways.
 
+Scoring `v3` (default) also computes a proton-transfer / shuttle agnostic alignment on heavy-atom skeleton states (`mechanistic_agent/skeleton_alignment.py`) and uses whichever of the two alignments is higher, so a route that moves protons through water / TFA / a second amine instead of the substrate (or the reverse) gets full alignment credit against the FlowER path.
+
 ## Efficiency Penalties
 
 - Circular step (no state change): penalty

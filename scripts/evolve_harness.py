@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from dotenv import load_dotenv
@@ -35,11 +35,9 @@ from mechanistic_agent.flower_curriculum import (
     DEFAULT_INDEX_PATH,
     DEFAULT_INDEX_REPORT_PATH,
     DEFAULT_LOOKUP_CACHE,
-    SOURCE_LABEL,
     build_lookup_cache,
     curriculum_history,
     ensure_index,
-    eval_case_from_case,
     evaluation_case_ids,
     known_mechanism_from_case,
     load_curriculum_index,
@@ -1226,7 +1224,7 @@ def main() -> None:
     parser.add_argument("--min-score-threshold", type=float, default=0.2, help="Stop mining if the batch mean score drops below this.")
     parser.add_argument("--mining-score-threshold", type=float, default=0.5, help="Only mine few-shots from sufficiently strong batches.")
     parser.add_argument("--max-few-shots-per-step", type=int, default=3, help="Max new examples per subagent per batch.")
-    parser.add_argument("--max-steps", type=int, default=10, help="Max mechanism steps per case.")
+    parser.add_argument("--max-steps", type=int, default=14, help="Max mechanism steps per case (slack above the 10-step hard band).")
     parser.add_argument("--max-runtime", type=float, default=600.0, help="Per-case timeout in seconds.")
     parser.add_argument("--retry-same-candidate-max", type=int, default=1, help="Retries per candidate before moving on.")
     parser.add_argument("--repeat-failure-signature-limit", type=int, default=2, help="Repeat count of same validation signature before forced reproposal.")

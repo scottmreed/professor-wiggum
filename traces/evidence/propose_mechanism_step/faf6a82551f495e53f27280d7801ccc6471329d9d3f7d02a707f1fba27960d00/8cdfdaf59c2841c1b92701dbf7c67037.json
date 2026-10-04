@@ -1,0 +1,284 @@
+{
+  "approval_label": "intermolecular_pt_trial_c",
+  "approval_notes": "Keyless hard trial arm C 2026-10-04 (run group trial_opus55_hard_v3_c, eval run e203f280): refined intermolecular proton-transfer guidance + opus-5.5 lane + tie-break; blind subagent responder, responder_saw_ground_truth=false, transcript audit 22/22 clean. flower_038130 0.977 (intramolecular shift only where no shuttle was available), flower_151603 0.979 (TFA-mediated intermolecular transfers). Prepared by Claude Code; pending maintainer review.",
+  "approved_at": 1791138711.189043,
+  "approved_bool": true,
+  "approved_by": "claude-code (pending scottmreed review)",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1791138711.204066,
+  "exported_by": "claude-code",
+  "model_version": {
+    "created_at": 1790723193.89483,
+    "family": "agent",
+    "id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "pricing_sha256": "121eeae6157a8a24877a551130e236232df2d8de5146d885c6fd3ecb7ab5d48f",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "hard trial arm C (lane + refined PT guidance + intermolecular tie-break + scoring v3) (c): fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "9a5b31d2c2f443439426e1a0e76f14e71eae7bdb122eb3fd263d4e5bc6529181",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "c7511046f1034964b1347921d7e526ba",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "faf6a82551f495e53f27280d7801ccc6471329d9d3f7d02a707f1fba27960d00",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "c7511046f1034964b1347921d7e526ba",
+  "responder_saw_ground_truth": false,
+  "run_id": "3c1660d9b3544601a587051ae5cbb2ab",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 1,
+    "captured_at": 1791138003.341344,
+    "cost": null,
+    "duration_human": "39.9s",
+    "duration_seconds": 39.92464208602905,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:8>17",
+              "source_atom": "8",
+              "target_atom": "17"
+            }
+          ],
+          "inferred_dbe": "8-8:-2;8-17:+2",
+          "intermediate_smiles": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+          "intermediate_type": "protonated_carbamate",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": "Carbamates are basic at the carbonyl oxygen, so protonation goes there rather than at the alkoxy O10 or at N1.",
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Proton transfer. A carbonyl O8 lone pair takes the acidic H from TFA O17, and the O17-H bond electrons stay on O17, giving trifluoroacetate. Bond formed: O8-H. Bond broken: O17-H. Charge stays balanced: the neutral pair becomes a cation plus an anion.",
+          "reaction_smirks": "[NH:1]([CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1)[C:9](=[O:8])[O:10][C:12]([CH3:11])([CH3:13])[CH3:14].[O:15]=[C:16]([OH:17])[C:18]([F:19])([F:20])[F:21]>>[NH:1]([CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1)[C:9](=[OH+:8])[O:10][C:12]([CH3:11])([CH3:13])[CH3:14].[O:15]=[C:16]([O-:17])[C:18]([F:19])([F:20])[F:21] |mech:v1;lp:8>17|",
+          "resulting_state": [
+            "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+            "O=C([O-])C(F)(F)F"
+          ],
+          "template_alignment": "aligned",
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "CC(C)(C)OC(=O)NC1CC2(CC2)C1",
+        "O=C(O)C(F)(F)F"
+      ],
+      "executable_candidate_count": 1,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 1,
+      "llm_reasoning": "Acid-mediated Boc deprotection. The first elementary step is protonation of the carbamate carbonyl oxygen (O8) by TFA (O17-H). This gives the resonance-stabilized protonated carbamate and trifluoroacetate. Next steps: C12-O10 heterolysis to the tert-butyl cation and carbamic acid, E1 loss of a proton from the tert-butyl cation to isobutylene (the proton is taken up by trifluoroacetate, regenerating TFA), decarboxylation of the carbamic acid to CO2, and the final proton transfers that give the free amine.",
+      "message": "Proposed 1 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1\",\n      \"reaction_description\": \"Proton transfer. A carbonyl O8 lone pair takes the acidic H from TFA O17, and the O17-H bond electrons stay on O17, giving trifluoroacetate. Bond formed: O8-H. Bond broken: O17-H. Charge stays balanced: the neutral pair becomes a cation plus an anion.\",\n      \"reaction_smirks\": \"[NH:1]([CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1)[C:9](=[O:8])[O:10][C:12]([CH3:11])([CH3:13])[CH3:14].[O:15]=[C:16]([OH:17])[C:18]([F:19])([F:20])[F:21]>>[NH:1]([CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1)[C:9](=[OH+:8])[O:10][C:12]([CH3:11])([CH3:13])[CH3:14].[O:15]=[C:16]([O-:17])[C:18]([F:19])([F:20])[F:21] |mech:v1;lp:8>17|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"17\",\n          \"electrons\": 2,\n          \"source_atom\": \"8\",\n          \"notation\": \"lp:8>17\"\n        }\n      ],\n      \"resulting_state\": [\n        \"CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1\",\n        \"O=C([O-])C(F)(F)F\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": \"aligned\",\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"protonated_carbamate\",\n      \"note\": \"Carbamates are basic at the carbonyl oxygen, so protonation goes there rather than at the alkoxy O10 or at N1.\"\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"Acid-mediated Boc deprotection. The first elementary step is protonation of the carbamate carbonyl oxygen (O8) by TFA (O17-H). This gives the resonance-stabilized protonated carbamate and trifluoroacetate. Next steps: C12-O10 heterolysis to the tert-butyl cation and carbamic acid, E1 loss of a proton from the tert-butyl cation to isobutylene (the proton is taken up by trifluoroacetate, regenerating TFA), decarboxylation of the carbamic acid to CO2, and the final proton transfers that give the free amine.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "Acid-mediated Boc deprotection. The first elementary step is protonation of the carbamate carbonyl oxygen (O8) by TFA (O17-H). This gives the resonance-stabilized protonated carbamate and trifluoroacetate. Next steps: C12-O10 heterolysis to the tert-butyl cation and carbamic acid, E1 loss of a proton from the tert-butyl cation to isobutylene (the proton is taken up by trifluoroacetate, regenerating TFA), decarboxylation of the carbamic acid to CO2, and the final proton transfers that give the free amine.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:8>17",
+                "source_atom": "8",
+                "target_atom": "17"
+              }
+            ],
+            "inferred_dbe": "8-8:-2;8-17:+2",
+            "intermediate_smiles": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+            "intermediate_type": "protonated_carbamate",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": "Carbamates are basic at the carbonyl oxygen, so protonation goes there rather than at the alkoxy O10 or at N1.",
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Proton transfer. A carbonyl O8 lone pair takes the acidic H from TFA O17, and the O17-H bond electrons stay on O17, giving trifluoroacetate. Bond formed: O8-H. Bond broken: O17-H. Charge stays balanced: the neutral pair becomes a cation plus an anion.",
+            "reaction_smirks": "[NH:1]([CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1)[C:9](=[O:8])[O:10][C:12]([CH3:11])([CH3:13])[CH3:14].[O:15]=[C:16]([OH:17])[C:18]([F:19])([F:20])[F:21]>>[NH:1]([CH:2]1[CH2:3][C:4]2([CH2:5][CH2:6]2)[CH2:7]1)[C:9](=[OH+:8])[O:10][C:12]([CH3:11])([CH3:13])[CH3:14].[O:15]=[C:16]([O-:17])[C:18]([F:19])([F:20])[F:21] |mech:v1;lp:8>17|",
+            "resulting_state": [
+              "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+              "O=C([O-])C(F)(F)F"
+            ],
+            "template_alignment": "aligned",
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "backend": "rdkit_cli",
+          "canonical": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "note": "Carbamates are basic at the carbonyl oxygen, so protonation goes there rather than at the alkoxy O10 or at N1.",
+          "raw": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+                  "canonical_smiles": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "hydroxy compound (alcohol or phenol)",
+                    "ether",
+                    "amine (generic)",
+                    "secondary amine",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "carboxylic ester",
+                    "amide",
+                    "primary amide",
+                    "secondary amide",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "carbamate (urethane)",
+                    "thiocarbamic-acid derivative"
+                  ],
+                  "functional_groups": [
+                    "carbamate"
+                  ],
+                  "heavy_atoms": 14,
+                  "rings": 2,
+                  "score": 13.5,
+                  "source": "raw",
+                  "valid": true
+                }
+              ],
+              "best_candidate": {
+                "candidate": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+                "canonical_smiles": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "hydroxy compound (alcohol or phenol)",
+                  "ether",
+                  "amine (generic)",
+                  "secondary amine",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "carboxylic ester",
+                  "amide",
+                  "primary amide",
+                  "secondary amide",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "carbamate (urethane)",
+                  "thiocarbamic-acid derivative"
+                ],
+                "functional_groups": [
+                  "carbamate"
+                ],
+                "heavy_atoms": 14,
+                "rings": 2,
+                "score": 13.5,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+              "confidence": 0.9,
+              "confidence_label": "high",
+              "input": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+              "intent": {
+                "estimated_atom_tokens": 15,
+                "expected_rings": 2,
+                "fg_hints": [
+                  "amine_like",
+                  "oxygenated"
+                ],
+                "raw": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1"
+              },
+              "repaired_smiles": "CC(C)(C)OC(=[OH+])NC1CC2(CC2)C1",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "protonated_carbamate",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "8cdfdaf59c2841c1b92701dbf7c67037"
+}

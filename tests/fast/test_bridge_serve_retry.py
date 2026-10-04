@@ -120,3 +120,31 @@ def test_other_requests_are_served_while_one_backs_off(tmp_path) -> None:
     assert "retrying in 60s" in result.output
     assert (bridge_dir / "responses" / healthy.name).exists()
     assert not (bridge_dir / "responses" / failing.name).exists()  # still pending, backing off
+
+
+# Records the exact stdin payload it was handed, then answers.
+RECORDING_RESPONDER = """
+import json, pathlib, sys
+raw = sys.stdin.read()
+pathlib.Path(sys.argv[1]).write_text(raw)
+print(json.dumps({"selected_label_exact": "SN2"}))
+"""
+
+
+def test_command_responder_never_sees_request_context(tmp_path) -> None:
+    from mechanistic_agent.core.call_recorder import call_context
+
+    bridge_dir = tmp_path / "bridge"
+    seen = tmp_path / "seen.json"
+    adapter = AgentBridgeAdapter(model="agent-bridge", bridge_dir=str(bridge_dir))
+    with call_context(run_id="secret-run-id", step_name="reaction_type_mapping"):
+        req = _request(adapter, "x")
+    assert json.loads(req.read_text())["context"]["run_id"] == "secret-run-id"
+
+    result = _serve(bridge_dir, _command(tmp_path, RECORDING_RESPONDER, str(seen)), "--once")
+
+    assert result.exit_code == 0, result.output
+    handed = json.loads(seen.read_text())
+    assert "context" not in handed
+    assert "secret-run-id" not in seen.read_text()
+    assert handed["model_input"]["tool_choice"] == TOOL

@@ -1,0 +1,282 @@
+{
+  "approval_label": "opus55_lane_trial",
+  "approval_notes": "Keyless trial 2026-10-04: medium flower_077973/flower_102973 with the opus-5.5 propose lane in the prompt; blind subagent responder, responder_saw_ground_truth=false; scores equal to the no-lane arm (0.951/0.853).",
+  "approved_at": 1791131318.055841,
+  "approved_bool": true,
+  "approved_by": "scottmreed",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1791131372.127823,
+  "exported_by": "scottmreed",
+  "model_version": {
+    "created_at": 1790723193.89483,
+    "family": "agent",
+    "id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+    "pricing_sha256": "121eeae6157a8a24877a551130e236232df2d8de5146d885c6fd3ecb7ab5d48f",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "d9437f75dd32f9144ead79b09f5e4337c9254b88ee0ec2170a21b179ebfd408d",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "few-shot lane trial (on): fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "65bcd0ae4b05d470263d18cd0cf01e10939606a0c699c7a016008e0d0a1c79c3",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "9176177decbc41c9b1a0c02ed811ade9",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "f033cb4f7aad4a4d35fb81dec5da09036d5ad01b7452024b440061e245662ce5",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "9176177decbc41c9b1a0c02ed811ade9",
+  "responder_saw_ground_truth": false,
+  "run_id": "43efae40f728464eac5c9222167405fb",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 2,
+    "captured_at": 1791127980.6490428,
+    "cost": null,
+    "duration_human": "31.2s",
+    "duration_seconds": 31.163752794265747,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:5>8",
+              "source_atom": "5",
+              "target_atom": "8"
+            }
+          ],
+          "inferred_dbe": "5-5:-2;5-8:+2",
+          "intermediate_smiles": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+          "intermediate_type": "neutral_product",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": null,
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Proton transfer: the lone pair on the anionic N5 takes an H from the ammonium N8+. The N8-H bond electrons stay on N8, which becomes neutral. Bonds formed: N5-H. Bonds broken: N8-H. Net charge goes from zwitterion (0) to neutral urea (0).",
+          "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH3:4])[N-:5][C:6](=[O:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[NH:5][C:6](=[O:7])[NH:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:5>8|",
+          "resulting_state": [
+            "CC(C)(C)NC(=O)NC(C)(C)C#N"
+          ],
+          "template_alignment": null,
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "CC(C)(C)[N-]C(=O)[NH2+]C(C)(C)C#N"
+      ],
+      "executable_candidate_count": 1,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 1,
+      "llm_reasoning": "The amine N8 has already added to the isocyanate carbon C6, giving a zwitterion: an amidate-like anion on N5 and an ammonium on N8. Only a proton transfer is left. One N-H proton on the ammonium N8 moves to the anionic N5. This can happen intramolecularly or be relayed through a second amine molecule. The result is the neutral 1,3-disubstituted urea, which is the target product.",
+      "message": "Proposed 1 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "CC(C)(C)NC(=O)NC(C)(C)C#N"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"CC(C)(C)NC(=O)NC(C)(C)C#N\",\n      \"reaction_description\": \"Proton transfer: the lone pair on the anionic N5 takes an H from the ammonium N8+. The N8-H bond electrons stay on N8, which becomes neutral. Bonds formed: N5-H. Bonds broken: N8-H. Net charge goes from zwitterion (0) to neutral urea (0).\",\n      \"reaction_smirks\": \"[CH3:1][C:2]([CH3:3])([CH3:4])[N-:5][C:6](=[O:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[NH:5][C:6](=[O:7])[NH:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:5>8|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"8\",\n          \"electrons\": 2,\n          \"source_atom\": \"5\",\n          \"notation\": \"lp:5>8\"\n        }\n      ],\n      \"resulting_state\": [\n        \"CC(C)(C)NC(=O)NC(C)(C)C#N\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": null,\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"neutral_product\",\n      \"note\": null\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"The amine N8 has already added to the isocyanate carbon C6, giving a zwitterion: an amidate-like anion on N5 and an ammonium on N8. Only a proton transfer is left. One N-H proton on the ammonium N8 moves to the anionic N5. This can happen intramolecularly or be relayed through a second amine molecule. The result is the neutral 1,3-disubstituted urea, which is the target product.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "The amine N8 has already added to the isocyanate carbon C6, giving a zwitterion: an amidate-like anion on N5 and an ammonium on N8. Only a proton transfer is left. One N-H proton on the ammonium N8 moves to the anionic N5. This can happen intramolecularly or be relayed through a second amine molecule. The result is the neutral 1,3-disubstituted urea, which is the target product.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:5>8",
+                "source_atom": "5",
+                "target_atom": "8"
+              }
+            ],
+            "inferred_dbe": "5-5:-2;5-8:+2",
+            "intermediate_smiles": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+            "intermediate_type": "neutral_product",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": null,
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Proton transfer: the lone pair on the anionic N5 takes an H from the ammonium N8+. The N8-H bond electrons stay on N8, which becomes neutral. Bonds formed: N5-H. Bonds broken: N8-H. Net charge goes from zwitterion (0) to neutral urea (0).",
+            "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH3:4])[N-:5][C:6](=[O:7])[NH2+:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13]>>[CH3:1][C:2]([CH3:3])([CH3:4])[NH:5][C:6](=[O:7])[NH:8][C:9]([CH3:10])([CH3:11])[C:12]#[N:13] |mech:v1;lp:5>8|",
+            "resulting_state": [
+              "CC(C)(C)NC(=O)NC(C)(C)C#N"
+            ],
+            "template_alignment": null,
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "backend": "rdkit_cli",
+          "canonical": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "diagnostics": {
+            "current_state_count": 0,
+            "resulting_state_count": 0,
+            "source": "booleans"
+          },
+          "failed_checks": [
+            "state_progress"
+          ],
+          "fix_suggestions": [
+            "Transform at least one starting-material species in the resulting state."
+          ],
+          "raw": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+          "repair_smiles": {
+            "available": true,
+            "command": "rdkit-agent",
+            "requested": true,
+            "resolution_reason": null,
+            "resolution_rejected": false,
+            "resolution_source": "npx_no_install",
+            "resolution_warning": null,
+            "response": {
+              "attempts": [
+                {
+                  "candidate": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+                  "canonical_smiles": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+                  "checkmol_groups": [
+                    "aldehyde",
+                    "ketene acetal derivative (hetero-substituted ketene)",
+                    "amine (generic)",
+                    "secondary amine",
+                    "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                    "amide",
+                    "primary amide",
+                    "secondary amide",
+                    "nitrile",
+                    "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                    "thiocarbamic-acid derivative",
+                    "urea",
+                    "isonitrile (R\u2013N\u2261C)"
+                  ],
+                  "functional_groups": [
+                    "urea",
+                    "nitrile"
+                  ],
+                  "heavy_atoms": 13,
+                  "rings": null,
+                  "score": 13.7,
+                  "source": "raw",
+                  "valid": true
+                }
+              ],
+              "best_candidate": {
+                "candidate": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+                "canonical_smiles": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+                "checkmol_groups": [
+                  "aldehyde",
+                  "ketene acetal derivative (hetero-substituted ketene)",
+                  "amine (generic)",
+                  "secondary amine",
+                  "carboxylic-acid derivative (R\u2013C(=O)\u2013X)",
+                  "amide",
+                  "primary amide",
+                  "secondary amide",
+                  "nitrile",
+                  "thiocarboxylic-acid derivative (R\u2013C(=S)\u2013X)",
+                  "thiocarbamic-acid derivative",
+                  "urea",
+                  "isonitrile (R\u2013N\u2261C)"
+                ],
+                "functional_groups": [
+                  "urea",
+                  "nitrile"
+                ],
+                "heavy_atoms": 13,
+                "rings": null,
+                "score": 13.7,
+                "source": "raw",
+                "valid": true
+              },
+              "canonical_smiles": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+              "confidence": 0.9,
+              "confidence_label": "high",
+              "input": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+              "intent": {
+                "estimated_atom_tokens": 13,
+                "expected_rings": 0,
+                "fg_hints": [
+                  "carbonyl",
+                  "nitrile",
+                  "amine_like",
+                  "oxygenated"
+                ],
+                "raw": "CC(C)(C)NC(=O)NC(C)(C)C#N"
+              },
+              "repaired_smiles": "CC(C)(C)NC(=O)NC(C)(C)C#N",
+              "strategy": "raw",
+              "success": true
+            },
+            "returncode": 0,
+            "timeout_seconds": 5.0,
+            "used": true
+          },
+          "repair_smiles_applied": true,
+          "source": "model_json",
+          "type": "neutral_product",
+          "validated": false,
+          "validated_from": "rdkit_cli:repair-smiles"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "cc4ae3291858436baa6ae9c3e52a5595"
+}
