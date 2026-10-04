@@ -128,13 +128,18 @@ def _tokens(species: Iterable[Any]) -> List[str]:
 
 
 def _mol(smiles: str):
+    """Parsed species with atom maps cleared and mapped explicit hydrogens folded back in, so a
+    SMIRKS written with ``[H:16]`` atoms and a state written without them canonicalize alike."""
     Chem = _rdkit()
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
     for atom in mol.GetAtoms():
         atom.SetAtomMapNum(0)
-    return mol
+    try:
+        return Chem.RemoveHs(mol)
+    except Exception:  # noqa: BLE001 - keep the explicit form if hydrogens cannot be folded
+        return mol
 
 
 def canonical(smiles: str) -> Optional[str]:
@@ -225,14 +230,40 @@ def _smirks_sides(reaction_smirks: str) -> Optional[Tuple[List[str], List[str]]]
     return _canon_list([left]), _canon_list([right])
 
 
+def _fragments_in_state(side: str, state: Sequence[str]) -> bool:
+    """Every SMIRKS fragment on one side (a whole species or a reacting core such as
+    ``[C:1](=[O:2])[N:3]``) is a substructure of the stated species, charges included."""
+    Chem = _rdkit()
+    combined = _mol(".".join(_tokens(state)))
+    if combined is None:
+        return False
+    combined = Chem.AddHs(combined)  # so explicit [H:n] atoms in a fragment have something to match
+    fragments = [t for t in side.split(".") if t.strip()]
+    for fragment in fragments:
+        query = Chem.MolFromSmarts(fragment)
+        if query is None:
+            return False
+        for atom in query.GetAtoms():
+            atom.SetAtomMapNum(0)
+        if not combined.HasSubstructMatch(query):
+            return False
+    return bool(fragments)
+
+
 def _smirks_matches_states(step: QualityStep) -> bool:
+    """The SMIRKS describes the stated step: its species are in the states (whole-species SMIRKS),
+    or each fragment of a core-only SMIRKS is a substructure of the stated species."""
     sides = _smirks_sides(step.reaction_smirks)
     if sides is None:
         return False
     left, right = sides
     current = Counter(_canon_list(step.current_state))
     resulting = Counter(_canon_list(step.resulting_state))
-    return bool(left) and bool(right) and not (Counter(left) - current) and not (Counter(right) - resulting)
+    if left and right and not (Counter(left) - current) and not (Counter(right) - resulting):
+        return True
+    text = str(step.reaction_smirks or "").strip().split(" ")[0].split("|")[0].strip()
+    raw_left, _, raw_right = text.partition(">>")
+    return _fragments_in_state(raw_left, step.current_state) and _fragments_in_state(raw_right, step.resulting_state)
 
 
 def _bond_electron_valid(step: QualityStep) -> Tuple[bool, Optional[str]]:
@@ -535,9 +566,9 @@ def score_snapshot_quality(snapshot: Mapping[str, Any], expected: Optional[Mappi
     from mechanistic_agent.scoring import score_snapshot_against_known
 
     inputs = next((snapshot[key] for key in ("input_payload", "input") if isinstance(snapshot.get(key), Mapping)), {})
-    starting = list(snapshot.get("starting_materials") or inputs.get("starting_materials") or
-                    (expected or {}).get("starting_materials") or [])
-    products = list((expected or {}).get("products") or snapshot.get("products") or inputs.get("products") or [])
+    exp_starting, exp_products = _expected_inputs(expected)
+    starting = list(snapshot.get("starting_materials") or inputs.get("starting_materials") or exp_starting)
+    products = list(exp_products or snapshot.get("products") or inputs.get("products") or [])
     graded = score_snapshot_against_known(snapshot, expected, scoring_version="v3") if expected else {}
     skeleton = graded.get("proton_agnostic_alignment") or {}
     sequence = graded.get("known_alignment_component") if expected else None
@@ -580,17 +611,25 @@ def summarize(results: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _expected_inputs(expected: Optional[Mapping[str, Any]]) -> Tuple[List[str], List[str]]:
+    """Starting materials and products of an eval case's expected payload (the reference
+    mechanism's first and last states when the payload does not list them)."""
+    expected = expected or {}
+    steps = (expected.get("verified_mechanism") or {}).get("steps") if isinstance(expected.get("verified_mechanism"), Mapping) else None
+    steps = sorted((s for s in steps or [] if isinstance(s, Mapping)), key=lambda s: int(s.get("step_index") or 0))
+    starting = list(expected.get("starting_materials") or (steps[0].get("current_state") if steps else None) or [])
+    products = list(expected.get("products") or [])
+    return starting, products
+
+
 def _baseline_snapshot(summary: Mapping[str, Any], expected: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:
     steps = summary.get("baseline_steps")
     if not isinstance(steps, list):
         return None
     from mechanistic_agent.core.baseline_runner import _steps_to_synthetic_snapshot
 
-    return _steps_to_synthetic_snapshot(
-        steps,
-        list((expected or {}).get("starting_materials") or []),
-        list((expected or {}).get("products") or []),
-    )
+    starting, products = _expected_inputs(expected)
+    return _steps_to_synthetic_snapshot(steps, starting, products)
 
 
 def rescore_quality(store: Any, eval_run_ids: Sequence[str], *, write: bool = False) -> List[Dict[str, Any]]:

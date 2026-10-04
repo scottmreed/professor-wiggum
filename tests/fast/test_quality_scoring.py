@@ -155,3 +155,30 @@ def test_summarize_means_components_and_counts() -> None:
     assert summary["points"] == 700.0 and summary["passed"] == 1 and summary["targets_reached"] == 1
     assert summary["components"]["step_validity"] == 200.0
     assert summary["valid_step_fraction"] == round(4 / 7, 4)
+
+
+def test_core_fragment_smirks_matches_states_but_unrelated_smirks_does_not() -> None:
+    step = qs.QualityStep(
+        1,
+        ["O=C(O)C(F)(F)F", "CC(C)(C)OC(=O)NC1CCC(F)(F)CC1"],
+        ["O=C([O-])C(F)(F)F", "CC(C)(C)OC(=[OH+])NC1CCC(F)(F)CC1"],
+        "[C:1](=[O:2])[N:3].[O:4]([H:5])[C:6]>>[C:1](=[O+:2][H:5])[N:3].[O-:4][C:6]",
+        [],
+    )
+    assert qs._smirks_matches_states(step) is True
+    step.reaction_smirks = "[Cl:1][C:2]>>[Cl-:1].[C+:2]"
+    assert qs._smirks_matches_states(step) is False
+
+
+def test_mapped_explicit_hydrogens_canonicalize_like_implicit_ones() -> None:
+    assert qs.canonical("[C:1]([H:2])([H:3])([H:4])[O:5][H:6]") == qs.canonical("CO") == "CO"
+    assert qs.canonical("[H+]") == "[H+]"
+
+
+def test_rescoring_a_baseline_recovers_starting_materials_from_the_reference() -> None:
+    case = _case("flower_254799")
+    expected = {"products": case["products"], "verified_mechanism": case["verified_mechanism"]}
+    snapshot = qs._baseline_snapshot({"baseline_steps": case["verified_mechanism"]["steps"]}, expected)
+    result = qs.score_snapshot_quality(snapshot, expected)
+    assert result["findings"]["unexplained_species"] == []
+    assert result["closure"]["grade"] == "exact"
