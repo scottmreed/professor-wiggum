@@ -3133,19 +3133,19 @@ def leaderboard(
         lines = []
         includes_cost = any("total_cost" in row for row in items)
         header = (
-            f"{'Rank':<5} {'Model':<25} {'Thinking':<8} {'Type':<8} {'Score':<10} {'Outcome':<7} {'Pass':<7} {'Cases':<6} {'Cost':<8} {'Group'}"
+            f"{'Rank':<5} {'Model':<28} {'Thinking':<8} {'Type':<8} {'Score':<10} {'Outcome':<7} {'Pass':<7} {'Cases':<6} {'Cost':<8} {'Group'}"
             if includes_cost
-            else f"{'Rank':<5} {'Model':<25} {'Thinking':<8} {'Type':<8} {'Score':<10} {'Outcome':<7} {'Pass':<7} {'Cases':<6} {'Group'}"
+            else f"{'Rank':<5} {'Model':<28} {'Thinking':<8} {'Type':<8} {'Score':<10} {'Outcome':<7} {'Pass':<7} {'Cases':<6} {'Group'}"
         )
         lines.append(header)
         lines.append("-" * len(header))
         for i, row in enumerate(items, 1):
             model = row.get("model_name") or row.get("model") or "unknown"
-            # Truncate model name if too long
-            if len(model) > 25:
-                model = model[:22] + "..."
-            if _leaderboard_row_via_bridge(row):
-                model = f"{model[:23]} †"
+            # Truncate model name if too long, keeping room for the bridge marker
+            marker = " †" if _leaderboard_row_via_bridge(row) else ""
+            if len(model) + len(marker) > 28:
+                model = model[: 25 - len(marker)] + "..."
+            model += marker
             thinking = row.get("thinking_level") or "none"
             run_type = "Baseline" if row.get("is_baseline") else "Harness"
             pts = _leaderboard_row_to_pts(row)
@@ -3158,11 +3158,11 @@ def leaderboard(
                 total_cost = float(row.get("total_cost") or 0)
                 cost_display = f"${total_cost:.3f}" if total_cost > 0 else "$0.000"
                 lines.append(
-                    f"{i:<5} {model:<25} {thinking:<8} {run_type:<8} {score_display:<10} {outcome:<7} {pass_rate:<7} {case_count:<6} {cost_display:<8} {group}"
+                    f"{i:<5} {model:<28} {thinking:<8} {run_type:<8} {score_display:<10} {outcome:<7} {pass_rate:<7} {case_count:<6} {cost_display:<8} {group}"
                 )
             else:
                 lines.append(
-                    f"{i:<5} {model:<25} {thinking:<8} {run_type:<8} {score_display:<10} {outcome:<7} {pass_rate:<7} {case_count:<6} {group}"
+                    f"{i:<5} {model:<28} {thinking:<8} {run_type:<8} {score_display:<10} {outcome:<7} {pass_rate:<7} {case_count:<6} {group}"
                 )
         if HARNESS_SPEED_CALIBRATION_MS <= 0:
             lines.append("")
