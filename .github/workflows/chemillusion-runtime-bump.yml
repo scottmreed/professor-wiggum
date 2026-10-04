@@ -1,13 +1,18 @@
 # Keep ChemIllusion's embedded mechanism runtime in step with Wiggum main.
 #
 # ChemIllusion (scottmreed/chem-art-generator, private) bakes a pinned checkout of
-# this repo into its API image: `ARG WIGGUM_RUNTIME_REF=<sha>` in
-# backend/Dockerfile.api, product model = MECHANISM_PREDICTOR_MODEL default in
-# backend/app/core/config.py. When main changes anything the runtime ships
-# (prompts/few-shots, harness, model catalog, runtime code, FlowER asset
-# manifest, dependencies) or a published leaderboard result crowns a new model,
-# this opens — or refreshes — one PR there (branch bot/wiggum-runtime-bump).
-# Merging it redeploys via Railway (watchPatterns backend/**). Never auto-merged.
+# this repo into its API image (`ARG WIGGUM_RUNTIME_REF=<sha>` in
+# backend/Dockerfile.api); its product model is PRODUCT_MODEL in
+# backend/app/services/mechanism_predictor/product_model.py, a constant that only
+# this process changes (no Railway override). This is the last step of a Wiggum
+# change: it runs once the change has landed on main, and
+# scripts/chemillusion_runtime_bump.py opens or refreshes one PR there (branch
+# bot/wiggum-runtime-bump) only for a harness change (harness configs, shared
+# prompts/few-shots, the frontier model's lane, harness engine code), a better
+# frontier-model score on medium or hard in results/runs, or a new model leading
+# both medium and hard (which also switches PRODUCT_MODEL). Lanes and results of
+# other models, docs and leaderboard code never trigger it. Merging the PR
+# redeploys via Railway (watchPatterns backend/**). Never auto-merged.
 #
 # Needs repository secret CHEMILLUSION_REPO_TOKEN: a fine-grained PAT (or GitHub
 # App token) with Contents + Pull requests read/write on chem-art-generator.
@@ -18,12 +23,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "skills/mechanistic/**"
       - "harness_versions/**"
-      - "mechanistic_agent/**"
-      - "novelty_index/manifest.json"
-      - "pyproject.toml"
-      - "requirements.txt"
+      - "skills/mechanistic/**"
+      - "mechanistic_agent/core/**"
+      - "mechanistic_agent/tools.py"
+      - "mechanistic_agent/tool_schemas.py"
+      - "mechanistic_agent/llm.py"
+      - "mechanistic_agent/smiles_utils.py"
+      - "mechanistic_agent/prompt_assets.py"
       - "results/runs/**"
   workflow_dispatch:
     inputs:
