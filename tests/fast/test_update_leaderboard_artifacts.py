@@ -10,7 +10,7 @@ from main import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LEADERBOARD_MD = REPO_ROOT / "LEADERBOARD.md"
+LEADERBOARD_MD = REPO_ROOT / "docs" / "legacy" / "clawdiators_leaderboard.md"
 
 MINIMAL_FIXTURE = """\
 # Mechanistic Agent Leaderboard
@@ -89,3 +89,29 @@ def test_replace_arena_table_idempotent_on_fixture() -> None:
     assert first is not None
     second = _replace_arena_table_in_markdown(first, new_table)
     assert second == first
+
+
+def test_arena_table_marks_bridge_rows() -> None:
+    table = _arena_table_from_leaderboard_items(
+        [
+            {
+                "created_at": 1704067200.0,
+                "model_name": "anthropic/claude-opus-5.5",
+                "via_bridge": True,
+                "weighted_pass_rate": 0.5,
+                "run_group_name": "bridge_group",
+                "mean_quality_score": 0.5,
+            },
+            {
+                "created_at": 1704067200.0,
+                "model_name": "anthropic/claude-opus-5.5",
+                "via_bridge": False,
+                "weighted_pass_rate": 0.5,
+                "run_group_name": "api_group",
+                "mean_quality_score": 0.5,
+            },
+        ]
+    )
+    bridge_line, api_line = table.splitlines()[2:]
+    assert "`anthropic/claude-opus-5.5` †" in bridge_line
+    assert "†" not in api_line

@@ -3185,8 +3185,17 @@ class RunStore:
             "total_weight_sum": round(all_weights, 6),
         }
 
-    def _eval_run_saw_ground_truth(self, results: List[Dict[str, Any]]) -> bool:
-        """True when any case run in this eval run declares ground-truth exposure."""
+    def _eval_run_origins(self, run: Dict[str, Any], results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Origin blocks recorded for an eval run: its own metadata, then each case run's config.
+
+        Baseline eval runs have no case run rows, so their origin lives in the
+        eval run's ``metadata.origin``; harness case runs carry ``config.origin``.
+        """
+        origins: List[Dict[str, Any]] = []
+        metadata = run.get("metadata")
+        own = metadata.get("origin") if isinstance(metadata, dict) else None
+        if isinstance(own, dict):
+            origins.append(own)
         for item in results:
             run_id = str(item.get("run_id") or "")
             if not run_id:
@@ -3196,12 +3205,41 @@ class RunStore:
             except Exception:
                 continue
             origin = ((row or {}).get("config") or {}).get("origin") if isinstance(row, dict) else None
-            if not isinstance(origin, dict):
-                continue
+            if isinstance(origin, dict):
+                origins.append(origin)
+        return origins
+
+    @staticmethod
+    def _origins_saw_ground_truth(origins: List[Dict[str, Any]]) -> bool:
+        """True when any origin declares ground-truth exposure."""
+        for origin in origins:
             value = origin.get("responder_saw_ground_truth")
             if value is True or str(value).strip().lower() in {"true", "1", "yes"}:
                 return True
         return False
+
+    @staticmethod
+    def _bridge_row_identity(run: Dict[str, Any], origins: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Leaderboard identity of an eval run, listing keyless runs under their declared model.
+
+        A keyless agent-bridge run whose responder declared the model that
+        answered ranks as that catalog model (so it groups with the model's API
+        rows) and is flagged ``via_bridge``; an undeclared one keeps the bridge
+        label. Hosted-model rows are unchanged.
+        """
+        from mechanistic_agent.agent_bridge import declared_model_key
+        from mechanistic_agent.llm import is_agent_bridge_model
+
+        model_name = run.get("model_name") or run.get("model")
+        bridge_origin = next((o for o in origins if o.get("responder") == "agent-bridge"), None)
+        if bridge_origin is None and not is_agent_bridge_model(str(model_name or "")):
+            return {"model_name": model_name, "via_bridge": False}
+        bridge_model = str((bridge_origin or {}).get("bridge_model") or model_name or "agent-bridge")
+        return {
+            "model_name": declared_model_key(bridge_origin) or model_name,
+            "via_bridge": True,
+            "bridge_model": bridge_model,
+        }
 
     def _aggregate_llm_calls_for_results(self, results: List[Dict[str, Any]]) -> Dict[str, int]:
         """Sum real LLM-call counts and tokens across an eval run's case runs.
@@ -3245,7 +3283,8 @@ class RunStore:
                 continue
             # Rows whose responder declared it saw the verified mechanism are
             # ground-truth replays, not capability measurements: never rank them.
-            if self._eval_run_saw_ground_truth(results):
+            origins = self._eval_run_origins(run, results)
+            if self._origins_saw_ground_truth(origins):
                 continue
             scores = [float(item["score"]) for item in results if isinstance(item.get("score"), (int, float))]
             if not scores:
@@ -3302,7 +3341,7 @@ class RunStore:
                     "eval_run_id": eval_run_id,
                     "eval_set_id": eval_set_id,
                     "model": run.get("model"),
-                    "model_name": run.get("model_name") or run.get("model"),
+                    **self._bridge_row_identity(run, origins),
                     "model_family": run.get("model_family"),
                     "thinking_level": run.get("thinking_level"),
                     "run_group_name": run_group,

@@ -1,0 +1,147 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "kind": "baseline",
+  "eval_run_id": "77c1e557accb48e4862b8035f6dd1aab",
+  "run_group": "harness_free_baseline_easy",
+  "date": "2026-10-03",
+  "model": "agent-bridge",
+  "thinking_level": null,
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "harness": null,
+  "tier": "easy",
+  "eval_set_id": "b8855f9de2c741e6bf2d74117eeada70",
+  "case_ids_hash": "2ed6a67fa0f530dbe9522930eaac73afda031df3a503539779e9927935f62a24",
+  "holdout": false,
+  "scoring_version": "v2",
+  "git_commit": "4d70319",
+  "summary": {
+    "points": 661,
+    "outcome": "baseline",
+    "cases": 10,
+    "targets_reached": 10,
+    "passed": 0,
+    "errors": 0,
+    "mean_score": 0.6611,
+    "avg_latency_s": 41.2
+  },
+  "cases": [
+    {
+      "case_id": "flower_024300",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 78.6,
+      "mechanism_type": "SN2 (Menshutkin quaternization)",
+      "error": null
+    },
+    {
+      "case_id": "flower_054599",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 30.0,
+      "mechanism_type": "SN2 (Menshutkin quaternization)",
+      "error": null
+    },
+    {
+      "case_id": "flower_085506",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 30.2,
+      "mechanism_type": "SN2 (Menshutkin quaternization)",
+      "error": null
+    },
+    {
+      "case_id": "flower_086646",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 30.0,
+      "mechanism_type": "intramolecular SN2 (N-alkylation / quaternization)",
+      "error": null
+    },
+    {
+      "case_id": "flower_130926",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 24.2,
+      "mechanism_type": "SN2 (Menshutkin quaternization)",
+      "error": null
+    },
+    {
+      "case_id": "flower_135501",
+      "score": 0.4458,
+      "target_reached": true,
+      "alignment": 0.4833,
+      "known_steps": 1,
+      "predicted_steps": 3,
+      "latency_s": 63.9,
+      "mechanism_type": "base-catalyzed Michael addition (cyanoethylation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_160718",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 44.4,
+      "mechanism_type": "carbonyl-ene reaction (formaldehyde as enophile)",
+      "error": null
+    },
+    {
+      "case_id": "flower_170958",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 30.1,
+      "mechanism_type": "SN2 (Menshutkin quaternization)",
+      "error": null
+    },
+    {
+      "case_id": "flower_188703",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 36.2,
+      "mechanism_type": "carbonyl-ene reaction",
+      "error": null
+    },
+    {
+      "case_id": "flower_252433",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 1,
+      "predicted_steps": 1,
+      "latency_s": 44.3,
+      "mechanism_type": "SN2 N-alkylation (Menshutkin-type quaternization)",
+      "error": null
+    }
+  ]
+}

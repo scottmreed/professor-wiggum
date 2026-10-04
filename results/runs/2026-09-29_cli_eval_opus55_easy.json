@@ -1,0 +1,185 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "eval_run_id": "d7b83c6963da4e2a9405f333d3f05b0d",
+  "run_group": "cli_eval_opus55_easy",
+  "date": "2026-09-29",
+  "model": "anthropic/claude-opus-5.5",
+  "thinking_level": null,
+  "origin": null,
+  "harness": "default",
+  "harness_bundle_hash": "986dcbe05c179f9671137b01c3762d326177b062703df0028ed6a55a636bf2b8",
+  "tier": "easy",
+  "eval_set_id": "b8855f9de2c741e6bf2d74117eeada70",
+  "case_ids_hash": "2ed6a67fa0f530dbe9522930eaac73afda031df3a503539779e9927935f62a24",
+  "holdout": false,
+  "scoring_version": "v2",
+  "git_commit": "71bdae4",
+  "summary": {
+    "points": 940,
+    "outcome": "WIN",
+    "breakdown": {
+      "product": 300,
+      "pathway": 269,
+      "push": 196,
+      "speed": 75,
+      "methodology": 100
+    },
+    "cases": 10,
+    "targets_reached": 10,
+    "passed": 10,
+    "mean_score": 0.9452,
+    "avg_latency_s": 100.3
+  },
+  "cases": [
+    {
+      "case_id": "flower_024300",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 69.6,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_054599",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 69.8,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_085506",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 67.1,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_086646",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 73.2,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_130926",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 62.8,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_135501",
+      "known_steps": 1,
+      "accepted_steps": 3,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.7258,
+      "latency_s": 208.9,
+      "run_status": "failed"
+    },
+    {
+      "case_id": "flower_160718",
+      "known_steps": 1,
+      "accepted_steps": 3,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.7258,
+      "latency_s": 217.9,
+      "run_status": "failed"
+    },
+    {
+      "case_id": "flower_170958",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 73.4,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_188703",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 91.3,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_252433",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 69.0,
+      "run_status": "completed"
+    }
+  ],
+  "hardest_solved": {
+    "case_id": "flower_024300",
+    "known_steps": 1,
+    "accepted_steps": 1,
+    "score": 1.0,
+    "starting_materials": [
+      "ClCC1CO1",
+      "CN(C)C"
+    ],
+    "products": [
+      "C[N+](C)(C)CC1CO1",
+      "[Cl-]"
+    ],
+    "steps": [
+      {
+        "step_index": 1,
+        "current_state": [
+          "ClCC1CO1",
+          "CN(C)C"
+        ],
+        "resulting_state": [
+          "C[N+](C)(C)CC1CO1",
+          "[Cl-]"
+        ],
+        "reaction_smirks": "[CH2:5]([CH:6]1[CH2:7][O:8]1)[Cl:9].[CH3:1][N:2]([CH3:3])[CH3:4]>>[CH3:1][N+:2]([CH3:3])([CH3:4])[CH2:5][CH:6]1[CH2:7][O:8]1.[Cl-:9]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:2>5",
+            "source_atom": "2",
+            "target_atom": "5"
+          },
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:5-9>9",
+            "source_bond": [
+              "5",
+              "9"
+            ],
+            "target_atom": "9",
+            "through_atom": "9"
+          }
+        ],
+        "acceptance_kind": "validated"
+      }
+    ],
+    "image": "results/mechanisms/cli_eval_opus55_easy__flower_024300.png"
+  }
+}

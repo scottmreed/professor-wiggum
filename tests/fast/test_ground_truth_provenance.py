@@ -66,6 +66,7 @@ def test_leaderboard_rejects_rows_whose_responder_saw_ground_truth(tmp_path: Pat
     blind_rows = store.leaderboard(blind_set)
     assert len(blind_rows) == 1
     assert blind_rows[0]["model"] == "agent-bridge"
+    assert blind_rows[0]["via_bridge"] is True
 
 
 def _canned_answer(tool_name: str) -> dict:

@@ -1,0 +1,147 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "kind": "baseline",
+  "eval_run_id": "265571232d474d3fae9e6a9ce8fc2161",
+  "run_group": "harness_free_baseline_hard",
+  "date": "2026-10-03",
+  "model": "agent-bridge",
+  "thinking_level": null,
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "fresh blind Claude Code Agent subagent (Opus 5.5) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "harness": null,
+  "tier": "hard",
+  "eval_set_id": "5e2bb46a40134277926f9403330afee7",
+  "case_ids_hash": "f5fed8810a911fe14fc591f224a1c34c3da936adbd3295ee1515b08665bf9af0",
+  "holdout": false,
+  "scoring_version": "v2",
+  "git_commit": "4d70319",
+  "summary": {
+    "points": 618,
+    "outcome": "baseline",
+    "cases": 10,
+    "targets_reached": 10,
+    "passed": 0,
+    "errors": 0,
+    "mean_score": 0.6179,
+    "avg_latency_s": 66.5
+  },
+  "cases": [
+    {
+      "case_id": "flower_002647",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 4,
+      "predicted_steps": 4,
+      "latency_s": 54.1,
+      "mechanism_type": "nucleophilic acyl substitution (hydrazide acylation / condensation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_007666",
+      "score": 0.6569,
+      "target_reached": true,
+      "alignment": 0.8875,
+      "known_steps": 4,
+      "predicted_steps": 4,
+      "latency_s": 48.0,
+      "mechanism_type": "nucleophilic acyl substitution (addition-elimination amidation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_025913",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 4,
+      "predicted_steps": 4,
+      "latency_s": 50.9,
+      "mechanism_type": "nucleophilic acyl substitution (addition-elimination condensation to hydrazide)",
+      "error": null
+    },
+    {
+      "case_id": "flower_054101",
+      "score": 0.555,
+      "target_reached": true,
+      "alignment": 0.6,
+      "known_steps": 4,
+      "predicted_steps": 5,
+      "latency_s": 60.4,
+      "mechanism_type": "carboxylic acid activation by PCl5 / nucleophilic acyl substitution",
+      "error": null
+    },
+    {
+      "case_id": "flower_085811",
+      "score": 0.555,
+      "target_reached": true,
+      "alignment": 0.6,
+      "known_steps": 4,
+      "predicted_steps": 5,
+      "latency_s": 78.2,
+      "mechanism_type": "acid chloride formation with PCl5 (nucleophilic acyl substitution via acyloxyphosphonium)",
+      "error": null
+    },
+    {
+      "case_id": "flower_137708",
+      "score": 0.555,
+      "target_reached": true,
+      "alignment": 0.6,
+      "known_steps": 4,
+      "predicted_steps": 5,
+      "latency_s": 75.3,
+      "mechanism_type": "nucleophilic acyl substitution (acid chloride formation with PCl5)",
+      "error": null
+    },
+    {
+      "case_id": "flower_140886",
+      "score": 0.62,
+      "target_reached": true,
+      "alignment": 0.86,
+      "known_steps": 4,
+      "predicted_steps": 5,
+      "latency_s": 60.3,
+      "mechanism_type": "carboxylic acid to acyl chloride with PCl5 (nucleophilic acyl substitution via acyloxyphosphonium)",
+      "error": null
+    },
+    {
+      "case_id": "flower_160564",
+      "score": 0.685,
+      "target_reached": true,
+      "alignment": 1.0,
+      "known_steps": 4,
+      "predicted_steps": 4,
+      "latency_s": 112.8,
+      "mechanism_type": "nucleophilic acyl substitution (addition-elimination, hydrazide formation)",
+      "error": null
+    },
+    {
+      "case_id": "flower_165851",
+      "score": 0.6267,
+      "target_reached": true,
+      "alignment": 0.7667,
+      "known_steps": 4,
+      "predicted_steps": 3,
+      "latency_s": 59.0,
+      "mechanism_type": "nucleophilic acyl substitution (addition-elimination)",
+      "error": null
+    },
+    {
+      "case_id": "flower_212722",
+      "score": 0.555,
+      "target_reached": true,
+      "alignment": 0.6,
+      "known_steps": 4,
+      "predicted_steps": 5,
+      "latency_s": 66.2,
+      "mechanism_type": "nucleophilic acyl substitution (acid chloride formation with PCl5)",
+      "error": null
+    }
+  ]
+}

@@ -36,7 +36,7 @@ Write PR body previews and push summaries only under `local_contributions/pr_dra
    - Subagents/validators: `medium`, `hard` preferred.
    - Models: `easy` tier for the cost class.
    - Harness: `medium`.
-   Compare against `LEADERBOARD.md` (or `python main.py leaderboard ...`). If the required tier does not improve, position the change as experimental or local-only rather than as a mergeable PR. If it does, regenerate the leaderboard with the CLI (never by hand).
+   Compare against `LEADERBOARD.md` (or `python main.py leaderboard ...`). If the required tier does not improve, position the change as experimental or local-only rather than as a mergeable PR. If it does, publish it with `python main.py publish-results --eval-run-id <id>` (never edit LEADERBOARD.md by hand).
 
 6. **Draft the PR body** using `.github/pull_request_template.md` headings: Summary, Changes, Validation (exact commands and results), Behavior-changing (tick one; if yes, include evidence paths, eval commands, run IDs or run groups, and the before/after leaderboard delta), Checklist. For agent-bridge runs, include the origin fields (`responder`, `declared_underlying_model`, `budget_observability`, `responder_saw_ground_truth`, `official_holdout_exposed_to_agent`).
 

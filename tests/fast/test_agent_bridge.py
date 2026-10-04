@@ -17,6 +17,7 @@ from mechanistic_agent.agent_bridge import (
     MODEL_INPUT_KEYS,
     REQUEST_SCHEMA,
     AgentBridgeAdapter,
+    declared_model_key,
     pending_requests,
     read_request,
     write_response,
@@ -156,3 +157,39 @@ def test_pending_requests_clears_after_response(tmp_path) -> None:
     assert [p.name for p in pending_requests(str(tmp_path))] == [request_path.name]
     write_response(request_path, tool_calls=[{"name": "x", "arguments": {}}])
     assert pending_requests(str(tmp_path)) == []
+
+
+def _origin(declared):
+    return {"responder": "agent-bridge", "declared_underlying_model": declared}
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        ("claude-opus-5-5", "anthropic/claude-opus-5.5"),
+        ("claude-opus-5-5 (headless claude -p, blind per call)", "anthropic/claude-opus-5.5"),
+        ("anthropic/claude-opus-5.5", "anthropic/claude-opus-5.5"),
+        ("claude-opus-4-7", "claude-opus-4-7"),
+        # Raw resolution would prefix-match `gpt-5`; the exact catalog entry wins.
+        ("gpt-5-5", "gpt-5.5"),
+        # Unknown to the catalog: keep the declared id, minus the "(...)" note.
+        ("fable-9-9 (cli)", "fable-9-9"),
+    ],
+)
+def test_declared_model_key_resolves_catalog_key(declared, expected) -> None:
+    assert declared_model_key(_origin(declared)) == expected
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        None,
+        {},
+        _origin("undeclared"),
+        _origin(""),
+        _origin("agent-bridge"),
+        {"responder": "someone-else", "declared_underlying_model": "claude-opus-5-5"},
+    ],
+)
+def test_declared_model_key_none_without_a_declared_model(origin) -> None:
+    assert declared_model_key(origin) is None
