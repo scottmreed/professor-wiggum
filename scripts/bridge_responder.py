@@ -412,6 +412,7 @@ _BOUNDARY = r"(?<![^\s'\"(=<>`,])"
 _ABS_PATH_RE = re.compile(_BOUNDARY + r"(/[\w.\-~+%@]+(?:/[\w.\-~+%@]*)+)")
 _HOME_RE = re.compile(_BOUNDARY + r"(~/\S*|\$\{?(?:HOME|PWD|OLDPWD|TMPDIR|USER)\b\S*)")
 _REL_PATH_RE = re.compile(_BOUNDARY + r"((?:\.\.?/|[\w.\-]+/)[\w.\-/]*)")
+_ATOM_LABEL_RE = re.compile(r"^[A-Z][a-z]?\d*[+-]?$")
 _PATHY_EXT_RE = re.compile(r"\.(?:json|jsonl|db|sqlite3?|py|md|txt|csv|tsv|gz|npz|ya?ml|toml|log|output)$")
 # Repo / data-checkout directory names a relative path could reach the reference mechanism through.
 _SENSITIVE_DIRS = {
@@ -460,6 +461,8 @@ def _pathy_relative(token: str) -> bool:
         return False
     if any(seg in _SENSITIVE_DIRS for seg in segments):
         return True
+    if all(_ATOM_LABEL_RE.match(seg) for seg in segments):
+        return False  # atom labels such as "C14/C15/C16" in a mapping note
     return (token.count("/") >= 2 and len(segments) >= 2) or bool(_PATHY_EXT_RE.search(segments[-1]))
 
 

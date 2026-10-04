@@ -336,3 +336,14 @@ def test_cli_options_work_before_or_after_subcommand(layout, capsys) -> None:
     assert br.main(["prompt", stem, "--bridge-dir", str(bridge)]) == 0
     assert capsys.readouterr().out == before
     assert str(calls.resolve() / stem / "prompt.md") in before
+
+
+def test_atom_labels_in_heredoc_are_not_paths(tmp_path: Path) -> None:
+    call = tmp_path / "calls" / "stem"
+    paths = br._call_paths([str(call)])
+    answer = str(call / "answer.json")
+    labels = f"python3 - <<'EOF'\nsym=['C14 tert-butyl CH3 (equivalent with C15/C16)', 'N9/O7']\nopen('{answer}','w')\nEOF"
+    category, reason = br.analyse_bash(labels, paths)
+    assert category == br.PROC, reason
+    category, reason = br.analyse_bash("cat training_data/C1/eval.json", paths)
+    assert category == br.CONTAM, reason
