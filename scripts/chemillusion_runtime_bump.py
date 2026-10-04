@@ -3,9 +3,10 @@
 
 ChemIllusion (scottmreed/chem-art-generator) imports the mechanism runtime
 in-process from a pinned checkout of this repo: ``ARG WIGGUM_RUNTIME_REF=<sha>``
-in ``backend/Dockerfile.api``. Its product model is ``PRODUCT_MODEL`` in
-``backend/app/services/mechanism_predictor/product_model.py`` — a constant, not a
-setting, so this process is the only thing that changes it (no Railway override).
+in ``backend/Dockerfile.api``. Its product model and harness are ``PRODUCT_MODEL``
+and ``PRODUCT_HARNESS`` in ``backend/app/services/mechanism_predictor/product_model.py``
+— constants, not settings, so this process is the only thing that changes them (no
+Railway override).
 
 A bump is proposed only when one of these holds between the current pin and ``--ref``:
 
@@ -19,10 +20,16 @@ A bump is proposed only when one of these holds between the current pin and ``--
   (``results/runs/*.json``, non-holdout, non-baseline) on the medium or hard tier
   is higher than it was at the pin;
 * **new frontier** — one model now leads both the medium and hard tiers and it is
-  not the product model; the bump then also rewrites ``PRODUCT_MODEL``.
+  not the product model; the bump then also rewrites ``PRODUCT_MODEL``;
+* **frontier harness change** — the frontier harness differs from ``PRODUCT_HARNESS``;
+  the bump then also rewrites ``PRODUCT_HARNESS``.
 
-The frontier model is the new leader when there is one, else the product model.
-With ``--chemillusion-dir`` and ``--apply`` it rewrites the pin (and the model);
+The frontier model is the new leader when there is one, else the product model. The
+frontier harness is the ``harness`` of the frontier model's best medium and hard
+records (the hard one's when they differ; records without a harness are ignored), and
+only when ``harness_versions/<name>/harness.json`` exists at ``--ref``. A
+``product_model.py`` without ``PRODUCT_HARNESS`` is left alone and the PR body says so.
+With ``--chemillusion-dir`` and ``--apply`` it rewrites the pin (model, harness);
 ``.github/workflows/chemillusion-runtime-bump.yml`` then opens or refreshes one
 PR there. It is never auto-merged: the evidence gate still decides what ships.
 
@@ -43,9 +50,10 @@ DOCKERFILE = "backend/Dockerfile.api"
 PRODUCT_MODEL_FILE = "backend/app/services/mechanism_predictor/product_model.py"
 LEGACY_CONFIG = "backend/app/core/config.py"  # before PRODUCT_MODEL existed
 
-REF_LINE = re.compile(r"^(ARG WIGGUM_RUNTIME_REF=)([0-9a-fA-F]{7,40})\s*$", re.M)
-PRODUCT_MODEL_LINE = re.compile(r'^(PRODUCT_MODEL = ")([^"]+)(")\s*$', re.M)
-LEGACY_MODEL_LINE = re.compile(r'^(\s*MECHANISM_PREDICTOR_MODEL: str = ")([^"]+)(")\s*$', re.M)
+REF_LINE = re.compile(r"^(ARG WIGGUM_RUNTIME_REF=)([0-9a-fA-F]{7,40})[ \t]*$", re.M)
+PRODUCT_MODEL_LINE = re.compile(r'^(PRODUCT_MODEL = ")([^"]+)(")[ \t]*$', re.M)
+LEGACY_MODEL_LINE = re.compile(r'^(\s*MECHANISM_PREDICTOR_MODEL: str = ")([^"]+)(")[ \t]*$', re.M)
+PRODUCT_HARNESS_LINE = re.compile(r'^(PRODUCT_HARNESS = ")([^"]+)(")[ \t]*$', re.M)
 
 LANE = re.compile(r"^skills/mechanistic/[^/]+/models/([^/]+)/")
 HARNESS_CODE = (
@@ -113,6 +121,11 @@ def read_product_model(model_text: str) -> Optional[str]:
     return match.group(2) if match else None
 
 
+def read_product_harness(model_text: str) -> Optional[str]:
+    match = PRODUCT_HARNESS_LINE.search(model_text)
+    return match.group(2) if match else None
+
+
 def harness_commits(repo: Path, old: str, new: str, frontier_keys: set[str]) -> List[Dict[str, Any]]:
     """Commits in old..new that change the harness ChemIllusion runs, with their kinds."""
     log = _git(repo, "log", "--format=@@%H%x09%s", "--name-only", f"{old}..{new}", "--", *HARNESS_PATHS)
@@ -155,6 +168,7 @@ def harness_records(repo: Path, ref: str) -> List[Dict[str, Any]]:
                 "model": _effective_model(record),
                 "points": int((record.get("summary") or {}).get("points") or 0),
                 "date": str(record.get("date") or ""),
+                "harness": str(record.get("harness") or "").strip(),
                 "file": Path(name).name,
             }
         )
@@ -201,14 +215,46 @@ def model_recommendation(repo: Path, ref: str, records: Sequence[Dict[str, Any]]
     return {"model": model_id, "leaders": {tier: top[tier] for tier in LEADER_TIERS}}
 
 
+def harness_exists(repo: Path, ref: str, harness: str) -> bool:
+    if not harness or "/" in harness or harness in {".", ".."}:
+        return False
+    try:
+        _git(repo, "cat-file", "-e", f"{ref}:harness_versions/{harness}/harness.json")
+    except subprocess.CalledProcessError:
+        return False
+    return True
+
+
+def frontier_harness(repo: Path, ref: str, records: Sequence[Dict[str, Any]], model: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Harness of ``model``'s best medium/hard records (the hard one's when they differ).
+
+    Records without a harness are ignored; a harness ``ref`` does not ship
+    (``harness_versions/<name>/harness.json``) is reported with ``exists = False``.
+    """
+    if not model:
+        return None
+    key = _model_key(model)
+    top = leaders([r for r in records if r.get("harness") and _model_key(r["model"]) == key])
+    by_tier = {tier: top[tier] for tier in LEADER_TIERS if tier in top}
+    if not by_tier:
+        return None
+    harness = (by_tier.get("hard") or by_tier["medium"])["harness"]
+    return {"harness": harness, "exists": harness_exists(repo, ref, harness), "leaders": by_tier}
+
+
 def plan_bump(repo: Path, new_ref: str, dockerfile_text: str, model_text: str) -> Dict[str, Any]:
     old_ref = read_pin(dockerfile_text)
     new_sha = _git(repo, "rev-parse", new_ref).strip()
     product_model = read_product_model(model_text)
+    product_harness = read_product_harness(model_text)
     new_records = harness_records(repo, new_sha)
     recommendation = model_recommendation(repo, new_sha, new_records, product_model)
     frontier = recommendation["model"] if recommendation else product_model
     frontier_keys = {_model_key(m) for m in (frontier, product_model) if m}
+    harness_info = frontier_harness(repo, new_sha, new_records, frontier)
+    harness_change = None
+    if harness_info and harness_info["exists"] and product_harness and harness_info["harness"] != product_harness:
+        harness_change = {"from": product_harness, "to": harness_info["harness"]}
 
     try:
         commits = harness_commits(repo, old_ref, new_sha, frontier_keys)
@@ -231,9 +277,11 @@ def plan_bump(repo: Path, new_ref: str, dockerfile_text: str, model_text: str) -
         reasons.append("frontier_improvement")
     if recommendation:
         reasons.append("new_frontier_model")
+    if harness_change:
+        reasons.append("frontier_harness_change")
     if not pin_reachable:
         reasons.append("pin_not_ancestor")
-    changed = bool(reasons) and (new_sha != old_ref or recommendation is not None)
+    changed = bool(reasons) and (new_sha != old_ref or recommendation is not None or harness_change is not None)
     return {
         "old_ref": old_ref,
         "new_ref": new_sha if changed else old_ref,
@@ -245,6 +293,9 @@ def plan_bump(repo: Path, new_ref: str, dockerfile_text: str, model_text: str) -
         "frontier_model": frontier,
         "frontier_improvements": improvements,
         "model_recommendation": recommendation,
+        "product_harness": product_harness,
+        "frontier_harness": harness_info,
+        "harness_change": harness_change,
         "changed": changed,
     }
 
@@ -256,6 +307,9 @@ def apply_plan(plan: Dict[str, Any], dockerfile_text: str, model_text: str) -> t
     if recommendation:
         pattern = PRODUCT_MODEL_LINE if PRODUCT_MODEL_LINE.search(model_text) else LEGACY_MODEL_LINE
         model = pattern.sub(lambda m: m.group(1) + recommendation["model"] + m.group(3), model_text, count=1)
+    harness_change = plan.get("harness_change")
+    if harness_change:
+        model = PRODUCT_HARNESS_LINE.sub(lambda m: m.group(1) + harness_change["to"] + m.group(3), model, count=1)
     return dockerfile, model
 
 
@@ -265,6 +319,7 @@ def pr_body(plan: Dict[str, Any], repo_slug: str = "scottmreed/professor-wiggum"
         "harness_change": "harness change",
         "frontier_improvement": "frontier-model improvement on medium/hard",
         "new_frontier_model": "new frontier model",
+        "frontier_harness_change": "frontier harness change",
         "pin_not_ancestor": "current pin is not an ancestor of the new ref",
     }
     lines = [
@@ -276,6 +331,13 @@ def pr_body(plan: Dict[str, Any], repo_slug: str = "scottmreed/professor-wiggum"
         f"([compare](https://github.com/{repo_slug}/compare/{old}...{new}))",
         f"- Frontier model: `{plan.get('frontier_model')}`",
     ]
+    info = plan.get("frontier_harness")
+    if info:
+        lines.append(
+            f"- Frontier harness: `{info['harness']}` ("
+            + ", ".join(f"{tier} {r['points']}/1000" for tier, r in info["leaders"].items())
+            + f"); product harness: `{plan.get('product_harness') or 'not set'}`"
+        )
     if plan["kinds"]:
         lines += ["", "### Harness changes", ""]
         lines += [f"- {KIND_LABELS.get(kind, kind)}" for kind in plan["kinds"]]
@@ -302,6 +364,31 @@ def pr_body(plan: Dict[str, Any], repo_slug: str = "scottmreed/professor-wiggum"
             + ", ".join(f"{tier} {leaders_[tier]['points']}/1000" for tier in LEADER_TIERS)
             + f"). This PR changes `PRODUCT_MODEL` from `{plan['product_model']}`; it is not a setting, "
             "so this is the only place the product model changes.",
+        ]
+    harness_change = plan.get("harness_change")
+    if harness_change:
+        lines += [
+            "",
+            "### Product harness",
+            "",
+            f"The frontier model's leading medium/hard records run harness `{harness_change['to']}`. This PR changes "
+            f"`PRODUCT_HARNESS` from `{harness_change['from']}`; ChemIllusion sends it as `harness_name` on every run.",
+        ]
+    elif info and not plan.get("product_harness"):
+        lines += [
+            "",
+            "### Product harness",
+            "",
+            f"`{PRODUCT_MODEL_FILE}` has no `PRODUCT_HARNESS`, so it was left alone and ChemIllusion keeps Wiggum's "
+            f"`default` harness. The frontier harness is `{info['harness']}`.",
+        ]
+    elif info and not info["exists"]:
+        lines += [
+            "",
+            "### Product harness",
+            "",
+            f"The frontier harness `{info['harness']}` has no `harness_versions/{info['harness']}/harness.json` at "
+            f"this ref, so `PRODUCT_HARNESS` stays `{plan.get('product_harness')}`.",
         ]
     lines += [
         "",

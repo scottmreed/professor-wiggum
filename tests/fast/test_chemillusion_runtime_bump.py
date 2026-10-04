@@ -1,4 +1,4 @@
-"""scripts/chemillusion_runtime_bump.py: when to bump ChemIllusion's runtime pin and product model."""
+"""scripts/chemillusion_runtime_bump.py: when to bump ChemIllusion's runtime pin, product model and harness."""
 
 from __future__ import annotations
 
@@ -19,6 +19,8 @@ ARG WIGGUM_RUNTIME_REF={ref}
 RUN git clone https://github.com/scottmreed/professor-wiggum.git /opt/wiggum
 """
 PRODUCT_MODEL = '"""Product model."""\n\nPRODUCT_MODEL = "anthropic/claude-opus-5.5"\n'
+WITH_HARNESS = PRODUCT_MODEL + 'PRODUCT_HARNESS = "{harness}"\n'
+JEV = "jev_reaction_type"
 LEGACY_CONFIG = """class Settings:
     MECHANISM_PREDICTOR_MODEL: str = "anthropic/claude-opus-5.5"
 """
@@ -55,8 +57,10 @@ def repo(tmp_path: Path) -> Path:
         {
             "mechanistic_agent/model_pricing.json": json.dumps(catalog),
             "README.md": "x",
-            "results/runs/m.json": _record("medium", "anthropic/claude-opus-5.5", 904),
-            "results/runs/h.json": _record("hard", "anthropic/claude-opus-5.5", 823),
+            "harness_versions/default/harness.json": '{"name": "default"}',
+            f"harness_versions/{JEV}/harness.json": '{"name": "jev"}',
+            "results/runs/m.json": _record("medium", "anthropic/claude-opus-5.5", 904, harness=JEV),
+            "results/runs/h.json": _record("hard", "anthropic/claude-opus-5.5", 823, harness=JEV),
         },
         "base",
     )
@@ -152,3 +156,107 @@ def test_split_leadership_keeps_the_product_model(repo: Path) -> None:
 def test_unknown_pin_line_is_an_error(repo: Path) -> None:
     with pytest.raises(ValueError):
         bump.plan_bump(repo, "HEAD", "FROM python\nARG WIGGUM_RUNTIME_REF=main\n", PRODUCT_MODEL)
+
+
+# ---------------------------------------------------------------------------
+# product harness
+# ---------------------------------------------------------------------------
+
+
+def test_frontier_harness_change_alone_bumps_and_rewrites_product_harness(repo: Path) -> None:
+    old = _git(repo, "rev-parse", "HEAD")
+    model_text = WITH_HARNESS.format(harness="default")
+    plan = _plan(repo, old, model_text)
+    assert plan["reasons"] == ["frontier_harness_change"] and plan["changed"] is True
+    assert plan["new_ref"] == old and plan["commits"] == []
+    assert plan["product_harness"] == "default" and plan["frontier_harness"]["harness"] == JEV
+    assert plan["harness_change"] == {"from": "default", "to": JEV}
+    dockerfile, model = bump.apply_plan(plan, DOCKERFILE.format(ref=old), model_text)
+    assert dockerfile == DOCKERFILE.format(ref=old)
+    assert f'PRODUCT_HARNESS = "{JEV}"\n' in model and 'PRODUCT_MODEL = "anthropic/claude-opus-5.5"' in model
+    body = bump.pr_body(plan)
+    assert "frontier harness change" in body and "### Product harness" in body
+    assert f"Frontier harness: `{JEV}` (medium 904/1000, hard 823/1000)" in body
+    # Already on the frontier harness: nothing to do.
+    assert _plan(repo, old, WITH_HARNESS.format(harness=JEV))["changed"] is False
+
+
+def test_hard_leader_harness_wins_and_unlabelled_records_are_ignored(repo: Path) -> None:
+    old = _git(repo, "rev-parse", "HEAD")
+    _commit(
+        repo,
+        {
+            # Medium is led by a default-harness record; hard keeps the jev leader.
+            "results/runs/m2.json": _record("medium", "anthropic/claude-opus-5.5", 950, harness="default"),
+            # No harness field: ignored for the harness, even though it is the hard best.
+            "results/runs/h2.json": _record("hard", "anthropic/claude-opus-5.5", 900),
+            # Baselines never count.
+            "results/runs/b.json": _record("hard", "anthropic/claude-opus-5.5", 999, kind="baseline", harness="default"),
+            # Other models' records do not pick the frontier harness.
+            "results/runs/o.json": _record("hard", "openai/gpt-4o-mini", 100, harness="default"),
+        },
+        "results",
+    )
+    plan = _plan(repo, old, WITH_HARNESS.format(harness=JEV))
+    assert plan["frontier_harness"]["harness"] == JEV
+    assert plan["frontier_harness"]["leaders"]["hard"]["points"] == 823
+    assert plan["frontier_harness"]["leaders"]["medium"]["harness"] == "default"
+    assert plan["harness_change"] is None and "frontier_harness_change" not in plan["reasons"]
+
+
+def test_medium_only_harness_is_used_when_hard_has_none(repo: Path) -> None:
+    _commit(repo, {"results/runs/h.json": _record("hard", "anthropic/claude-opus-5.5", 823)}, "drop hard harness")
+    old = _git(repo, "rev-parse", "HEAD")
+    plan = _plan(repo, old, WITH_HARNESS.format(harness="default"))
+    assert list(plan["frontier_harness"]["leaders"]) == ["medium"]
+    assert plan["harness_change"] == {"from": "default", "to": JEV}
+
+
+def test_harness_missing_at_ref_is_not_adopted(repo: Path) -> None:
+    old = _git(repo, "rev-parse", "HEAD")
+    _commit(repo, {"results/runs/h2.json": _record("hard", "anthropic/claude-opus-5.5", 823, date="2026-10-02", harness="gone")}, "results")
+    plan = _plan(repo, old, WITH_HARNESS.format(harness=JEV))
+    assert plan["frontier_harness"] == {**plan["frontier_harness"], "harness": "gone", "exists": False}
+    assert plan["harness_change"] is None and plan["changed"] is False
+    assert "has no `harness_versions/gone/harness.json`" in bump.pr_body(plan)
+
+
+def test_product_model_file_without_product_harness_is_left_alone(repo: Path) -> None:
+    old = _git(repo, "rev-parse", "HEAD")
+    _commit(repo, {"mechanistic_agent/core/coordinator.py": "# c"}, "fix(core): coordinator")
+    plan = _plan(repo, old, PRODUCT_MODEL)
+    assert plan["product_harness"] is None and plan["harness_change"] is None
+    assert plan["reasons"] == ["harness_change"]
+    _, model = bump.apply_plan(plan, DOCKERFILE.format(ref=old), PRODUCT_MODEL)
+    assert model == PRODUCT_MODEL
+    body = bump.pr_body(plan)
+    assert "has no `PRODUCT_HARNESS`, so it was left alone" in body and f"frontier harness is `{JEV}`" in body
+
+
+def test_frontier_harness_config_change_counts_as_harness_change(repo: Path) -> None:
+    old = _git(repo, "rev-parse", "HEAD")
+    new = _commit(repo, {f"harness_versions/{JEV}/harness.json": '{"name": "jev", "v": 2}'}, "feat(harness): jev v2")
+    plan = _plan(repo, old, WITH_HARNESS.format(harness=JEV))
+    assert plan["reasons"] == ["harness_change"] and plan["new_ref"] == new
+    assert plan["kinds"] == ["harness_config"]
+
+
+def test_new_frontier_model_brings_its_harness(repo: Path) -> None:
+    old = _git(repo, "rev-parse", "HEAD")
+    _commit(
+        repo,
+        {
+            "results/runs/c.json": _record("medium", "anthropic/claude-fable-5.1", 950, harness="default"),
+            "results/runs/d.json": _record("hard", "anthropic/claude-fable-5.1", 870, harness="default"),
+        },
+        "results: fable",
+    )
+    model_text = WITH_HARNESS.format(harness=JEV)
+    plan = _plan(repo, old, model_text)
+    assert {"new_frontier_model", "frontier_harness_change"} <= set(plan["reasons"])
+    assert plan["harness_change"] == {"from": JEV, "to": "default"}
+    _, model = bump.apply_plan(plan, DOCKERFILE.format(ref=old), model_text)
+    assert model == '"""Product model."""\n\nPRODUCT_MODEL = "anthropic/claude-fable-5.1"\nPRODUCT_HARNESS = "default"\n'
+    # The last line keeps its newline when only the model is rewritten, too.
+    _, model_only = bump.apply_plan(_plan(repo, old), DOCKERFILE.format(ref=old), PRODUCT_MODEL)
+    assert model_only == PRODUCT_MODEL.replace("claude-opus-5.5", "claude-fable-5.1")
