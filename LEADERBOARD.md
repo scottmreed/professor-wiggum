@@ -52,7 +52,7 @@ Baselines make one full-mechanism call with no harness. Their steps are scored e
 
 - **976/1000** — step validity 242, sequence 200, electron conservation 100, proton sources/sinks 90, protonation states 100, reagents & solvent 94, efficiency 100, intermolecular 50
 - Targets reached 10/10, passed 8/10, valid steps 86%, thinking `default`
-- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_easy_r2`, eval run `ec4439ff14404613b31c2419b4af72d1`, commit `9e863c6` — [record](results/runs/2026-09-29_bridge_opus55_jev_easy_r2.json)
+- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_easy_r2`, eval run `ec4439ff14404613b31c2419b4af72d1`, commit `ec8e137` — [record](results/runs/2026-09-29_bridge_opus55_jev_easy_r2.json)
 
 | Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |
 |---|---|---|---|---|---|---|
@@ -76,7 +76,7 @@ Hardest mechanism solved: `flower_024300` — reference 1 steps, predicted 1 ste
 
 - **976/1000** — step validity 242, sequence 200, electron conservation 100, proton sources/sinks 90, protonation states 100, reagents & solvent 94, efficiency 100, intermolecular 50
 - Targets reached 10/10, passed 8/10, valid steps 86%, thinking `default`
-- Model id `anthropic/claude-opus-5.5`, harness `default`, run group `cli_eval_opus55_easy`, eval run `d7b83c6963da4e2a9405f333d3f05b0d`, commit `9e863c6` — [record](results/runs/2026-09-29_cli_eval_opus55_easy.json)
+- Model id `anthropic/claude-opus-5.5`, harness `default`, run group `cli_eval_opus55_easy`, eval run `d7b83c6963da4e2a9405f333d3f05b0d`, commit `ec8e137` — [record](results/runs/2026-09-29_cli_eval_opus55_easy.json)
 
 | Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |
 |---|---|---|---|---|---|---|
@@ -100,7 +100,7 @@ Hardest mechanism solved: `flower_024300` — reference 1 steps, predicted 1 ste
 
 - **976/1000** — step validity 242, sequence 200, electron conservation 100, proton sources/sinks 90, protonation states 100, reagents & solvent 94, efficiency 100, intermolecular 50
 - Targets reached 10/10, passed 8/10, valid steps 86%, thinking `default`
-- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_deferred_easy_final3`, eval run `a0ccd2c4e1034662b738c8b2cc29e124`, commit `9e863c6` — [record](results/runs/2026-09-30_bridge_opus55_jev_deferred_easy_final3.json)
+- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_deferred_easy_final3`, eval run `a0ccd2c4e1034662b738c8b2cc29e124`, commit `ec8e137` — [record](results/runs/2026-09-30_bridge_opus55_jev_deferred_easy_final3.json)
 
 | Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |
 |---|---|---|---|---|---|---|
@@ -124,7 +124,7 @@ Hardest mechanism solved: `flower_024300` — reference 1 steps, predicted 1 ste
 
 - **965/1000** — step validity 250, sequence 200, electron conservation 100, proton sources/sinks 100, protonation states 100, reagents & solvent 100, efficiency 100, intermolecular 15
 - Targets reached 10/10, passed 10/10, valid steps 100%, thinking `default`
-- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_medium`, eval run `c7abe8589ecc41198d1ae76e5e598160`, commit `9e863c6` — [record](results/runs/2026-09-29_bridge_opus55_jev_medium.json)
+- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_medium`, eval run `c7abe8589ecc41198d1ae76e5e598160`, commit `ec8e137` — [record](results/runs/2026-09-29_bridge_opus55_jev_medium.json)
 
 | Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |
 |---|---|---|---|---|---|---|
@@ -148,7 +148,7 @@ Hardest mechanism solved: `flower_138321` — reference 3 steps, predicted 3 ste
 
 - **965/1000** — step validity 250, sequence 200, electron conservation 100, proton sources/sinks 100, protonation states 100, reagents & solvent 100, efficiency 100, intermolecular 15
 - Targets reached 10/10, passed 10/10, valid steps 100%, thinking `default`
-- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_deferred_medium_final2+resumed`, eval run `9c7354d092994f57a3599229c8b77ba5`, commit `9e863c6` — [record](results/runs/2026-09-30_bridge_opus55_jev_deferred_medium_final2_resumed.json)
+- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_deferred_medium_final2+resumed`, eval run `9c7354d092994f57a3599229c8b77ba5`, commit `ec8e137` — [record](results/runs/2026-09-30_bridge_opus55_jev_deferred_medium_final2_resumed.json)
 - Combined from resumed eval runs: `13849b6b` (9 cases), `9c7354d0` (1 cases)
 
 | Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |
@@ -173,7 +173,7 @@ Hardest mechanism solved: `flower_138321` — reference 3 steps, predicted 3 ste
 
 - **927/1000** — step validity 247, sequence 166, electron conservation 100, proton sources/sinks 90, protonation states 95, reagents & solvent 94, efficiency 96, intermolecular 39
 - Targets reached 10/10, passed 8/10, valid steps 96%, thinking `default`
-- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_hard`, eval run `fad35afffe974a6a89cc1edd6b65d8a0`, commit `9e863c6` — [record](results/runs/2026-09-29_bridge_opus55_jev_hard.json)
+- Model id `agent-bridge`, harness `jev_reaction_type`, run group `bridge_opus55_jev_hard`, eval run `fad35afffe974a6a89cc1edd6b65d8a0`, commit `ec8e137` — [record](results/runs/2026-09-29_bridge_opus55_jev_hard.json)
 
 | Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |
 |---|---|---|---|---|---|---|

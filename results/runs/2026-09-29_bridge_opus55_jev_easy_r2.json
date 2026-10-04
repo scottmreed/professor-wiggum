@@ -20,7 +20,7 @@
   "case_ids_hash": "2ed6a67fa0f530dbe9522930eaac73afda031df3a503539779e9927935f62a24",
   "holdout": false,
   "scoring_version": "v3",
-  "git_commit": "9e863c6",
+  "git_commit": "ec8e137",
   "sources": null,
   "scoring": "quality_v1",
   "summary": {
