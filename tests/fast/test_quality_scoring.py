@@ -182,3 +182,39 @@ def test_rescoring_a_baseline_recovers_starting_materials_from_the_reference() -
     result = qs.score_snapshot_quality(snapshot, expected)
     assert result["findings"]["unexplained_species"] == []
     assert result["closure"]["grade"] == "exact"
+
+
+@pytest.mark.parametrize(
+    "smirks",
+    [
+        "[C:1](=[O:2])[N:3].[O:4]([H:5])[C:6]>>[C:1](=[O+:2][H:5])[N:3].[O-:4][C:6]",
+        "[C:1](=[O:2])[N:3].[O:4]([H:5])[C:6]>[Na+]>[C:1](=[O+:2][H:5])[N:3].[O-:4][C:6]",
+        "  [C:1](=[O:2])[N:3].[O:4]([H:5])[C:6]>>[C:1](=[O+:2][H:5])[N:3].[O-:4][C:6] |mech:v1;lp:2>5;sigma:5-4>4|",
+    ],
+)
+def test_notation_quirks_do_not_cost_points(smirks: str) -> None:
+    """Core-only fragments, an agents field, a CXSMILES suffix and whitespace are representation,
+    not chemistry: the step stays valid and electron-conserving."""
+    step = qs.QualityStep(
+        1,
+        ["O=C(O)C(F)(F)F", "CC(C)(C)OC(=O)NC1CCC(F)(F)CC1"],
+        ["O=C([O-])C(F)(F)F", "CC(C)(C)OC(=[OH+])NC1CCC(F)(F)CC1"],
+        smirks,
+        [{"electrons": 2, "kind": "lone_pair", "source_atom": 2, "target_atom": 5},
+         {"electrons": 2, "kind": "sigma_bond", "source_bond": [5, 4], "target_atom": 4, "through_atom": 4}],
+    )
+    result = qs.score_step(step, step.current_state, ["NC1CCC(F)(F)CC1"])
+    assert result["valid"] is True, result
+    assert result["electron_conserved"] is True
+    assert qs.canonical("C1=CC=CC=C1O") == qs.canonical("c1ccccc1O")
+
+
+def test_arrows_given_only_in_the_mech_block_count() -> None:
+    step = qs.QualityStep(
+        1,
+        ["O=C(O)C(F)(F)F", "CC(C)(C)OC(=O)NC1CCC(F)(F)CC1"],
+        ["O=C([O-])C(F)(F)F", "CC(C)(C)OC(=[OH+])NC1CCC(F)(F)CC1"],
+        "[C:1](=[O:2])[N:3].[O:4]([H:5])[C:6]>>[C:1](=[O+:2][H:5])[N:3].[O-:4][C:6] |mech:v1;lp:2>5;sigma:5-4>4|",
+        [],
+    )
+    assert qs._bond_electron_valid(step) == (True, None)
