@@ -14,7 +14,8 @@ Isolation is fixed in code, not left to whoever launches it (``HEADLESS_ISOLATIO
 temporary directory. Nothing the model could use to look up a reference mechanism is reachable.
 
 Environment: ``RESPONDER_MODEL`` (default ``claude-opus-5-5``), ``CLAUDE_BIN`` (default ``claude``),
-``RESPONDER_LOG`` (optional JSONL of per-call timings), ``RESPONDER_TIMEOUT`` (seconds, default 900).
+``RESPONDER_LOG`` (optional JSONL of per-call timings), ``RESPONDER_TIMEOUT`` (seconds, default 900),
+``RESPONDER_EFFORT`` (``--effort`` level; match the run's ``--thinking-level``).
 The headless CLI shares the account's usage window; on a usage-limit reply it waits for the reset
 instead of failing the run. Prefer in-session blind subagents (``.claude/skills/bridge-responder``);
 use this only when the user has asked for a headless responder.
@@ -49,8 +50,13 @@ PREAMBLE = (
 )
 
 
-def build_command(model: str, claude_bin: str = "claude") -> List[str]:
-    return [claude_bin, "-p", "--model", model, "--output-format", "text", *HEADLESS_ISOLATION_FLAGS]
+def build_command(model: str, claude_bin: str = "claude", effort: str = "") -> List[str]:
+    """``effort`` (low/medium/high/...) sets the thinking effort; record the same level on the run
+    with ``--thinking-level`` so harness and baseline rows compare at equal thinking."""
+    command = [claude_bin, "-p", "--model", model, "--output-format", "text", *HEADLESS_ISOLATION_FLAGS]
+    if effort:
+        command += ["--effort", effort]
+    return command
 
 
 def build_prompt(model_input: Dict[str, Any]) -> Tuple[str, str]:
@@ -75,7 +81,11 @@ def extract_json(text: str) -> Dict[str, Any]:
 
 def answer(request: Dict[str, Any], *, run=subprocess.run, sleep=time.sleep) -> Dict[str, Any]:
     name, prompt = build_prompt(request["model_input"])
-    command = build_command(os.environ.get("RESPONDER_MODEL", "claude-opus-5-5"), os.environ.get("CLAUDE_BIN", "claude"))
+    command = build_command(
+        os.environ.get("RESPONDER_MODEL", "claude-opus-5-5"),
+        os.environ.get("CLAUDE_BIN", "claude"),
+        os.environ.get("RESPONDER_EFFORT", ""),
+    )
     timeout = float(os.environ.get("RESPONDER_TIMEOUT", "900"))
     log = os.environ.get("RESPONDER_LOG")
     last_err = ""

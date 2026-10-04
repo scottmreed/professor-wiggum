@@ -20,9 +20,29 @@
   "case_ids_hash": "055031c6e73c0930a73ae786ae5117369459e7eee2a2761c0e8fd60bc4ba0918",
   "holdout": false,
   "scoring_version": "v3",
-  "git_commit": "22f391a",
+  "git_commit": "9e863c6",
   "sources": null,
+  "scoring": "quality_v1",
   "summary": {
+    "points": 965,
+    "outcome": "pass",
+    "components": {
+      "step_validity": 250.0,
+      "sequence": 200.0,
+      "electron_conservation": 100.0,
+      "proton_bookkeeping": 100.0,
+      "protonation_states": 100.0,
+      "reagents_and_solvent": 100.0,
+      "efficiency": 100.0,
+      "intermolecular": 15.0
+    },
+    "cases": 10,
+    "targets_reached": 10,
+    "passed": 10,
+    "valid_step_fraction": 1.0,
+    "avg_latency_s": 164.1
+  },
+  "legacy": {
     "points": 950,
     "outcome": "WIN",
     "breakdown": {
@@ -45,6 +65,8 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "2/2",
       "score": 0.9825,
       "latency_s": 189.6,
       "run_status": "completed"
@@ -55,6 +77,8 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "2/2",
       "score": 0.9825,
       "latency_s": 126.5,
       "run_status": "completed"
@@ -65,6 +89,8 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "2/2",
       "score": 0.965,
       "latency_s": 148.8,
       "run_status": "completed"
@@ -75,6 +101,8 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "2/2",
       "score": 0.9825,
       "latency_s": 148.1,
       "run_status": "completed"
@@ -85,6 +113,8 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "2/2",
       "score": 0.965,
       "latency_s": 139.9,
       "run_status": "completed"
@@ -95,6 +125,8 @@
       "accepted_steps": 3,
       "target_reached": true,
       "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "3/3",
       "score": 1.0,
       "latency_s": 211.6,
       "run_status": "completed"
@@ -105,6 +137,8 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "2/2",
       "score": 0.9825,
       "latency_s": 138.7,
       "run_status": "completed"
@@ -115,6 +149,8 @@
       "accepted_steps": 2,
       "target_reached": true,
       "passed": true,
+      "quality_points": 950.0,
+      "valid_steps": "2/2",
       "score": 0.9825,
       "latency_s": 149.3,
       "run_status": "completed"
@@ -125,6 +161,8 @@
       "accepted_steps": 3,
       "target_reached": true,
       "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "3/3",
       "score": 1.0,
       "latency_s": 228.1,
       "run_status": "completed"
@@ -135,6 +173,8 @@
       "accepted_steps": 3,
       "target_reached": true,
       "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "3/3",
       "score": 1.0,
       "latency_s": 160.4,
       "run_status": "completed"

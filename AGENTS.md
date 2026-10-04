@@ -59,6 +59,27 @@ Every step's engine and model are recorded by the actual engine, not the run's c
 
 Embedding (no HTTP): `mechanistic_agent.runtime.EmbeddedMechanismRuntime(base_dir, work_dir, event_sink)` — `create_run(dict)`, blocking `execute(run_id, stop_event=)`, `observatory(run_id)`, `manifest()`. `RunStore(db_path, event_sink=callable)` mirrors every event (after commit, `list_events` row shape) so a host product can keep the durable log; `create_app(base, db_path=, event_sink=)` passes both through and exposes `app.state.store/coordinator/run_manager/registry`.
 
+## Mechanism Quality Rubric (`quality_v1`)
+
+- **One score for every run type.** Harness and harness-free baseline runs, API or bridge, get one 1000-point score from `mechanistic_agent/quality_scoring.py` ([docs/scoring_quality_v1.md](docs/scoring_quality_v1.md)). It is computed from the accepted path alone (states, SMIRKS, arrows), with the same deterministic checks for every run type.
+- **Components:**
+
+  | Component | Points |
+  |---|---|
+  | step validity | 250 |
+  | sequence vs FlowER, proton-shuttle agnostic | 200 |
+  | electron conservation | 100 |
+  | proton sources/sinks | 100 |
+  | protonation states vs conditions from the starting materials | 100 |
+  | reagents & solvent, including mass/charge closure | 100 |
+  | efficiency (no circular states or excess heavy-atom steps) | 100 |
+  | intermolecular proton transfer when a shuttle is available | 50 |
+
+- **No speed or product points.** The supplied product is a gate: missing a target halves the score and blocks a pass.
+- **Where it's stored:** `eval` / `baseline` and the API runsets store `summary.quality` per case. Baselines also store `baseline_steps`, so they can be re-scored. `rescore-quality --eval-run-id <id> [--apply]` scores stored runs.
+- **Publishing:** records get `scoring: quality_v1`, with the old numbers kept under `legacy`. Records that cannot be re-checked stay `scoring: legacy` and render under **Legacy scores**. The DB case score (`scoring_version` v1–v3) is unchanged and still drives the internal dev leaderboard.
+- **Thinking parity:** compare harness and baseline at the same `--thinking-level`. Bridge runs dispatch to `.claude/agents/bridge-model-<level>.md` (`effort` frontmatter), or set `RESPONDER_EFFORT` for the headless responder.
+
 ## Published Results and the Public Leaderboard
 
 - Eval runs stay in the local SQLite store until published. `python main.py publish-results --eval-run-id <id> [--open-pr]` (or `eval ... --publish [--open-pr]`) exports one run to `results/runs/<date>_<run_group>.json` (`wiggum.published_eval_run@1`: model, declared bridge origin, harness, tier, 1000-pt rubric from `scoring.graded_to_points`, per-case rows, hardest solved mechanism) plus `results/mechanisms/*.png` (`flower_rendering.render_mechanism_png`), then regenerates `LEADERBOARD.md` and the README `<!-- leaderboard:start/end -->` block from every committed record (`mechanistic_agent/results_publish.py`). `--regenerate-only` rebuilds the boards without the DB.

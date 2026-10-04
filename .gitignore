@@ -58,6 +58,10 @@ frontend/dist
 !.claude/skills/bridge-responder/
 .claude/skills/bridge-responder/*
 !.claude/skills/bridge-responder/SKILL.md
+!.claude/agents/
+.claude/agents/*
+!.claude/agents/bridge-model-low.md
+!.claude/agents/bridge-model-medium.md
 .cursorrules
 *.swp
 *.swo
