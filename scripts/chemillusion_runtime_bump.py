@@ -68,7 +68,6 @@ HARNESS_CODE = (
 NOT_HARNESS = (
     "mechanistic_agent/core/db.py",
     "mechanistic_agent/core/storage_interfaces.py",
-    "mechanistic_agent/core/archive.py",
     "mechanistic_agent/core/lane_mutator.py",
     "mechanistic_agent/core/llm_mutator.py",
     "mechanistic_agent/core/baseline_runner.py",

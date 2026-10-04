@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Removed
+- **Island-mode harness evolution retired.** `scripts/evolve_harness.py --island-mode` (and `--islands`, `--migration-interval`, `--mutation-proposer`, `--mutation-model`, `--max-generations`), `mechanistic_agent/core/archive.py`, the `IslandConfig` / `ArchiveEntry` / `IslandEvolutionConfig` types, the `RunStore` archive methods, the `/api/archive/*` endpoints and the read-only "Island Evolution" UI dashboard are gone. It was never used productively: the local archive held three leaderboard seeds and one 1-case child with no score change, and no island variant was ever promoted. The `archive_entries` / `archive_migrations` tables are still created (marked deprecated) so existing databases open. The classic curriculum walk in `evolve_harness.py` and overnight Ralph (including the LLM mutation proposer in `core/llm_mutator.py` and the lane mutators) are unchanged.
+
 ### Changed
 - **Retired the five-track public contribution model.** `CONTRIBUTING.md` now offers three doors (report a chemistry failure, report a bug or idea, submit code with fast tests only). The per-track PR templates under `templates/contributions/` were deleted (still in git history); the internal evidence and eval-tier merge policy moved to `docs/change_evidence_policy.md`, keyed by change type, and the agent quick-start prompts to `docs/agent_playbooks.md`. Added a `Chemistry failure` issue template and simplified the PR template. Evidence gating is unchanged as a repository invariant; it is no longer a contributor obligation.
 

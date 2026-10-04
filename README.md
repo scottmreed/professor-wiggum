@@ -33,7 +33,7 @@ All results land in the local SQLite database (`../wiggum-data/data/mechanistic.
 | Official holdout | `python main.py eval-runset-official --model-name <id>` and `baseline-runset-official` | official leaderboard: `python main.py leaderboard-official`; holdout baselines are on the [baseline board](LEADERBOARD.md#harness-free-baselines) |
 | Publish results | `python main.py publish-results --eval-run-id <id> [--open-pr]`, or `eval ... --publish [--open-pr]` | public [LEADERBOARD.md](LEADERBOARD.md) and the board above, from committed `results/runs/*.json` |
 | Curriculum checkpoints | `python main.py curriculum submit\|publish\|render-readme --model-name <id>` | `curriculum/generated/leaderboard_*.json`, [curriculum/STATUS.md](curriculum/STATUS.md) |
-| Harness evolution | `python scripts/evolve_harness.py [--island-mode]`, `python main.py overnight-ralph`, `python main.py vote` | evolution archive (holdout sets are rejected) |
+| Harness evolution | `python scripts/evolve_harness.py`, `python main.py overnight-ralph`, `python main.py vote` | mined few-shot lanes and the Ralph experiment ledger (holdout sets are rejected) |
 
 Notes:
 - `eval --tier` goes through the development-leaderboard planner, which may re-route a run (for example to repeat the current tier). Pass `--leaderboard-route next` to move up a tier or `custom` to keep your own selection; see [docs/development_leaderboard_routes.md](docs/development_leaderboard_routes.md).
