@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import AbstractSet, Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 from mechanistic_agent.data_paths import (  # noqa: E402
     flower_mechanism_index_path,
@@ -1152,13 +1152,79 @@ def curriculum_history(
     }
 
 
+# Committed files whose case ids are evaluation cases (dev tiers, clawdiator
+# baseline tiers, the default eval set, the practice set). Curriculum walks and
+# course releases must never attempt or mine few-shots from these.
+EVALUATION_CASE_FILES: Tuple[str, ...] = (
+    "eval_tiers.json",
+    "baseline_tiers_clawdiator.json",
+    "eval_set.json",
+    "practice_eval/practice_set.json",
+    "practice_eval/practice_tiers.json",
+)
+# FlowER test split / official leaderboard holdout case ids.
+HOLDOUT_CASE_ID_PREFIX = "flower_test_"
+
+
+def _case_ids_from_payload(payload: Any) -> Iterator[str]:
+    """Case ids from a tier map (``{tier: [ids]}``, ``_meta`` skipped) or a case list."""
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if str(key).startswith("_"):
+                continue
+            yield from _case_ids_from_payload(value)
+        return
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, str) and item.strip():
+                yield item.strip()
+            elif isinstance(item, dict):
+                case_id = item.get("id") or item.get("case_id")
+                if isinstance(case_id, str) and case_id.strip():
+                    yield case_id.strip()
+
+
+def evaluation_case_ids(base_dir: Path | None = None) -> frozenset[str]:
+    """Every case id listed by the committed eval/tier/practice files.
+
+    Read at call time so tier cases added mid-run are excluded on the next
+    selection. Missing or unreadable files contribute nothing.
+    """
+    training_dir = repo_training_dir(Path(base_dir) if base_dir is not None else None)
+    ids: set[str] = set()
+    for relative in EVALUATION_CASE_FILES:
+        path = training_dir / relative
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        ids.update(_case_ids_from_payload(payload))
+    return frozenset(ids)
+
+
+def is_evaluation_case(case_id: str, exclude_case_ids: AbstractSet[str] = frozenset()) -> bool:
+    """True for eval/practice cases (``exclude_case_ids``) and FlowER test-split ids."""
+    text = str(case_id or "")
+    return text.startswith(HOLDOUT_CASE_ID_PREFIX) or text in exclude_case_ids
+
+
 def current_curriculum_step_count(
     index_entries: Sequence[Dict[str, Any]] | Sequence[CurriculumIndexEntry],
     *,
     pass_count_by_step: Dict[int, int] | Dict[str, int] | None = None,
     required_passes_per_step: int = 50,
+    exclude_case_ids: Iterable[str] | None = None,
 ) -> Optional[int]:
-    step_counts = sorted({int((entry.as_dict() if isinstance(entry, CurriculumIndexEntry) else entry)["step_count"]) for entry in index_entries})
+    excluded = frozenset(str(item) for item in (exclude_case_ids or ()))
+    step_counts = sorted(
+        {
+            int(entry["step_count"])
+            for entry in (
+                raw.as_dict() if isinstance(raw, CurriculumIndexEntry) else raw for raw in index_entries
+            )
+            if not is_evaluation_case(str(entry.get("case_id") or ""), excluded)
+        }
+    )
     if not step_counts:
         return None
     normalized_pass_counts = {
@@ -1180,8 +1246,16 @@ def next_curriculum_candidates(
     required_passes_per_step: int = 50,
     step_count_override: Optional[int] = None,
     allow_repeats: bool = False,
+    exclude_case_ids: Iterable[str] | None = None,
 ) -> Dict[str, Any]:
+    """Next unattempted index entries at the current step count.
+
+    Evaluation cases (``exclude_case_ids``, usually :func:`evaluation_case_ids`)
+    and FlowER test-split ids are never candidates, even with ``allow_repeats``,
+    and do not keep a step count open on their own.
+    """
     attempted = set(str(item) for item in attempted_case_ids) if not allow_repeats else set()
+    excluded = frozenset(str(item) for item in (exclude_case_ids or ()))
     normalized_pass_counts = {
         int(step_count): int(count)
         for step_count, count in dict(pass_count_by_step or {}).items()
@@ -1193,11 +1267,16 @@ def next_curriculum_candidates(
             index_entries,
             pass_count_by_step=normalized_pass_counts,
             required_passes_per_step=required_passes_per_step,
+            exclude_case_ids=excluded,
         )
     candidates: List[Dict[str, Any]] = []
+    excluded_evaluation_count = 0
     for raw_entry in index_entries:
         entry = raw_entry.as_dict() if isinstance(raw_entry, CurriculumIndexEntry) else dict(raw_entry)
         if current_step_count is None or int(entry["step_count"]) != current_step_count:
+            continue
+        if is_evaluation_case(str(entry["case_id"]), excluded):
+            excluded_evaluation_count += 1
             continue
         if str(entry["case_id"]) in attempted:
             continue
@@ -1207,6 +1286,7 @@ def next_curriculum_candidates(
         "current_step_count": current_step_count,
         "candidates": candidates,
         "batch_start_rank": start_rank,
+        "excluded_evaluation_count": excluded_evaluation_count,
         "step_pass_target": max(1, int(required_passes_per_step)),
         "current_step_pass_count": int(normalized_pass_counts.get(current_step_count or 0, 0)) if current_step_count is not None else 0,
     }
@@ -1221,6 +1301,8 @@ __all__ = [
     "DEFAULT_INDEX_PATH",
     "DEFAULT_INDEX_REPORT_PATH",
     "DEFAULT_LOOKUP_CACHE",
+    "EVALUATION_CASE_FILES",
+    "HOLDOUT_CASE_ID_PREFIX",
     "SOURCE_LABEL",
     "build_curriculum_index",
     "build_lookup_cache",
@@ -1233,6 +1315,8 @@ __all__ = [
     "ensure_index",
     "ensure_lookup_cache",
     "eval_case_from_case",
+    "evaluation_case_ids",
+    "is_evaluation_case",
     "known_mechanism_from_case",
     "load_curriculum_index",
     "load_mechanism_reactions",

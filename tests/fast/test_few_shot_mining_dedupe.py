@@ -70,3 +70,52 @@ def test_mine_few_shots_skips_outputs_already_in_lane() -> None:
     existing_hashes = {"attempt_atom_mapping": {known_hash}}
     mined = mod.mine_few_shots([_result([_step("atom_mapping", payload)])], config, existing_hashes, {})
     assert "attempt_atom_mapping" not in mined
+
+
+_MODEL = "anthropic/claude-opus-4.6"
+_LANE_SLUG = "anthropic__claude-opus-4.6"
+
+
+def _hash(text: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def test_existing_few_shot_hashes_cover_the_model_lane_being_written(tmp_path: Path) -> None:
+    import json
+
+    mod = _load_evolve_module()
+    call_dir = tmp_path / "skills" / "mechanistic" / "attempt_atom_mapping"
+    lane_dir = call_dir / "models" / _LANE_SLUG
+    lane_dir.mkdir(parents=True)
+    (call_dir / "few_shot.jsonl").write_text(
+        json.dumps({"input": "in", "output": '{"shared": true}'}) + "\n", encoding="utf-8"
+    )
+    (lane_dir / "few_shot.jsonl").write_text(
+        json.dumps({"input": "in", "output": '{"lane": true}'}) + "\n", encoding="utf-8"
+    )
+
+    hashes = mod.existing_few_shot_hashes(tmp_path, model_name=_MODEL)
+
+    assert set(hashes) == set(mod.MINEABLE_SUBAGENTS.values())
+    assert _hash('{"lane": true}') in hashes["attempt_atom_mapping"]
+    assert _hash('{"shared": true}') in hashes["attempt_atom_mapping"]
+
+
+def test_apply_mined_examples_twice_writes_one_lane_row(tmp_path: Path) -> None:
+    from mechanistic_agent.core.db import RunStore
+
+    mod = _load_evolve_module()
+    store = RunStore(tmp_path / "data" / "mechanistic.db")
+    mined = {
+        "attempt_atom_mapping": [
+            {"input": "in", "output": '{"a": 1}', "score": 0.9, "example_key": _hash('{"a": 1}')}
+        ]
+    }
+    for _ in range(2):
+        mod.apply_mined_examples(mined, store, tmp_path, tmp_path / "ws", False, "batch", {}, model_name=_MODEL)
+
+    lane_file = tmp_path / "skills" / "mechanistic" / "attempt_atom_mapping" / "models" / _LANE_SLUG / "few_shot.jsonl"
+    rows = [line for line in lane_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(rows) == 1

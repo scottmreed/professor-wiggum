@@ -15,7 +15,13 @@ from zoneinfo import ZoneInfo
 
 from mechanistic_agent.core import RegistrySet, RunStore
 from mechanistic_agent.data_paths import flower_curriculum_pngs_dir, repo_root, uses_external_data_root
-from mechanistic_agent.flower_curriculum import DEFAULT_INDEX_PATH, ensure_index, load_curriculum_index
+from mechanistic_agent.flower_curriculum import (
+    DEFAULT_INDEX_PATH,
+    ensure_index,
+    evaluation_case_ids,
+    is_evaluation_case,
+    load_curriculum_index,
+)
 from mechanistic_agent.prompt_assets import load_call_few_shot_examples, score_few_shot_example
 
 OPUS_MODEL = "anthropic/claude-opus-4.6"
@@ -340,6 +346,7 @@ def _selected_entries_for_slot(
     model_name: str,
     module: Dict[str, Any],
     release_kind: str,
+    base_dir: Path | None = None,
 ) -> List[Dict[str, Any]]:
     ensure_index(index_path=Path(config.get("curriculum_index_path") or DEFAULT_INDEX_PATH))
     index_path = Path(config.get("curriculum_index_path") or DEFAULT_INDEX_PATH)
@@ -348,7 +355,16 @@ def _selected_entries_for_slot(
     pools = _partition_module_pool(module_entries)
     available_pool = pools["quiz" if release_kind == "quiz" else "lesson"]
     used_case_ids = _used_case_ids(store, model_name=model_name, module_id=str(module.get("id") or ""))
-    filtered = [entry for entry in available_pool if str(entry.get("case_id") or "") not in used_case_ids]
+    # Eval tier / practice / FlowER test-split cases are never lessons or quizzes,
+    # so releases neither attempt nor mine few-shots from them. Filtered after
+    # partitioning so the lesson/quiz split of the remaining cases stays stable.
+    excluded_case_ids = evaluation_case_ids(base_dir)
+    filtered = [
+        entry
+        for entry in available_pool
+        if str(entry.get("case_id") or "") not in used_case_ids
+        and not is_evaluation_case(str(entry.get("case_id") or ""), excluded_case_ids)
+    ]
     batch_size = int((config.get("default_group_sizes") or {}).get(release_kind, 4))
     return filtered[:batch_size]
 
@@ -860,6 +876,7 @@ def submit_curriculum_release(base_dir: Path, store: RunStore, *, model_name: st
         model_name=model_name,
         module=module,
         release_kind=slot.release_kind,
+        base_dir=base_dir,
     )
     if not selected_entries:
         raise ValueError(f"No remaining curriculum cases for {module.get('label')} {slot.release_kind}")
@@ -891,15 +908,11 @@ def submit_curriculum_release(base_dir: Path, store: RunStore, *, model_name: st
         base_dir=base_dir,
     )
 
-    existing_hashes: Dict[str, set[str]] = {}
-    best_scores_by_call: Dict[str, float] = {}
-    for call_name in set(evolve.MINEABLE_SUBAGENTS.values()):
-        examples = load_call_few_shot_examples(call_name, base_dir, model_name=model_name)
-        existing_hashes[call_name] = {
-            hashlib.sha256(str(ex.get("output") or "").encode()).hexdigest()[:16]
-            for ex in examples
-        }
-        best_scores_by_call[call_name] = _best_few_shot_score_for_model(call_name, base_dir, model_name=model_name)
+    existing_hashes: Dict[str, set[str]] = evolve.existing_few_shot_hashes(base_dir, model_name=model_name)
+    best_scores_by_call: Dict[str, float] = {
+        call_name: _best_few_shot_score_for_model(call_name, base_dir, model_name=model_name)
+        for call_name in set(evolve.MINEABLE_SUBAGENTS.values())
+    }
     mined = evolve.mine_few_shots(case_results, evolve_config, existing_hashes, best_scores_by_call)
     case_scores = {str(result.get("case_id") or ""): float(result.get("score") or 0.0) for result in case_results}
     examples_mined = evolve.apply_mined_examples(

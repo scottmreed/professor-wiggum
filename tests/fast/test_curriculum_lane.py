@@ -123,3 +123,56 @@ def test_curriculum_before_launch_weekday_slots(tmp_path: Path) -> None:
     assert status["today_slot"] is None
     assert status["next_slot"]["release_date"] == "2026-03-11"
     assert status["next_slot"]["countdown"]["days"] >= 6
+
+
+def test_course_release_pools_exclude_evaluation_and_holdout_cases(tmp_path: Path, monkeypatch) -> None:
+    from mechanistic_agent import curriculum
+
+    base = _seed_curriculum_base(tmp_path)
+    (base / "training_data" / "eval_tiers.json").write_text(
+        json.dumps({"_meta": {}, "easy": ["flower_000001", "flower_000002"]}), encoding="utf-8"
+    )
+    (base / "training_data" / "practice_eval").mkdir(parents=True, exist_ok=True)
+    (base / "training_data" / "practice_eval" / "practice_set.json").write_text(
+        json.dumps([{"id": "flower_000003"}]), encoding="utf-8"
+    )
+    index_path = base / "training_data" / "flower_mechanism_index.jsonl"
+    case_ids = [
+        "flower_000001",
+        "flower_000002",
+        "flower_000003",
+        "flower_test_000004",
+        *(f"flower_{rank:06d}" for rank in range(5, 13)),
+    ]
+    index_path.write_text(
+        "".join(
+            json.dumps({"case_id": case_id, "mechanism_id": rank, "step_count": 1, "global_rank": rank}) + "\n"
+            for rank, case_id in enumerate(case_ids, start=1)
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(curriculum, "ensure_index", lambda **_kwargs: index_path)
+    store = RunStore(base / "data" / "mechanistic.db")
+    config = {
+        "curriculum_index_path": str(index_path),
+        "default_group_sizes": {"lesson": 20, "quiz": 20},
+    }
+    module = {"id": "module_01", "min_step_count": 1, "max_step_count": 1}
+    excluded = {"flower_000001", "flower_000002", "flower_000003", "flower_test_000004"}
+
+    selected = {}
+    for kind in ("lesson", "quiz"):
+        selected[kind] = [
+            str(entry["case_id"])
+            for entry in curriculum._selected_entries_for_slot(
+                store,
+                config,
+                model_name="anthropic/claude-opus-4.6",
+                module=module,
+                release_kind=kind,
+                base_dir=base,
+            )
+        ]
+        assert selected[kind], kind
+        assert not excluded.intersection(selected[kind]), kind
+    assert set(selected["lesson"]) | set(selected["quiz"]) == set(case_ids) - excluded
