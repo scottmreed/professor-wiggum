@@ -756,3 +756,68 @@ def score_subagents_from_step_outputs(
             }
 
     return result
+
+
+# ── 1000-pt eval rubric (speed calibration + component points) ──────────────
+# Set HARNESS_SPEED_CALIBRATION_MS to the per-case average latency (in ms)
+# observed during the benchmark dry-run. That run defines 75 pts.
+# Formula: T_max = 4 × HARNESS_SPEED_CALIBRATION_MS
+#   At calibration latency → speed_pts = 75  (benchmark)
+#   At 0 ms               → speed_pts = 100
+#   At T_max ms           → speed_pts = 0
+# Calibrated to 100s/case benchmark (400s max).
+HARNESS_SPEED_CALIBRATION_MS: int = 100_000
+
+
+def latency_to_speed_pts(avg_latency_ms: float) -> int:
+    """Convert average per-case latency to a 0-100 speed score.
+
+    Uses HARNESS_SPEED_CALIBRATION_MS as the anchor: opus-4.6 benchmark latency → 75 pts.
+    Returns 100 when uncalibrated (HARNESS_SPEED_CALIBRATION_MS == 0).
+    """
+    if HARNESS_SPEED_CALIBRATION_MS <= 0:
+        return 100  # uncalibrated — full credit until benchmark is set
+    t_max = HARNESS_SPEED_CALIBRATION_MS * 4.0
+    return round(max(0.0, 1.0 - avg_latency_ms / t_max) * 100)
+
+
+def graded_to_points(
+    all_graded: List[Dict[str, Any]],
+    all_latencies_ms: List[float],
+) -> Dict[str, Any]:
+    """Convert harness graded dicts + per-case latencies to a clawdiators 1000-pt breakdown.
+
+    Rubric mapping (harness proxies):
+      Product Accuracy (30%)  ← final_product_reached count / total
+      Pathway Coverage (30%)  ← known_alignment_component avg
+      Electron Push Quality (20%) ← step_validity_component avg (validation+mapping proxy)
+      Speed (10%)             ← per-case wall-clock latency via latency_to_speed_pts()
+      Methodology (10%)       ← always 100 pts in harness mode (methodology always present)
+    Anti-gaming gate: if product_ratio == 0, pathway/push/speed are all zeroed.
+    """
+    n = len(all_graded)
+    n_hit = sum(1 for g in all_graded if g.get("final_product_reached", False))
+    product_ratio = n_hit / n
+    pathway_ratio = sum(g.get("known_alignment_component", 0.0) for g in all_graded) / n
+    push_ratio    = sum(g.get("step_validity_component", 0.0) for g in all_graded) / n
+    avg_lat       = sum(all_latencies_ms) / n if all_latencies_ms else 0.0
+
+    if product_ratio == 0.0:
+        pathway_ratio = push_ratio = 0.0
+        speed_pts = 0
+    else:
+        speed_pts = latency_to_speed_pts(avg_lat)
+
+    pts: Dict[str, Any] = {
+        "product":        round(product_ratio * 300),
+        "pathway":        round(pathway_ratio * 300),
+        "push":           round(push_ratio * 200),
+        "speed":          speed_pts,
+        "methodology":    100,
+        "avg_latency_ms": round(avg_lat, 1),
+        "n_total":        n,
+        "n_product_hit":  n_hit,
+    }
+    pts["total"]   = pts["product"] + pts["pathway"] + pts["push"] + pts["speed"] + pts["methodology"]
+    pts["outcome"] = "WIN" if pts["total"] >= 700 else ("DRAW" if pts["total"] >= 400 else "LOSS")
+    return pts

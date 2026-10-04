@@ -79,7 +79,7 @@ Agent-authored work meets the same gates as everyone else; there is no separate 
 
 ## Running evals and reading the leaderboard
 
-1. **Read [LEADERBOARD.md](../LEADERBOARD.md).** The rank 1 completed row is the current SOTA for that eval scope. Compare your results against that row and state the delta in the PR.
+1. **Read [LEADERBOARD.md](../LEADERBOARD.md)** (published results) and `python main.py leaderboard --eval-set-id <id>` (your local database). The best row for the tier is the current SOTA for that eval scope. Compare your results against that row and state the delta in the PR.
 2. **Run the required tier.** Results are stored in `data/mechanistic.db`. Use an explicit `run_group` so comparisons stay readable:
 
    ```bash
@@ -92,13 +92,13 @@ Agent-authored work meets the same gates as everyone else; there is no separate 
 
    Find eval set IDs with `sqlite3 data/mechanistic.db "select id, name, version from eval_sets order by created_at desc;"`.
 
-3. **Regenerate the leaderboard** if the result improves it:
+3. **Publish the result** if it improves the board:
 
    ```bash
-   python main.py leaderboard --eval-set-id <eval_set_id> --limit 20 --markdown --output LEADERBOARD.md
+   python main.py publish-results --eval-run-id <eval_run_id> [--open-pr]
    ```
 
-   After official holdout runs, `python main.py update-leaderboard-artifacts` refreshes the Arena table and curriculum artifacts. Never edit leaderboard rows by hand.
+   This writes `results/runs/*.json` and the hardest-mechanism image, and regenerates LEADERBOARD.md and the README leaderboard block (`eval ... --publish` does the same at the end of a run). After official holdout runs, `python main.py update-leaderboard-artifacts` refreshes the legacy Arena table and curriculum artifacts. Never edit leaderboard rows by hand.
 
 ### Scoring versions
 

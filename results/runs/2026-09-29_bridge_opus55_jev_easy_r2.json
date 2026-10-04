@@ -1,0 +1,192 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "eval_run_id": "ec4439ff14404613b31c2419b4af72d1",
+  "run_group": "bridge_opus55_jev_easy_r2",
+  "date": "2026-09-29",
+  "model": "agent-bridge",
+  "thinking_level": null,
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5 (headless claude -p, blind per call)",
+    "responder": "agent-bridge",
+    "responder_kind": "cli",
+    "responder_saw_ground_truth": false
+  },
+  "harness": "jev_reaction_type",
+  "harness_bundle_hash": "a72268fc7e94a54a10b3a8bbfae72503fa4b28803ab04511f30eabb3e82828cd",
+  "tier": "easy",
+  "eval_set_id": "b8855f9de2c741e6bf2d74117eeada70",
+  "case_ids_hash": "2ed6a67fa0f530dbe9522930eaac73afda031df3a503539779e9927935f62a24",
+  "holdout": false,
+  "scoring_version": "v2",
+  "git_commit": "71bdae4",
+  "summary": {
+    "points": 939,
+    "outcome": "WIN",
+    "breakdown": {
+      "product": 300,
+      "pathway": 269,
+      "push": 196,
+      "speed": 74,
+      "methodology": 100
+    },
+    "cases": 10,
+    "targets_reached": 10,
+    "passed": 10,
+    "mean_score": 0.9452,
+    "avg_latency_s": 104.7
+  },
+  "cases": [
+    {
+      "case_id": "flower_024300",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 76.9,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_054599",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 66.3,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_085506",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 67.0,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_086646",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 76.9,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_130926",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 60.2,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_135501",
+      "known_steps": 1,
+      "accepted_steps": 3,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.7258,
+      "latency_s": 239.2,
+      "run_status": "failed"
+    },
+    {
+      "case_id": "flower_160718",
+      "known_steps": 1,
+      "accepted_steps": 3,
+      "target_reached": true,
+      "passed": true,
+      "score": 0.7258,
+      "latency_s": 224.7,
+      "run_status": "failed"
+    },
+    {
+      "case_id": "flower_170958",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 68.1,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_188703",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 101.8,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_252433",
+      "known_steps": 1,
+      "accepted_steps": 1,
+      "target_reached": true,
+      "passed": true,
+      "score": 1.0,
+      "latency_s": 65.4,
+      "run_status": "completed"
+    }
+  ],
+  "hardest_solved": {
+    "case_id": "flower_024300",
+    "known_steps": 1,
+    "accepted_steps": 1,
+    "score": 1.0,
+    "starting_materials": [
+      "ClCC1CO1",
+      "CN(C)C"
+    ],
+    "products": [
+      "C[N+](C)(C)CC1CO1",
+      "[Cl-]"
+    ],
+    "steps": [
+      {
+        "step_index": 1,
+        "current_state": [
+          "ClCC1CO1",
+          "CN(C)C"
+        ],
+        "resulting_state": [
+          "C[N+](C)(C)CC1CO1",
+          "[Cl-]"
+        ],
+        "reaction_smirks": "[CH2:5]([CH:6]1[CH2:7][O:8]1)[Cl:9].[CH3:1][N:2]([CH3:3])[CH3:4]>>[CH3:1][N+:2]([CH3:3])([CH3:4])[CH2:5][CH:6]1[CH2:7][O:8]1.[Cl-:9]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:2>5",
+            "source_atom": "2",
+            "target_atom": "5"
+          },
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:5-9>9",
+            "source_bond": [
+              "5",
+              "9"
+            ],
+            "target_atom": "9",
+            "through_atom": "9"
+          }
+        ],
+        "acceptance_kind": "validated"
+      }
+    ],
+    "image": "results/mechanisms/bridge_opus55_jev_easy_r2__flower_024300.png"
+  }
+}
