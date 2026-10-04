@@ -105,3 +105,14 @@ def test_version_manifest_identifies_the_runtime(tmp_path: Path, monkeypatch: py
     assert manifest["be_convention"] == "ugi_flower_kekule_v1"
     assert isinstance(manifest["git_sha"], (str, type(None)))
     assert manifest["excluded_surfaces"] == ["curation", "evals", "examples", "harness_editing", "leaderboard", "memory", "ralph", "traces", "ui"]
+
+
+def test_git_sha_falls_back_to_the_runtime_git_sha_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # ChemIllusion's image drops .git and writes RUNTIME_GIT_SHA at the checkout root instead.
+    from mechanistic_agent.api.runtime_app import RUNTIME_GIT_SHA_ENV, _git_sha
+
+    monkeypatch.delenv(RUNTIME_GIT_SHA_ENV, raising=False)
+    (tmp_path / "RUNTIME_GIT_SHA").write_text("abc123def456\n", encoding="utf-8")
+    assert _git_sha(tmp_path) == "abc123def456"
+    monkeypatch.setenv(RUNTIME_GIT_SHA_ENV, "fromenv")
+    assert _git_sha(tmp_path) == "fromenv"

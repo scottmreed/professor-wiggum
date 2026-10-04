@@ -118,7 +118,7 @@ Other useful commands:
 
 ### Practice eval set
 
-A 20-reaction practice set with the same format as the official set but **completely disjoint reactions**:
+A 20-reaction practice set with the same format as the official set. Its reactions are disjoint from the official holdout and `eval_set.json`; one case, `flower_254799`, is also in the medium dev tier:
 
 ```bash
 python main.py eval --eval-set training_data/practice_eval/practice_set.json --tier easy
