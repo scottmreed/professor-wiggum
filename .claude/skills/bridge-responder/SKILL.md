@@ -70,7 +70,25 @@ For every `DISPATCH <stem>`:
 2. Launch **one new** `Agent` (general-purpose, `run_in_background: true`, the model you declared) with **exactly that text** as its prompt. Add nothing: no hints, no reaction context, no repo paths, no expected answer.
 3. Never reuse a subagent (no `SendMessage`) and never have one subagent answer two calls. Do not read the subagent's answer and "fix" it yourself, because the answer must be the subagent's own.
 
-Budgets: keep about 6 subagents in flight at most. Expect 40 to 140 s per call and 15 to 20 calls per 4 to 6 step case. If the account hits a usage limit, stop dispatching. Pending calls then time out and fail loudly, and you re-run those cases later. Never switch to a headless `claude -p` responder.
+Budgets: keep about 6 subagents in flight at most. Expect 40 to 140 s per call and 15 to 20 calls per 4 to 6 step case. If the account hits a usage limit, stop dispatching. Pending calls then time out and fail loudly, and you re-run those cases later. Never switch to a headless `claude -p` responder on your own.
+
+### Headless responder (only when the user asks for one)
+
+If the user explicitly asks for a headless responder instead of subagents, use the committed script and nothing hand-rolled:
+
+```bash
+python main.py bridge-serve --command "python scripts/bridge_headless_responder.py"
+```
+
+Its isolation is fixed in code (`HEADLESS_ISOLATION_FLAGS`):
+- `--tools ""`: no built-in tools at all.
+- `--restricted`: user, project and local settings, hooks and plugins are ignored.
+- `--strict-mcp-config` with no `--mcp-config`: no MCP servers.
+- `--no-session-persistence`.
+- Each call runs in a fresh empty temp directory.
+
+The script sends only `model_input`, never the envelope's `context`. Headless calls leave no transcripts to audit, so the blindness guarantee is these flags. Never edit them out. Headless `claude -p` shares the account usage window; the script waits through limit messages instead of failing.
+
 
 ## 4. Mandatory audit after the runs finish
 

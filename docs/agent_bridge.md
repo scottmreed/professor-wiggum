@@ -153,6 +153,10 @@ export MECHANISTIC_AGENT_BRIDGE_DIR=.agent_bridge
 #     (A bare arguments object is also accepted and wrapped for the forced tool.)
 python main.py bridge-serve --command "my-agent --answer"
 
+# (a') a blind headless Claude Code CLI, isolation flags fixed in code
+#      (--tools "" --restricted --strict-mcp-config --no-session-persistence, empty temp cwd)
+python main.py bridge-serve --command "python scripts/bridge_headless_responder.py"
+
 # (b) replay pre-seeded responses (deterministic, keyless, no agent) for CI.
 python main.py bridge-serve --replay traces/bridge_replay/<run>
 
