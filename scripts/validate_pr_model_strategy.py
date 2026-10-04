@@ -104,9 +104,11 @@ def main() -> int:
     args = parser.parse_args()
 
     changed = get_changed_files(args.base_ref, args.head_ref)
+    # Run traces only: traces/evidence/** are prompt-gate evidence files with a
+    # different shape, validated by scripts/validate_prompt_trace_evidence.py.
     trace_files = [
         f for f in changed
-        if f.startswith("traces/") and f.endswith(".json")
+        if f.startswith("traces/") and f.endswith(".json") and not f.startswith("traces/evidence/")
     ]
 
     if not trace_files:

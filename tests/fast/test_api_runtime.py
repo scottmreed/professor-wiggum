@@ -670,6 +670,8 @@ def test_trace_evidence_export_requires_linkage_and_exports_when_valid(tmp_path:
                 "call_base_sha256": "base",
                 "few_shot_sha256": "few",
                 "template": "template",
+                "resolved_call_base_path": str(base / "skills/mechanistic/assess_initial_conditions/SKILL.md"),
+                "resolved_few_shot_path": "/elsewhere/checkout/skills/mechanistic/assess_initial_conditions/few_shot.jsonl",
             }
         ]
     )
@@ -688,6 +690,13 @@ def test_trace_evidence_export_requires_linkage_and_exports_when_valid(tmp_path:
     assert good_resp.status_code == 200
     payload = good_resp.json()
     assert payload["items"]
+    exported = json.loads((base / payload["items"][0]["path"]).read_text(encoding="utf-8"))
+    # The gate requires model_version.model_version_id; committed evidence carries no local absolute paths.
+    assert exported["model_version"]["model_version_id"] == model_version_id
+    text = json.dumps(exported)
+    assert str(base) not in text and "/elsewhere/" not in text
+    assert exported["prompt_version"]["resolved_call_base_path"] == "skills/mechanistic/assess_initial_conditions/SKILL.md"
+    assert exported["prompt_version"]["resolved_few_shot_path"] == "skills/mechanistic/assess_initial_conditions/few_shot.jsonl"
 
 
 def test_convert_inputs_endpoint(tmp_path: Path) -> None:
