@@ -57,6 +57,7 @@ from mechanistic_agent.flower_curriculum import (
     curriculum_history,
     ensure_index,
     eval_case_from_case,
+    evaluation_case_ids,
     known_mechanism_from_case,
     load_curriculum_index,
     next_curriculum_candidates,
@@ -537,6 +538,21 @@ def mine_few_shots(
                 for ex in dropped:
                     existing_hashes.get(call_name, set()).discard(str(ex.get("example_key")))
     return mined
+
+
+def existing_few_shot_hashes(base_dir: Path, *, model_name: str | None) -> Dict[str, set]:
+    """Output hashes already in each mineable call's lane, for mining dedupe.
+
+    Loads the same merge ``apply_mined_examples`` writes into: the model lane
+    (``models/<slug>/few_shot.jsonl``) plus the shared file.
+    """
+    hashes: Dict[str, set] = {}
+    for call_name in sorted(set(MINEABLE_SUBAGENTS.values())):
+        examples = load_call_few_shot_examples(call_name, base_dir, model_name=model_name)
+        hashes[call_name] = {
+            hashlib.sha256(str(ex.get("output") or "").encode()).hexdigest()[:16] for ex in examples
+        }
+    return hashes
 
 
 def apply_mined_examples(
@@ -1029,6 +1045,8 @@ def evolve(config: EvolutionConfig) -> None:
             harness=config.harness,
             curriculum_index_path=config.curriculum_index_path,
         )
+        # Re-read every iteration so tier cases added mid-run are excluded too.
+        excluded_case_ids = evaluation_case_ids(base_dir)
         selection = next_curriculum_candidates(
             index_entries,
             attempted_case_ids=progress["attempted_case_ids"],
@@ -1036,6 +1054,7 @@ def evolve(config: EvolutionConfig) -> None:
             required_passes_per_step=config.step_pass_target,
             step_count_override=_current_step_filter,
             allow_repeats=False,
+            exclude_case_ids=excluded_case_ids,
         )
         candidates = list(selection["candidates"])
         if not candidates and config.loop_when_done:
@@ -1046,6 +1065,7 @@ def evolve(config: EvolutionConfig) -> None:
                 required_passes_per_step=config.step_pass_target,
                 step_count_override=_current_step_filter,
                 allow_repeats=True,
+                exclude_case_ids=excluded_case_ids,
             )
             candidates = list(selection["candidates"])
         if not candidates:
@@ -1068,6 +1088,11 @@ def evolve(config: EvolutionConfig) -> None:
         )
         print(f"Highest successful step count so far: {progress['highest_successful_step_count']}")
         print(f"Next batch starts at row: {selection['batch_start_rank']}")
+        if selection.get("excluded_evaluation_count"):
+            print(
+                f"Skipped {selection['excluded_evaluation_count']} evaluation/holdout case(s) "
+                "at this step count (eval tiers, practice set, FlowER test split)"
+            )
 
         prepared_batch = prepare_curriculum_batch(
             config=config,
@@ -1090,12 +1115,12 @@ def evolve(config: EvolutionConfig) -> None:
         except Exception as e:
             print(f"Warning: PNG rendering failed ({e}), continuing without visualization...")
 
-        existing_hashes = {}
-        best_scores_by_call = {}
-        for call_name in set(MINEABLE_SUBAGENTS.values()):
-            examples = load_call_few_shot_examples(call_name, runtime_base)
-            existing_hashes[call_name] = {hashlib.sha256(ex.get("output", "").encode()).hexdigest()[:16] for ex in examples}
-            best_scores_by_call[call_name] = best_few_shot_score(call_name, runtime_base)
+        # Dedupe against the lane apply_mined_examples writes (model lane + shared).
+        existing_hashes = existing_few_shot_hashes(runtime_base, model_name=config.model_name)
+        best_scores_by_call = {
+            call_name: best_few_shot_score(call_name, runtime_base)
+            for call_name in set(MINEABLE_SUBAGENTS.values())
+        }
         evolution_log_path = workspace / "evolution_log.json"
         accumulated_examples_mined: Dict[str, int] = {}
 
@@ -1642,6 +1667,7 @@ def evolve_islands(config: EvolutionConfig, island_config: IslandEvolutionConfig
                     required_passes_per_step=config.step_pass_target,
                     step_count_override=step_override,
                     allow_repeats=True,
+                    exclude_case_ids=evaluation_case_ids(base_dir),
                 )
                 candidates = list(selection["candidates"])
                 if not candidates:

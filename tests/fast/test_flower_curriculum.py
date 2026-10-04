@@ -12,6 +12,7 @@ from mechanistic_agent.flower_curriculum import (
     build_lookup_cache,
     current_curriculum_step_count,
     curriculum_history,
+    evaluation_case_ids,
     load_mechanism_reactions,
     next_curriculum_candidates,
 )
@@ -194,3 +195,104 @@ def test_next_curriculum_candidates_stays_within_current_step_count() -> None:
         "flower_000003",
         "flower_000004",
     ]
+
+
+def _write_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_evaluation_case_ids_collects_tier_eval_and_practice_ids(tmp_path: Path) -> None:
+    training = tmp_path / "training_data"
+    _write_json(
+        training / "eval_tiers.json",
+        {"_meta": {"description": "x", "easy": ["flower_meta_only"]}, "easy": ["flower_000001"], "hard": ["flower_000002"]},
+    )
+    _write_json(training / "baseline_tiers_clawdiator.json", {"_meta": {}, "medium": ["flower_000003"]})
+    _write_json(training / "eval_set.json", [{"id": "flower_000004", "starting_materials": []}])
+    _write_json(training / "practice_eval" / "practice_set.json", [{"id": "flower_000005"}])
+    _write_json(training / "practice_eval" / "practice_tiers.json", {"_meta": {}, "easy": ["flower_000006"]})
+
+    ids = evaluation_case_ids(tmp_path)
+
+    assert ids == frozenset(
+        {"flower_000001", "flower_000002", "flower_000003", "flower_000004", "flower_000005", "flower_000006"}
+    )
+
+
+def test_evaluation_case_ids_tolerates_missing_files(tmp_path: Path) -> None:
+    assert evaluation_case_ids(tmp_path) == frozenset()
+
+
+def test_evaluation_case_ids_reads_files_at_call_time(tmp_path: Path) -> None:
+    tiers = tmp_path / "training_data" / "eval_tiers.json"
+    _write_json(tiers, {"easy": ["flower_000001"]})
+    assert evaluation_case_ids(tmp_path) == frozenset({"flower_000001"})
+    _write_json(tiers, {"easy": ["flower_000001", "flower_000009"]})
+    assert evaluation_case_ids(tmp_path) == frozenset({"flower_000001", "flower_000009"})
+
+
+def _entry(case_id: str, step_count: int, rank: int) -> dict:
+    return {
+        "case_id": case_id,
+        "mechanism_id": rank,
+        "step_count": step_count,
+        "global_rank": rank,
+        "rank_within_step_count": rank,
+    }
+
+
+def test_next_curriculum_candidates_skips_evaluation_and_holdout_ids() -> None:
+    entries = [
+        _entry("flower_000001", 1, 1),
+        _entry("flower_test_000002", 1, 2),
+        _entry("flower_000003", 1, 3),
+        _entry("flower_000004", 2, 4),
+    ]
+
+    selection = next_curriculum_candidates(
+        entries,
+        attempted_case_ids=set(),
+        pass_count_by_step={},
+        required_passes_per_step=50,
+        exclude_case_ids={"flower_000001"},
+    )
+
+    assert selection["current_step_count"] == 1
+    assert [item["case_id"] for item in selection["candidates"]] == ["flower_000003"]
+    assert selection["batch_start_rank"] == 3
+    assert selection["excluded_evaluation_count"] == 2
+
+    # Repeats are allowed, evaluation cases still are not.
+    repeated = next_curriculum_candidates(
+        entries,
+        attempted_case_ids={"flower_000003"},
+        pass_count_by_step={},
+        required_passes_per_step=50,
+        exclude_case_ids={"flower_000001"},
+        allow_repeats=True,
+    )
+    assert [item["case_id"] for item in repeated["candidates"]] == ["flower_000003"]
+
+
+def test_step_count_progression_skips_step_counts_with_only_evaluation_cases() -> None:
+    entries = [
+        _entry("flower_000001", 1, 1),
+        _entry("flower_test_000002", 1, 2),
+        _entry("flower_000003", 2, 3),
+        _entry("flower_000004", 3, 4),
+    ]
+    excluded = {"flower_000001"}
+
+    assert current_curriculum_step_count(entries, pass_count_by_step={}, exclude_case_ids=excluded) == 2
+    assert current_curriculum_step_count(entries, pass_count_by_step={2: 50}, exclude_case_ids=excluded) == 3
+
+    selection = next_curriculum_candidates(
+        entries,
+        attempted_case_ids=set(),
+        pass_count_by_step={},
+        exclude_case_ids=excluded,
+    )
+    assert selection["current_step_count"] == 2
+    assert [item["case_id"] for item in selection["candidates"]] == ["flower_000003"]
+    assert selection["batch_start_rank"] == 3

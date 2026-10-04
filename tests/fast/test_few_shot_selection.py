@@ -64,6 +64,64 @@ def test_select_few_shot_examples_respects_most_recent_strategy(tmp_path: Path) 
     assert [row["input"] for row in selected] == ["second"]
 
 
+def test_prefer_clean_traces_ranks_clean_above_soft_above_failed(tmp_path: Path) -> None:
+    def _row(name: str, quality: str, score: float) -> dict[str, object]:
+        return {
+            "input": name,
+            "output": json.dumps({"missing_reactants": [name], "missing_products": []}),
+            "score": score,
+            "source_run_quality": quality,
+        }
+
+    # Rows written oldest -> newest; quality, not recency, must decide at equal score.
+    _write_examples(
+        tmp_path,
+        "predict_missing_reagents",
+        [
+            _row("clean_a", "clean", 0.8),
+            _row("clean_b", "clean", 0.8),
+            _row("soft", "soft", 0.8),
+            _row("failed", "failed", 0.8),
+            # A slightly higher raw score does not outweigh the soft-trace penalty.
+            _row("soft_high", "soft", 0.85),
+        ],
+    )
+
+    selected = select_few_shot_examples(
+        "predict_missing_reagents",
+        tmp_path,
+        policy=FewShotSelectionConfig(max_examples=5, selection_strategy="top_score", prefer_clean_traces=True),
+    )
+
+    assert [row["input"] for row in selected] == ["clean_b", "clean_a", "soft_high", "soft", "failed"]
+
+
+def test_append_call_few_shot_example_skips_existing_example_key(tmp_path: Path) -> None:
+    _write_examples(
+        tmp_path,
+        "predict_missing_reagents",
+        [{"input": "first", "output": "{}", "example_key": "k1"}],
+    )
+    for _ in range(2):
+        path = append_call_few_shot_example(
+            "predict_missing_reagents",
+            input_text="dupe",
+            output_text="{}",
+            example_key="k1",
+            base_dir=tmp_path,
+        )
+    append_call_few_shot_example(
+        "predict_missing_reagents",
+        input_text="fresh",
+        output_text="{}",
+        example_key="k2",
+        base_dir=tmp_path,
+    )
+
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert [row["example_key"] for row in rows] == ["k1", "k2"]
+
+
 def test_derived_scoring_works_for_legacy_rows_without_score(tmp_path: Path) -> None:
     output_text = json.dumps(
         {

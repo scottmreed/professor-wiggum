@@ -449,6 +449,21 @@ def load_call_few_shot_examples(
     return rows
 
 
+def _few_shot_file_example_keys(path: Path) -> set[str]:
+    """Explicit ``example_key`` values already stored in one few_shot.jsonl file."""
+    if not path.exists():
+        return set()
+    keys: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            payload = json.loads(raw_line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("example_key"), str):
+            keys.add(payload["example_key"])
+    return keys
+
+
 def append_call_few_shot_example(
     call_name: str,
     *,
@@ -467,6 +482,9 @@ def append_call_few_shot_example(
         else call_few_shot_path(call_name, base_dir)
     )
     path.parent.mkdir(parents=True, exist_ok=True)
+    if example_key and str(example_key) in _few_shot_file_example_keys(path):
+        # Already in this lane: the loader would drop the duplicate anyway.
+        return path
     payload: Dict[str, Any] = {"input": input_text, "output": output_text}
     if score is not None:
         payload["score"] = round(float(score), 6)
@@ -704,12 +722,13 @@ def select_few_shot_examples(
             return (-idx,)
         if config.selection_strategy == "first":
             return (idx,)
-        # top_score: incorporate quality penalty if preference is active
+        # top_score: the quality weights are penalties (<= 0) that lower the
+        # effective score, so clean ranks above soft above failed at equal score.
         quality_penalty = 0.0
         if config.prefer_clean_traces:
             q = row.get("source_run_quality")
             quality_penalty = float(FEWSHOT_QUALITY_WEIGHT.get(q or "clean", 0.0))
-        return (-base_score + quality_penalty, -idx)
+        return (-(base_score + quality_penalty), -idx)
 
     # When prefer_clean_traces is on, check whether we have enough clean
     # examples to enforce the preference.  If not, fall back to treating
