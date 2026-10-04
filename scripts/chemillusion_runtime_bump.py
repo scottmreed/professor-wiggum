@@ -67,6 +67,7 @@ HARNESS_CODE = (
 # Under core/ but not what a run executes: storage, baselines/evals and harness-evolution tooling.
 NOT_HARNESS = (
     "mechanistic_agent/core/db.py",
+    "mechanistic_agent/core/storage_interfaces.py",
     "mechanistic_agent/core/archive.py",
     "mechanistic_agent/core/lane_mutator.py",
     "mechanistic_agent/core/llm_mutator.py",
