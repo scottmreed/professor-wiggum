@@ -463,12 +463,31 @@ def _closure(steps: Sequence[QualityStep], starting_materials: Sequence[str], pr
     return {"grade": audit.get("grade"), "balanced": audit.get("balanced"), "proton_reconciled": audit.get("proton_reconciled")}
 
 
-def _targets_reached(steps: Sequence[QualityStep], products: Sequence[str], starting_materials: Sequence[str]) -> Dict[str, Any]:
+def _targets_reached(
+    steps: Sequence[QualityStep],
+    products: Sequence[str],
+    starting_materials: Sequence[str],
+    *,
+    products_hidden: bool = False,
+) -> Dict[str, Any]:
+    """Product gate. The main product is the largest target that is not a starting material or a
+    conjugate acid/base of one (FlowER lists a spare reactant carboxylate among the products).
+
+    Products given: every target must appear (water may be present as H3O+).
+    Products hidden (the model predicted them): the main product must appear in any protonation
+    state (an ammonium salt from a TFA or SOCl2 workup is the same product) and byproducts are not
+    required, since a model cannot be expected to transcribe FlowER's byproduct list unseen."""
     final = set(_canon_list(steps[-1].resulting_state)) if steps else set()
     start = set(_canon_list(starting_materials))
+    start_parents = {_neutral_parent(s) for s in start}
     targets = [t for t in _canon_list(products) if t not in start]
-    main = max(targets, key=lambda t: _mol(t).GetNumHeavyAtoms(), default=None)
+    product_targets = [t for t in targets if _neutral_parent(t) not in start_parents] or targets
+    main = max(product_targets, key=lambda t: _mol(t).GetNumHeavyAtoms(), default=None)
     final_parents = {_neutral_parent(s) for s in final}
+    if products_hidden:
+        reached = bool(main) and (main in final or _neutral_parent(main) in final_parents)
+        return {"main_product": main, "main_reached": reached, "missing": [] if reached else [main],
+                "all_reached": reached, "basis": "main_product_any_protonation"}
     missing = []
     for target in targets:
         if target in final:
@@ -477,7 +496,7 @@ def _targets_reached(steps: Sequence[QualityStep], products: Sequence[str], star
             continue  # water present as H3O+ etc.
         missing.append(target)
     return {"main_product": main, "main_reached": bool(main) and main in final, "missing": missing,
-            "all_reached": bool(targets) and not missing}
+            "all_reached": bool(targets) and not missing, "basis": "all_targets"}
 
 
 # --------------------------------------------------------------------------- the rubric
@@ -491,8 +510,10 @@ def score_mechanism(
     sequence_score: Optional[float] = None,
     reference_skeleton_steps: Optional[int] = None,
     predicted_skeleton_steps: Optional[int] = None,
+    products_hidden: bool = False,
 ) -> Dict[str, Any]:
-    """Score one mechanism. ``sequence_score`` (0..1) is the reference alignment; when there is no
+    """Score one mechanism. ``products_hidden`` (no-product mode) relaxes the product gate to the
+    main product in any protonation state; see ``_targets_reached``. ``sequence_score`` (0..1) is the reference alignment; when there is no
     reference it is ``None`` and the other components are rescaled to 1000."""
     from mechanistic_agent.core.proton_transfer import available_shuttles, classify_proton_transfer
 
@@ -560,7 +581,7 @@ def score_mechanism(
     scale = 1000.0 / sum(active.values())
     components = {k: round(ratios[k] * w * scale, 1) for k, w in active.items()}
     raw_points = sum(components.values())
-    targets = _targets_reached(path, products, starting_materials)
+    targets = _targets_reached(path, products, starting_materials, products_hidden=products_hidden)
     points = raw_points if targets["all_reached"] else raw_points * UNREACHED_FACTOR
     all_valid = all(s["valid"] for s in per_step)
     passed = bool(targets["all_reached"] and all_valid and closure.get("grade") in {"exact", "reconciled"}
@@ -573,6 +594,7 @@ def score_mechanism(
         "components": components,
         "ratios": {k: (round(v, 4) if v is not None else None) for k, v in ratios.items()},
         "targets": targets,
+        "products_hidden": products_hidden,
         "conditions": conditions,
         "valid_steps": sum(1 for s in per_step if s["valid"]),
         "step_count": n,
@@ -635,6 +657,8 @@ def score_snapshot_quality(snapshot: Mapping[str, Any], expected: Optional[Mappi
     graded = score_snapshot_against_known(snapshot, expected, scoring_version="v3") if expected else {}
     skeleton = graded.get("proton_agnostic_alignment") or {}
     sequence = graded.get("known_alignment_component") if expected else None
+    config = snapshot.get("config") if isinstance(snapshot.get("config"), Mapping) else {}
+    hidden = bool(snapshot.get("products_hidden") or config.get("hide_products"))
     result = score_mechanism(
         steps_from_snapshot(snapshot),
         starting_materials=starting,
@@ -642,6 +666,7 @@ def score_snapshot_quality(snapshot: Mapping[str, Any], expected: Optional[Mappi
         sequence_score=sequence,
         reference_skeleton_steps=skeleton.get("reference_skeleton_steps"),
         predicted_skeleton_steps=skeleton.get("predicted_skeleton_steps"),
+        products_hidden=hidden,
     )
     result["sequence_basis"] = graded.get("alignment_basis")
     return result
@@ -692,7 +717,11 @@ def _baseline_snapshot(summary: Mapping[str, Any], expected: Optional[Mapping[st
     from mechanistic_agent.core.baseline_runner import _steps_to_synthetic_snapshot
 
     starting, products = _expected_inputs(expected)
-    return _steps_to_synthetic_snapshot(steps, starting, products)
+    snapshot = _steps_to_synthetic_snapshot(steps, starting, products)
+    run_metadata = summary.get("run_metadata") if isinstance(summary.get("run_metadata"), Mapping) else {}
+    if run_metadata.get("products_hidden"):
+        snapshot["products_hidden"] = True
+    return snapshot
 
 
 def rescore_quality(store: Any, eval_run_ids: Sequence[str], *, write: bool = False) -> List[Dict[str, Any]]:

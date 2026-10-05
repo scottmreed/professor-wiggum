@@ -234,3 +234,23 @@ def test_arrows_given_only_in_the_mech_block_count() -> None:
 )
 def test_electron_conservation_ignores_hydrogen_notation(smirks: str, conserved: bool) -> None:
     assert qs._electron_conserved(qs.QualityStep(1, [], [], smirks, []))[0] is conserved
+
+
+def test_no_product_gate_accepts_the_main_product_in_any_protonation_state() -> None:
+    steps = [qs.QualityStep(1, ["CC(=O)Cl", "N"], ["CC(N)=O", "Cl"], "", [])]
+    starting = ["CC(=O)Cl", "N"]
+    # FlowER-style target list with a byproduct the model was never shown
+    products = ["CC(N)=O", "Cl", "[NH4+]"]
+    given = qs._targets_reached(steps, products, starting)
+    assert given["all_reached"] is False  # products supplied: every target must appear
+    hidden = qs._targets_reached(steps, products, starting, products_hidden=True)
+    assert hidden["all_reached"] is True and hidden["main_product"] == "CC(N)=O"
+    salt = [qs.QualityStep(1, ["CC(=O)NCC(=O)OC(C)(C)C"], ["CC(=O)NCC(=O)[O-]", "[NH4+]"], "", [])]
+    assert qs._targets_reached(salt, ["CC(=O)NCC(=O)O"], ["CC(=O)NCC(=O)OC(C)(C)C"], products_hidden=True)["all_reached"]
+
+
+def test_main_product_is_never_a_starting_material_conjugate() -> None:
+    steps = [qs.QualityStep(1, ["NC(C(=O)O)c1ccccc1"], ["NC(CO)c1ccccc1"], "", [])]
+    targets = qs._targets_reached(steps, ["NC(C(=O)[O-])c1ccccc1", "NC(CO)c1ccccc1"], ["NC(C(=O)O)c1ccccc1"],
+                                  products_hidden=True)
+    assert targets["main_product"] == "NC(CO)c1ccccc1" and targets["all_reached"] is True
