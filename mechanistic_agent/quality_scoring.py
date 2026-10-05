@@ -31,9 +31,15 @@ intermolecular              50    a proton transfer uses an available shuttle (s
                                   base, conjugate) instead of an intramolecular shift
 ========================  ======  ==========================================================
 
-The target product is given in the prompt, so reaching it earns nothing; it is a gate. A
+When the target product is given in the prompt, reaching it earns nothing; it is a gate. A
 mechanism that does not reach every target scores half and cannot pass. ``passed`` also needs
 every step valid, mass/charge closure, no circular step and at least ``PASS_POINTS``.
+
+No-product runs (``products_hidden``): predicting the main product (any protonation state; FlowER
+byproducts not required) is worth ``PRODUCT_POINTS`` (300) and the eight components above are
+scaled to the remaining 700 in the same proportions. Every result also reports
+``mechanism_points`` (the eight components on 1000, before any product gate or product points)
+and ``product_correct``, which are directly comparable between product-given and no-product runs.
 
 Conditions are not part of FlowER cases, so they are read from the starting materials
 (``classify_conditions``): strong or carboxylic acids make them acidic, hydroxide/alkoxide/hydride
@@ -62,6 +68,8 @@ WEIGHTS: Dict[str, int] = {
 assert sum(WEIGHTS.values()) == 1000
 PASS_POINTS = 700
 UNREACHED_FACTOR = 0.5
+# No-product runs: points for predicting the main product (any protonation state), out of 1000.
+PRODUCT_POINTS = 300
 CLOSURE_SCORE = {"exact": 1.0, "reconciled": 0.9, "approximate": 0.3}
 CIRCULAR_PENALTY = 0.5
 EXCESS_STEP_PENALTY = 0.2
@@ -582,7 +590,15 @@ def score_mechanism(
     components = {k: round(ratios[k] * w * scale, 1) for k, w in active.items()}
     raw_points = sum(components.values())
     targets = _targets_reached(path, products, starting_materials, products_hidden=products_hidden)
-    points = raw_points if targets["all_reached"] else raw_points * UNREACHED_FACTOR
+    if products_hidden:
+        # The model had to find the product: getting it right is worth PRODUCT_POINTS, and the
+        # eight mechanism components share the rest in the same proportions as always.
+        product_points = float(PRODUCT_POINTS) if targets["all_reached"] else 0.0
+        points = raw_points * (1000.0 - PRODUCT_POINTS) / 1000.0 + product_points
+        components = {k: round(v * (1000.0 - PRODUCT_POINTS) / 1000.0, 1) for k, v in components.items()}
+        components["product"] = product_points
+    else:
+        points = raw_points if targets["all_reached"] else raw_points * UNREACHED_FACTOR
     all_valid = all(s["valid"] for s in per_step)
     passed = bool(targets["all_reached"] and all_valid and closure.get("grade") in {"exact", "reconciled"}
                   and not circular and points >= PASS_POINTS)
@@ -590,6 +606,10 @@ def score_mechanism(
         "version": QUALITY_VERSION,
         "points": round(points, 1),
         "raw_points": round(raw_points, 1),
+        # Same 8-component, 1000-point mechanism score in every mode, before the product gate or
+        # product points: the number to compare across product-given and no-product runs.
+        "mechanism_points": round(raw_points, 1),
+        "product_correct": bool(targets["all_reached"]),
         "passed": passed,
         "components": components,
         "ratios": {k: (round(v, 4) if v is not None else None) for k, v in ratios.items()},
@@ -685,11 +705,18 @@ def summarize(results: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     n = len(results)
     if not n:
         return {"version": QUALITY_VERSION, "cases": 0}
-    components = {k: round(sum(float((r.get("components") or {}).get(k, 0.0)) for r in results) / n, 1) for k in WEIGHTS}
+    keys = list(WEIGHTS) + (["product"] if any("product" in (r.get("components") or {}) for r in results) else [])
+    components = {k: round(sum(float((r.get("components") or {}).get(k, 0.0)) for r in results) / n, 1) for k in keys}
     return {
         "version": QUALITY_VERSION,
         "cases": n,
         "points": round(sum(float(r.get("points") or 0.0) for r in results) / n, 1),
+        "mechanism_points": round(
+            sum(float(next((r[k] for k in ("mechanism_points", "raw_points", "points") if r.get(k) is not None), 0.0))
+                for r in results) / n, 1
+        ),
+        "product_correct": sum(1 for r in results if r.get("product_correct", (r.get("targets") or {}).get("all_reached"))),
+        "products_hidden": any(r.get("products_hidden") for r in results),
         "components": components,
         "passed": sum(1 for r in results if r.get("passed")),
         "targets_reached": sum(1 for r in results if (r.get("targets") or {}).get("all_reached")),
