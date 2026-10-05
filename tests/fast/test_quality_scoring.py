@@ -218,3 +218,19 @@ def test_arrows_given_only_in_the_mech_block_count() -> None:
         [],
     )
     assert qs._bond_electron_valid(step) == (True, None)
+
+
+@pytest.mark.parametrize(
+    "smirks, conserved",
+    [
+        # proton written as a mapped [H:5] on the left, folded into [OH2+:3] on the right
+        ("[CH2:2][OH:3].[H:5][O:6][CH:7]=[O:8]>>[CH2:2][OH2+:3].[O-:6][CH:7]=[O:8]", True),
+        # bare proton created / consumed: penalized under proton_bookkeeping, not here
+        ("[O:1]=[C:2].[ClH:9]>>[O-:1][C:2][Cl:9].[H+]", True),
+        ("[O-:1][C:2]([Cl:9])[O:3][S:6](=[O:5])[Cl:7].[H+]>>[O:1]=[C:2][Cl:9].[O:3]=[S:6]=[O:5].[ClH:7]", True),
+        # a real error: chloride leaves without its electrons
+        ("[C:1](=[O:2])[Cl:3]>>[C+:1](=[O:2]).[Cl:3]", False),
+    ],
+)
+def test_electron_conservation_ignores_hydrogen_notation(smirks: str, conserved: bool) -> None:
+    assert qs._electron_conserved(qs.QualityStep(1, [], [], smirks, []))[0] is conserved

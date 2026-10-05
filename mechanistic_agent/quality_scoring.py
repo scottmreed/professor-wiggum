@@ -43,6 +43,7 @@ are never penalized.
 """
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -169,6 +170,7 @@ def _net_charge(smiles: str) -> int:
 
 
 _PATTERNS: Dict[str, Any] = {}
+re_bare_proton = re.compile(r"\[H(?::\d+)?\+\]")
 
 
 def _matches(smiles: str, smarts: str) -> bool:
@@ -302,19 +304,62 @@ def _bond_electron_valid(step: QualityStep) -> Tuple[bool, Optional[str]]:
     return error is None, error
 
 
+def _fold_explicit_hydrogens(smirks: str) -> str:
+    """The SMIRKS with every explicit hydrogen atom (mapped or not) folded into its heavy atom's
+    implicit count, so a proton written ``[H:5]`` on one side and inside ``[OH2+:3]`` on the other
+    is bookkept the same way on both sides. Bare ions such as ``[H+]`` are kept."""
+    Chem = _rdkit()
+    from rdkit.Chem import rdmolops
+
+    params = rdmolops.RemoveHsParameters()
+    params.removeMapped = True
+    sides = []
+    for side in smirks.split(">>"):
+        mol = Chem.MolFromSmiles(side, sanitize=False)
+        if mol is None:
+            return smirks
+        try:
+            mol.UpdatePropertyCache(strict=False)
+            mol = rdmolops.RemoveHs(mol, params, sanitize=False)
+        except Exception:  # noqa: BLE001
+            return smirks
+        sides.append(Chem.MolToSmiles(mol, canonical=False))
+    return ">>".join(sides)
+
+
+def _bare_protons(side: str) -> int:
+    return sum(1 for token in side.split(".") if re_bare_proton.fullmatch(token.strip()))
+
+
 def _electron_conserved(step: QualityStep) -> Tuple[bool, Optional[str]]:
+    """Electrons are conserved in the bond-electron matrix of the mapped SMIRKS.
+
+    Notation never fails this check: the SMIRKS is also tried with explicit hydrogens folded in
+    (mixed explicit/implicit H), and a residual of exactly 2 electrons per bare ``[H+]`` created or
+    consumed is the proton itself (a bare proton is penalized once, under proton bookkeeping)."""
     from mechanistic_agent.core.bond_electron import build_bond_electron_view
 
     smirks = normalize_smirks(step.reaction_smirks)
     if not smirks:
         return False, "reaction_smirks missing"
-    try:
-        view = build_bond_electron_view(smirks)
-    except Exception as exc:  # noqa: BLE001
-        return False, str(exc)
-    if view.get("projection_error") or view.get("error"):
-        return False, str(view.get("projection_error") or view.get("error"))
-    return bool(view.get("conserved")), None
+    left, _, right = smirks.partition(">>")
+    proton_residual = 2 * (_bare_protons(right) - _bare_protons(left))
+    last_error: Optional[str] = None
+    for candidate in (smirks, _fold_explicit_hydrogens(smirks)):
+        try:
+            view = build_bond_electron_view(candidate)
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+            continue
+        if view.get("projection_error") or view.get("error"):
+            last_error = str(view.get("projection_error") or view.get("error"))
+            continue
+        if view.get("conserved"):
+            return True, None
+        if proton_residual and view.get("electron_delta_sum") == proton_residual:
+            return True, None
+        last_error = f"electron_delta_sum={view.get('electron_delta_sum')}"
+    return False, last_error
 
 
 def _composition(species: Iterable[Any]) -> Optional[Counter]:
