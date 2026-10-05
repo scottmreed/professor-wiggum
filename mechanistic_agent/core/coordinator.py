@@ -198,9 +198,11 @@ class RunCoordinator:
         payload = run_row.get("input_payload", {})
         config = run_row.get("config", {})
 
+        hide_products = self._coerce_bool(config.get("hide_products", False), False)
         run_input = RunInput(
             starting_materials=list(payload.get("starting_materials") or []),
-            products=list(payload.get("products") or []),
+            # No-product mode: nothing downstream (prompts, mapping, completion) sees the targets.
+            products=[] if hide_products else list(payload.get("products") or []),
             temperature_celsius=float(payload.get("temperature_celsius", 25.0)),
             ph=payload.get("ph"),
             example_id=str(payload.get("example_id") or "").strip() or None,
@@ -223,6 +225,7 @@ class RunCoordinator:
                 True,
             ),
             max_steps=self._coerce_int(config.get("max_steps", 10), 10),
+            hide_products=hide_products,
             max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", 1200.0), 1200.0),
             api_keys=dict(config.get("api_keys") or {}),
             retry_same_candidate_max=self._coerce_int(config.get("retry_same_candidate_max", 1), 1),
@@ -2050,6 +2053,9 @@ class RunCoordinator:
                 latest_initial = item.get("output")
 
         optional_tools = set(state.run_config.optional_llm_tools)
+        if state.run_config.hide_products:
+            # Both tools balance reactants against the target products, which are withheld.
+            optional_tools -= {"predict_missing_reagents", "attempt_atom_mapping"}
         if "predict_missing_reagents" in optional_tools and "missing_reagents" not in existing:
             self._mark_step_started(
                 state,
@@ -4756,6 +4762,8 @@ class RunCoordinator:
         *,
         timeout: Optional[float] = None,
     ) -> Optional[Dict[str, Any]]:
+        if state.run_config.hide_products:
+            return None  # the remaining-mechanism fallback needs target products
         runner = BaselineRunner()
         result = runner.run_case(
             list(state.run_input.starting_materials),
@@ -4945,6 +4953,21 @@ class RunCoordinator:
                     },
                     step_name="mechanism_step_proposal",
                 )
+
+                # No-product mode: the model, not a product match, ends the mechanism.
+                declared_final = (
+                    state.run_config.hide_products
+                    and str(proposal_output.get("step_classification") or "") == "final_step"
+                )
+                if declared_final and not candidates and state.step_index > 0:
+                    state.declared_complete = True
+                    self.store.append_event(
+                        state.run_id,
+                        "mechanism_declared_complete",
+                        {"step_index": state.step_index, "with_final_step": False},
+                        step_name="completion_check",
+                    )
+                    break
 
                 # --- Step B: Validate each candidate (up to 3 retries per candidate) ---
                 validated: List[BranchCandidate] = []
@@ -5696,6 +5719,15 @@ class RunCoordinator:
                     "target_products_detected",
                     {"step_index": state.step_index},
                     step_name="mechanism_synthesis",
+                )
+                break
+            if declared_final:
+                state.declared_complete = True
+                self.store.append_event(
+                    state.run_id,
+                    "mechanism_declared_complete",
+                    {"step_index": state.step_index, "with_final_step": True},
+                    step_name="completion_check",
                 )
                 break
 
@@ -6463,7 +6495,7 @@ class RunCoordinator:
                 )
                 return
 
-            has_completion = any(
+            has_completion = state.declared_complete or any(
                 bool((row.get("output") or {}).get("contains_target_product"))
                 for row in all_accepted_steps
             )

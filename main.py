@@ -1514,6 +1514,7 @@ def _run_baseline_eval_set(
     harness_hash: str,
     case_ids: Optional[Sequence[str]] = None,
     api_keys: Optional[Dict[str, str]] = None,
+    hide_products: bool = False,
 ) -> Dict[str, Any]:
     """Execute one baseline eval run and persist leaderboard results."""
     # Baseline results have no run row, so a keyless run's declared origin is
@@ -1527,7 +1528,7 @@ def _run_baseline_eval_set(
         model_family=model_family,
         thinking_level=thinking_level,
         harness_bundle_hash=harness_hash,
-        metadata=({"origin": origin} if origin else None),
+        metadata=({**({"origin": origin} if origin else {}), **({"products_hidden": True} if hide_products else {})} or None),
         status="running",
     )
 
@@ -1574,6 +1575,7 @@ def _run_baseline_eval_set(
                 llm_temperature=(llm_temperature if sampling_policy == "fixed" else None),
                 sampling_policy=sampling_policy,
                 api_keys=api_keys or None,
+                hide_products=hide_products,
             )
             graded = score_baseline_result_fn(result, expected if expected else None)
             score = float(graded["score"])
@@ -1600,6 +1602,7 @@ def _run_baseline_eval_set(
                     "case_id": case_id,
                     "model": model_name,
                     "thinking_level": thinking_level,
+                    "products_hidden": hide_products,
                     "llm_seed": llm_seed,
                     "llm_temperature": (llm_temperature if sampling_policy == "fixed" else None),
                     "sampling_policy": sampling_policy,
@@ -2475,6 +2478,11 @@ def baseline(
         "--allow-repeats",
         help="Allow rerunning cases already attempted for this model + thinking level",
     ),
+    hide_products: bool = typer.Option(
+        False,
+        "--hide-products",
+        help="No-product mode: withhold the target products from the prompt (still used to score)",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
     allow_holdout: bool = typer.Option(False, "--allow-holdout", hidden=True),
 ) -> None:
@@ -2484,6 +2492,7 @@ def baseline(
     to run against an eval set and record results on the leaderboard. Tier mode
     is available via --tier/--all-tiers and runs without starting the API server.
     """
+    hide_products = hide_products if isinstance(hide_products, bool) else False  # direct calls get OptionInfo
     from mechanistic_agent.core.baseline_runner import (
         BASELINE_GROUP_PREFIX,
         BaselineRunner,
@@ -2580,6 +2589,7 @@ def baseline(
                 harness_hash=harness_hash,
                 case_ids=case_ids,
                 api_keys=api_keys,
+                hide_products=hide_products,
             )
             result_obj["tier"] = tier_name
             tier_results.append(result_obj)
@@ -2660,7 +2670,7 @@ def baseline(
             runner=runner,
             score_baseline_result_fn=score_baseline_result,
             store=store,
-            run_group_name=BASELINE_GROUP_PREFIX,
+            run_group_name=f"{BASELINE_GROUP_PREFIX}_no_product" if hide_products else BASELINE_GROUP_PREFIX,
             resolved_eval_set=resolved_eval_set,
             model_name=model_name,
             model_family=model_family,
@@ -2675,6 +2685,7 @@ def baseline(
             harness_hash=harness_hash,
             case_ids=selected_case_ids,
             api_keys=api_keys,
+            hide_products=hide_products,
         )
         if json_output:
             typer.echo(json.dumps(result_obj, indent=2))
@@ -3572,6 +3583,7 @@ def _execute_harness_eval_run(
     trace_runtime: bool,
     selected_case_ids: Optional[Sequence[str]] = None,
     planner_metadata: Optional[Dict[str, Any]] = None,
+    hide_products: bool = False,
 ) -> Dict[str, Any]:
     from mechanistic_agent.scoring import (
         DEFAULT_SCORING_VERSION,
@@ -3591,7 +3603,7 @@ def _execute_harness_eval_run(
         model_family=model_family,
         thinking_level=thinking_level,
         harness_bundle_hash=hashes.get("prompt_bundle_hash", ""),
-        metadata=planner_metadata,
+        metadata=({**(planner_metadata or {}), "products_hidden": True} if hide_products else planner_metadata),
         status="running",
     )
 
@@ -3678,6 +3690,7 @@ def _execute_harness_eval_run(
                     "rdkit_cli_command": str(rdkit_cli_command or "rdkit_cli"),
                     "runtime_trace_enabled": trace_runtime,
                     "runtime_trace_label": case_id,
+                    "hide_products": hide_products,
                 },
                 **hashes,
             )
@@ -4011,6 +4024,11 @@ def eval_cmd(
         "--yes",
         help="Auto-confirm the recommended development leaderboard route in TTY mode",
     ),
+    hide_products: bool = typer.Option(
+        False,
+        "--hide-products",
+        help="No-product mode: withhold target products from every LLM call; the model declares completion",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit results as JSON"),
     trace_runtime: bool = typer.Option(
         True,
@@ -4038,6 +4056,7 @@ def eval_cmd(
     or --max-per-tier to limit how many examples run per tier. Use -h/--help to list
     all options.
     """
+    hide_products = hide_products if isinstance(hide_products, bool) else False  # direct calls get OptionInfo
     from typer.models import OptionInfo
 
     def _unwrap_option(value, fallback=None):  # type: ignore[no-untyped-def]
@@ -4234,6 +4253,7 @@ def eval_cmd(
 
             tier_run_group = run_group or f"{run_group_prefix}_{selected_tier}"
             result_obj = _execute_harness_eval_run(
+                hide_products=hide_products,
                 store=store,
                 registry=registry,
                 resolved_eval_set=resolved_eval_set,
@@ -4288,6 +4308,7 @@ def eval_cmd(
                 )
 
             result_obj = _execute_harness_eval_run(
+                hide_products=hide_products,
                 store=store,
                 registry=registry,
                 resolved_eval_set=item["resolved_eval_set"],
@@ -4415,6 +4436,7 @@ def eval_cmd(
             selected_case_ids = selected_case_ids[:max_cases]
 
     result_obj = _execute_harness_eval_run(
+        hide_products=hide_products,
         store=store,
         registry=registry,
         resolved_eval_set=resolved_eval_set,

@@ -63,7 +63,26 @@ def _build_user_message(
     *,
     current_state: Optional[List[str]] = None,
     accepted_path_summary: Optional[List[str]] = None,
+    hide_products: bool = False,
 ) -> str:
+    if hide_products:
+        # No-product mode: the model predicts the products as well as the mechanism.
+        lines = [
+            "Predict the products and the complete stepwise mechanism for the following reaction.",
+            "",
+            f"Starting materials: {', '.join(starting_materials)}",
+            "Target products: not given. Predict the major products from the starting materials and conditions.",
+        ]
+        if ph is not None:
+            lines.append(f"pH: {ph}")
+        lines.append(f"Temperature: {temperature_celsius} °C")
+        lines += [
+            "",
+            "Call predict_full_mechanism with all elementary steps from starting materials to the products "
+            "you predict. Each step must be a single bond-level elementary event, and the final step's "
+            "resulting_state must contain your predicted products (mark it contains_target_product).",
+        ]
+        return "\n".join(lines)
     if current_state:
         lines = [
             "Predict the remaining stepwise mechanism for the following reaction.",
@@ -280,8 +299,10 @@ class BaselineRunner:
         llm_seed: Optional[int] = 42,
         llm_temperature: Optional[float] = 0.0,
         sampling_policy: str = "fixed",
+        hide_products: bool = False,
     ) -> Dict[str, Any]:
-        """Run a single baseline case.
+        """Run a single baseline case. ``hide_products`` withholds the targets from the prompt
+        (they are still used, after the call, to score the answer).
 
         Returns a dict with:
           - ``snapshot``: synthetic snapshot compatible with score_snapshot_against_known
@@ -335,6 +356,7 @@ class BaselineRunner:
             ph,
             current_state=current_state,
             accepted_path_summary=accepted_path_summary,
+            hide_products=hide_products,
         )
 
         messages = [

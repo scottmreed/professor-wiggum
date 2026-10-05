@@ -5539,8 +5539,10 @@ def propose_intermediates(
     else:
         functional_group_section = ""
     
-    # Check if final products are already present
-    final_products_present = all(product in current_state for product in products)
+    # No-product mode: the targets are withheld, so the model decides when the mechanism is done.
+    products_hidden = not products
+    # Check if final products are already present (never "all of nothing" in no-product mode)
+    final_products_present = bool(products) and all(product in current_state for product in products)
     
     # Pull reagent suggestions from the cached conditions assessment.
     conditions_context, _conditions_source = _retrieve_initial_condition_context(starting_materials, products)
@@ -5581,10 +5583,22 @@ def propose_intermediates(
                     reagent_candidates = list(cond_base)
                     reagent_label = "Suggested base reagents from conditions assessment"
 
+    target_phrase = (
+        "no target products (predict the major products of the reaction yourself)"
+        if products_hidden
+        else "the target products (product SMILES)"
+    )
+    final_phrase = (
+        "'final_step' when the mechanism is complete, i.e. the major products have formed and no "
+        "further elementary step is needed (return an empty candidate list if the current state "
+        "already is the product state)"
+        if products_hidden
+        else "'final_step' when the target products have been reached"
+    )
     system_prompt = (
         "You are an expert organic chemist specializing in reaction mechanism prediction. "
-        "You receive: the original starting materials (reactant SMILES), the target products "
-        "(product SMILES), the current mechanistic state (SMILES of species present after the "
+        f"You receive: the original starting materials (reactant SMILES), {target_phrase}, "
+        "the current mechanistic state (SMILES of species present after the "
         "last accepted step), a list of previously accepted intermediates, pH, temperature, and "
         "the step index (how many mechanistic steps have been accepted so far). "
         "When optional atom-mapped context is provided, use those atom-map indices when writing "
@@ -5593,7 +5607,7 @@ def propose_intermediates(
         "Use all of this context to determine whether additional mechanistic steps are required "
         "and to propose candidates for the next mechanism step.\n\n"
         "Provide a classification of the current state as either 'intermediate_step' when further "
-        "transformations are needed or 'final_step' when the target products have been reached.\n\n"
+        f"transformations are needed or {final_phrase}.\n\n"
         "For each candidate, provide:\n"
         "- A rank (1 = most likely, 2 = next, 3 = least likely)\n"
         "- The intermediate product as a SMILES string\n"
@@ -5616,8 +5630,13 @@ def propose_intermediates(
         f"Analyze this chemical reaction and propose the next mechanistic step.\n\n"
         f"Overall Transformation:\n"
         f"  Starting materials: {starting_materials}\n"
-        f"  Target products: {products}\n"
-        f"  Current state: {current_state} "
+        + (
+            "  Target products: not given; predict the major products from the starting materials "
+            "and conditions, and declare 'final_step' once they have formed\n"
+            if products_hidden
+            else f"  Target products: {products}\n"
+        )
+        + f"  Current state: {current_state} "
         f"(species present after the last accepted step; equals starting materials at step 0)\n\n"
     )
 
@@ -6408,7 +6427,12 @@ def propose_intermediates(
         for candidate in candidate_specs:
             _handle_candidate(candidate.get("smiles"), candidate)
 
-        if not validated_intermediates and not raw_fallbacks and not rejected_candidates:
+        declared_final_empty = (
+            products_hidden
+            and isinstance(structured_payload, dict)
+            and str(structured_payload.get("classification") or "").lower().startswith("final")
+        )
+        if not validated_intermediates and not raw_fallbacks and not rejected_candidates and not declared_final_empty:
             raise RuntimeError("LLM did not return a valid intermediate SMILES string")
 
         step_classification = "intermediate_step"

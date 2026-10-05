@@ -813,6 +813,9 @@ class RunConfig:
     functional_groups_enabled: bool = True
     intermediate_prediction_enabled: bool = True
     max_steps: int = 10
+    # No-product mode: target products are withheld from every LLM call and the run ends when
+    # the model declares the mechanism complete (products stay in input_payload for scoring).
+    hide_products: bool = False
     max_runtime_seconds: float = 1200.0
     api_keys: Dict[str, str] = field(default_factory=dict)
     retry_same_candidate_max: int = 1
@@ -1052,6 +1055,7 @@ class RunState:
     current_state: List[str] = field(default_factory=list)
     previous_intermediates: List[str] = field(default_factory=list)
     step_index: int = 0
+    declared_complete: bool = False
     stop_requested: bool = False
     awaiting_verification: bool = False
     paused: bool = False
