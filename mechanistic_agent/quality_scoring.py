@@ -404,6 +404,11 @@ def _atom_balanced(step: QualityStep, starting_materials: Sequence[str] = ()) ->
         excess = excess_reagent_equivalents(_canon_list(step.current_state), _canon_list(step.resulting_state), pool)
         if excess is not None and not excess.get("proton_residual"):
             return True, {"delta": delta, "excess_reagent": excess}
+        from mechanistic_agent.core.mechanism_audit import spare_equivalents_residual
+
+        spare = spare_equivalents_residual(_canon_list(step.current_state), _canon_list(step.resulting_state), pool)
+        if spare is not None and not spare.get("proton_residual"):
+            return True, {"delta": delta, "spare_equivalents": spare}
     return not delta, {"delta": delta}
 
 

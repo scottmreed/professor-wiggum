@@ -41,3 +41,29 @@ def test_proton_deferred_skips_heavy_atom_residuals(tmp_path) -> None:
     assert coordinator._best_balance_pending_candidate(candidate_attempts=[conjured, proton], proton_only=True) is not None
     # plain deferred still accepts the heavy-atom residual
     assert coordinator._best_balance_pending_candidate(candidate_attempts=[conjured], proton_only=False) is not None
+
+
+BORANE_START = ["B", "O=C(O)c1ccnc(Br)c1", "[Cl-]", "B", "B", "[OH-]", "O=C(O)c1ccnc(Br)c1",
+                "[Na+]", "[Na+]", "[OH-]", "C1CCOC1", "C1CCOC1"]
+
+
+def test_spare_equivalents_left_out_of_the_state_are_bookkeeping() -> None:
+    from mechanistic_agent.core.mechanism_audit import spare_equivalents_residual
+
+    pool = {s: "starting_material" for s in BORANE_START}
+    adduct = ["[BH3-][O+]=C(O)c1ccnc(Br)c1", "B", "[Cl-]", "[OH-]", "O=C(O)c1ccnc(Br)c1", "[Na+]", "C1CCOC1"]
+    spare = spare_equivalents_residual(BORANE_START, adduct, pool)
+    assert spare == {"dropped": {"B": 1, "[OH-]": 1, "[Na+]": 1, "C1CCOC1": 1}, "added": {}, "proton_residual": {}}
+    # A conjured heavy-atom species is never reconciled.
+    assert spare_equivalents_residual(["CC(C)=O"], ["CC(C)=O", "CC(=O)O"], {"CC(C)=O": "sm"}) is None
+    # A species the step removed entirely is not a spare copy.
+    assert spare_equivalents_residual(["CC(C)=O", "C1CCOC1"], ["CC(C)=O"], {"C1CCOC1": "sm"}) is None
+
+
+def test_quality_scorer_treats_spare_equivalents_as_balanced() -> None:
+    from mechanistic_agent import quality_scoring as qs
+
+    step = qs.QualityStep(1, BORANE_START,
+                          ["[BH3-][O+]=C(O)c1ccnc(Br)c1", "B", "[Cl-]", "[OH-]", "O=C(O)c1ccnc(Br)c1", "[Na+]", "C1CCOC1"])
+    ok, detail = qs._atom_balanced(step, BORANE_START)
+    assert ok and "spare_equivalents" in detail

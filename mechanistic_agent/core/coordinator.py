@@ -2824,6 +2824,63 @@ class RunCoordinator:
             for check in checks
         )
 
+    def _restore_spare_equivalents(
+        self,
+        state: RunState,
+        mechanism_result: StepResult,
+        enabled_validators: Any,
+    ) -> None:
+        """Bookkeeping repair: when a step's only failure is atom balance and the whole imbalance is
+        spare equivalents of starting-material species left out of (or duplicated into) the
+        resulting state, each still present, carry those spares forward and re-validate.
+
+        FlowER states list duplicate reagent/spectator copies (three BH3, two NaOH, two THF); a
+        proposal that writes each species once is not a chemistry error. Anything else, including a
+        proton residual on top, is left to the normal balance rules."""
+        from .mechanism_audit import canonical, spare_equivalents_residual
+
+        validation = mechanism_result.validation
+        if validation is None or validation.passed:
+            return
+        if {c.name for c in validation.checks if not c.passed} != {"atom_balance"}:
+            return
+        output = mechanism_result.output or {}
+        current = [str(x) for x in output.get("current_state") or []]
+        resulting = [str(x) for x in output.get("resulting_state") or []]
+        pool = self._balance_reagent_pool(state)
+        spare = spare_equivalents_residual(current, resulting, pool)
+        if spare is None or spare.get("proton_residual"):
+            return
+        repaired = list(resulting) + [smiles for smiles, n in spare["dropped"].items() for _ in range(int(n))]
+        for smiles, n in spare["added"].items():
+            for _ in range(int(n)):
+                for idx, item in enumerate(repaired):
+                    try:
+                        same = canonical(item) == smiles
+                    except Exception:  # noqa: BLE001
+                        same = False
+                    if same:
+                        del repaired[idx]
+                        break
+        candidate_output = {**output, "resulting_state": repaired, "spare_equivalents_restored": spare}
+        revalidated = validate_mechanism_step_output(
+            candidate_output,
+            dbe_policy=state.run_config.dbe_policy,
+            enabled_validators=enabled_validators,
+            run_config=state.run_config,
+            reagent_pool=pool,
+        )
+        if not revalidated.passed:
+            return
+        mechanism_result.output = candidate_output
+        mechanism_result.validation = revalidated
+        self.store.append_event(
+            state.run_id,
+            "spare_equivalents_restored",
+            {"step_index": state.step_index + 1, "dropped": spare["dropped"], "added": spare["added"]},
+            step_name="mechanism_synthesis",
+        )
+
     @staticmethod
     def _coerce_balance_mode(value: Any) -> str:
         """``strict`` (default), ``deferred`` (any atom-balance-only failure may be flagged) or
@@ -3482,6 +3539,7 @@ class RunCoordinator:
                     run_config=state.run_config,
                     reagent_pool=self._balance_reagent_pool(state),
                 )
+                self._restore_spare_equivalents(state, mechanism_result, enabled_validators)
             except Exception as exc:
                 self.store.append_event(
                     state.run_id,
