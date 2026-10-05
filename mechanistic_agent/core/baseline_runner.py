@@ -437,6 +437,8 @@ class BaselineRunner:
                 llm_text = str(parsed.get("text") or "")
 
             snapshot = _steps_to_synthetic_snapshot(steps, starting_materials, products)
+            if hide_products:
+                snapshot["products_hidden"] = True
             return {
                 "snapshot": snapshot,
                 "raw_steps": steps,
