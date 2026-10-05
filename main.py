@@ -373,10 +373,17 @@ def _echo_quality_summary(title: str, results: List[Dict[str, Any]]) -> None:
     typer.echo(sep)
     typer.echo(f"  {title}")
     typer.echo(sep)
+    hidden = bool(summary.get("products_hidden"))
+    scale = 0.7 if hidden else 1.0  # no-product runs: the eight components share 700, the product 300
     for name, weight in QUALITY_WEIGHTS.items():
-        typer.echo(f"  {name:<24}: {summary['components'].get(name, 0.0):6.1f} / {weight}")
+        typer.echo(f"  {name:<24}: {summary['components'].get(name, 0.0):6.1f} / {weight * scale:.0f}")
+    if hidden:
+        typer.echo(f"  {'product (predicted)':<24}: {summary['components'].get('product', 0.0):6.1f} / 300"
+                   f"   ({summary.get('product_correct', 0)}/{summary['cases']} correct)")
     typer.echo(sep)
-    typer.echo(f"  TOTAL   : {summary['points']:6.1f} / 1000   (product supplied: a gate, not points)")
+    note = "products hidden: product worth 300" if hidden else "product supplied: a gate, not points"
+    typer.echo(f"  TOTAL   : {summary['points']:6.1f} / 1000   ({note})")
+    typer.echo(f"  Mechanism (8 components on 1000, comparable across modes): {summary.get('mechanism_points', 0.0):6.1f}")
     typer.echo(
         f"  Passed  : {summary['passed']}/{summary['cases']}   targets reached {summary['targets_reached']}/{summary['cases']}"
         f"   valid steps {summary['valid_step_fraction']:.0%}"

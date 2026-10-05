@@ -388,7 +388,7 @@ def test_baseline_with_saved_steps_is_scored_like_a_harness_run(tmp_path: Path) 
     rp.write_record(record, tmp_path, render_image=False)
     board = rp.render_leaderboard_markdown(rp.load_records(tmp_path))
     comparison = board.split("## Harness vs harness-free baseline", 1)[1].split("## Published runs", 1)[0]
-    assert "| easy | **Claude Opus 4.6** | baseline | high | 3 | **620** |" in comparison
+    assert "| easy | **Claude Opus 4.6** | baseline | high | 3 | **620** | 620 | given |" in comparison
 
 
 def test_combined_runs_later_run_wins_per_case() -> None:

@@ -227,6 +227,58 @@ def excess_reagent_equivalents(
     return None
 
 
+def spare_equivalents_residual(
+    current_state: Sequence[str] | Counter,
+    resulting_state: Sequence[str] | Counter,
+    pool: Any,
+) -> Optional[Dict[str, Any]]:
+    """``{"dropped": {smiles: n}, "added": {...}, "proton_residual": {...}}`` when the step's
+    imbalance is nothing but spare whole equivalents of pool species, else None.
+
+    A FlowER state often lists several copies of a reagent or spectator (three BH3, two NaOH, two
+    THF); a step that carries one copy forward and leaves the spares out is bookkeeping, not
+    chemistry. Each species counted here must stay present at least once on both sides, and what
+    is left over must be zero or exactly n protons. Heavy atoms that appear or vanish any other way
+    are never reconciled."""
+    if Chem is None:  # pragma: no cover
+        return None
+    try:
+        current = current_state if isinstance(current_state, Counter) else _species(current_state)
+        resulting = resulting_state if isinstance(resulting_state, Counter) else _species(resulting_state)
+        pool_parents = {neutral_parent(smiles) for smiles, _src in _pool_items(pool)}
+        # How many copies of each pool species could be spare: missing from (or extra in) the
+        # resulting state while the species is still present there (or already was before).
+        drop_max = {s: n for s, n in (current - resulting).items()
+                    if neutral_parent(s) in pool_parents and resulting.get(s, 0) >= 1}
+        add_max = {s: n for s, n in (resulting - current).items()
+                   if neutral_parent(s) in pool_parents and current.get(s, 0) >= 1}
+        options = [(s, "drop", n) for s, n in drop_max.items()] + [(s, "add", n) for s, n in add_max.items()]
+        if not options or len(options) > 8:
+            return None
+        from itertools import product as _product
+
+        best: Optional[Dict[str, Any]] = None
+        for counts in _product(*[range(n + 1) for _s, _kind, n in options]):
+            if not any(counts):
+                continue
+            dropped = Counter({s: k for (s, kind, _n), k in zip(options, counts) if kind == "drop" and k})
+            added = Counter({s: k for (s, kind, _n), k in zip(options, counts) if kind == "add" and k})
+            remainder = _delta(_composition_of(current - dropped), _composition_of(resulting - added))
+            if remainder and not _is_proton_only(remainder):
+                continue
+            found = {"dropped": dict(dropped), "added": dict(added), "proton_residual": remainder}
+            # Prefer an exact fix, then the fewest spare copies.
+            key = (bool(remainder), sum(counts))
+            if best is None or key < best["_key"]:
+                best = {**found, "_key": key}
+        if best is None:
+            return None
+        best.pop("_key")
+        return best
+    except _InvalidSpecies:
+        return None
+
+
 def audit_mechanism(
     *,
     starting: Sequence[str],

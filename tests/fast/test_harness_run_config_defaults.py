@@ -100,4 +100,4 @@ def test_balance_pending_soft_advance_is_gated_by_flag() -> None:
 
     src = inspect.getsource(RunCoordinator._run_mechanism_loop)
     assert "state.run_config.proceed_on_validation_failure" in src
-    assert 'or state.run_config.balance_mode == "deferred"' in src
+    assert 'or state.run_config.balance_mode in {"deferred", "proton_deferred"}' in src

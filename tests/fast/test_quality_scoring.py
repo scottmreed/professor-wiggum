@@ -254,3 +254,17 @@ def test_main_product_is_never_a_starting_material_conjugate() -> None:
     targets = qs._targets_reached(steps, ["NC(C(=O)[O-])c1ccccc1", "NC(CO)c1ccccc1"], ["NC(C(=O)O)c1ccccc1"],
                                   products_hidden=True)
     assert targets["main_product"] == "NC(CO)c1ccccc1" and targets["all_reached"] is True
+
+
+def test_no_product_runs_award_product_points_and_keep_mechanism_points_comparable() -> None:
+    case = _case("flower_254799")
+    steps = case["verified_mechanism"]["steps"]
+    given = _score(steps, case)
+    hidden = _score(steps, case, products_hidden=True)
+    assert given["mechanism_points"] == hidden["mechanism_points"]  # same mechanism, same score
+    assert hidden["components"]["product"] == qs.PRODUCT_POINTS and hidden["product_correct"] is True
+    assert hidden["points"] == pytest.approx(given["mechanism_points"] * 0.7 + qs.PRODUCT_POINTS, abs=0.2)
+    wrong = _score(steps[:1], case, products_hidden=True)  # stops long before the product
+    assert wrong["product_correct"] is False and wrong["components"]["product"] == 0.0
+    assert wrong["points"] == pytest.approx(wrong["mechanism_points"] * 0.7, abs=0.2)
+    assert wrong["passed"] is False

@@ -360,7 +360,7 @@ class RunCoordinator:
                 True,
             ),
             balance_mode=(
-                "deferred" if str(config.get("balance_mode") or "").strip().lower() == "deferred" else "strict"
+                self._coerce_balance_mode(config.get("balance_mode"))
             ),
             runtime_trace_enabled=self._coerce_bool(
                 config.get("runtime_trace_enabled", False),
@@ -1677,7 +1677,7 @@ class RunCoordinator:
                 continue
             current = getattr(state.run_config, key, None)
             if key == "balance_mode":
-                coerced: Any = "deferred" if str(value or "").strip().lower() == "deferred" else "strict"
+                coerced: Any = self._coerce_balance_mode(value)
             elif isinstance(current, bool):
                 coerced = self._coerce_bool(value, current)
             elif isinstance(current, int):
@@ -2824,10 +2824,90 @@ class RunCoordinator:
             for check in checks
         )
 
+    def _restore_spare_equivalents(
+        self,
+        state: RunState,
+        mechanism_result: StepResult,
+        enabled_validators: Any,
+    ) -> None:
+        """Bookkeeping repair: when a step's only failure is atom balance and the whole imbalance is
+        spare equivalents of starting-material species left out of (or duplicated into) the
+        resulting state, each still present, carry those spares forward and re-validate.
+
+        FlowER states list duplicate reagent/spectator copies (three BH3, two NaOH, two THF); a
+        proposal that writes each species once is not a chemistry error. Anything else, including a
+        proton residual on top, is left to the normal balance rules."""
+        from .mechanism_audit import canonical, spare_equivalents_residual
+
+        validation = mechanism_result.validation
+        if validation is None or validation.passed:
+            return
+        if {c.name for c in validation.checks if not c.passed} != {"atom_balance"}:
+            return
+        output = mechanism_result.output or {}
+        current = [str(x) for x in output.get("current_state") or []]
+        resulting = [str(x) for x in output.get("resulting_state") or []]
+        pool = self._balance_reagent_pool(state)
+        spare = spare_equivalents_residual(current, resulting, pool)
+        if spare is None or spare.get("proton_residual"):
+            return
+        repaired = list(resulting) + [smiles for smiles, n in spare["dropped"].items() for _ in range(int(n))]
+        for smiles, n in spare["added"].items():
+            for _ in range(int(n)):
+                for idx, item in enumerate(repaired):
+                    try:
+                        same = canonical(item) == smiles
+                    except Exception:  # noqa: BLE001
+                        same = False
+                    if same:
+                        del repaired[idx]
+                        break
+        candidate_output = {**output, "resulting_state": repaired, "spare_equivalents_restored": spare}
+        revalidated = validate_mechanism_step_output(
+            candidate_output,
+            dbe_policy=state.run_config.dbe_policy,
+            enabled_validators=enabled_validators,
+            run_config=state.run_config,
+            reagent_pool=pool,
+        )
+        if not revalidated.passed:
+            return
+        mechanism_result.output = candidate_output
+        mechanism_result.validation = revalidated
+        self.store.append_event(
+            state.run_id,
+            "spare_equivalents_restored",
+            {"step_index": state.step_index + 1, "dropped": spare["dropped"], "added": spare["added"]},
+            step_name="mechanism_synthesis",
+        )
+
+    @staticmethod
+    def _coerce_balance_mode(value: Any) -> str:
+        """``strict`` (default), ``deferred`` (any atom-balance-only failure may be flagged) or
+        ``proton_deferred`` (only a residual of whole protons may be flagged)."""
+        mode = str(value or "").strip().lower()
+        return mode if mode in {"deferred", "proton_deferred"} else "strict"
+
+    @staticmethod
+    def _proton_only_residual(mechanism_output: Dict[str, Any]) -> bool:
+        """The step's current -> resulting imbalance is n whole protons (H and charge together),
+        i.e. a proton donor or acceptor the state did not carry. Heavy atoms must balance."""
+        from .mechanism_audit import _InvalidSpecies, _composition_of, _delta, _is_proton_only, _species
+
+        try:
+            delta = _delta(
+                _composition_of(_species(mechanism_output.get("current_state") or [])),
+                _composition_of(_species(mechanism_output.get("resulting_state") or [])),
+            )
+        except (_InvalidSpecies, Exception):  # noqa: BLE001
+            return False
+        return _is_proton_only(delta)
+
     def _best_balance_pending_candidate(
         self,
         *,
         candidate_attempts: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+        proton_only: bool = False,
     ) -> Optional[BranchCandidate]:
         for candidate_data, attempt_result in candidate_attempts:
             validation = attempt_result.get("last_validation")
@@ -2845,6 +2925,8 @@ class RunCoordinator:
             resulting_state = [str(item) for item in mechanism_output.get("resulting_state") or []]
             if not resulting_state:
                 continue
+            if proton_only and not self._proton_only_residual(mechanism_output):
+                continue  # proton_deferred: heavy-atom or non-proton residuals stay rejected
 
             contains_target = bool(mechanism_output.get("contains_target_product"))
             current_state = [str(item) for item in mechanism_output.get("current_state") or []]
@@ -3457,6 +3539,7 @@ class RunCoordinator:
                     run_config=state.run_config,
                     reagent_pool=self._balance_reagent_pool(state),
                 )
+                self._restore_spare_equivalents(state, mechanism_result, enabled_validators)
             except Exception as exc:
                 self.store.append_event(
                     state.run_id,
@@ -5535,10 +5618,14 @@ class RunCoordinator:
                     # failure is never deferred, so validation stays the arbiter.
                     if state.mode == "unverified" and (
                         state.run_config.proceed_on_validation_failure
-                        or state.run_config.balance_mode == "deferred"
+                        or state.run_config.balance_mode in {"deferred", "proton_deferred"}
                     ):
                         balance_pending_candidate = self._best_balance_pending_candidate(
                             candidate_attempts=candidate_attempts,
+                            proton_only=(
+                                state.run_config.balance_mode == "proton_deferred"
+                                and not state.run_config.proceed_on_validation_failure
+                            ),
                         )
                         if balance_pending_candidate is not None:
                             self.store.append_event(

@@ -857,6 +857,8 @@ class RunConfig:
     # "strict": an atom-balance failure rejects the step. "deferred": a step whose
     # only failed check is atom balance is accepted with a balance flag and resolved
     # (or failed) by the post-loop mechanism audit once the whole path is known.
+    # "proton_deferred": only a residual of whole protons (H and charge together) may be
+    # flagged; any heavy-atom or other residual is rejected as under "strict".
     balance_mode: str = "strict"
     runtime_trace_enabled: bool = False
     runtime_trace_label: Optional[str] = None

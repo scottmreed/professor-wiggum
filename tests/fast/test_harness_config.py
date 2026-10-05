@@ -306,6 +306,9 @@ class TestJevReactionTypeHarness:
         for key in ("name", "description", "metadata", "decision_policy", "jev"):
             mine.pop(key, None)
             base.pop(key, None)
+        # The one intended run-config difference: jev defers only pure proton residuals.
+        assert (mine.get("run_config_defaults") or {}).pop("balance_mode", None) == "proton_deferred"
+        assert (base.get("run_config_defaults") or {}).pop("balance_mode", None) == "deferred"
         assert mine == base
         assert default_config.decision_policy.reaction_type == "llm"
         assert "jev" not in default_config.as_dict()  # default carries no Jev thresholds

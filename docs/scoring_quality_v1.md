@@ -27,7 +27,17 @@ The rubric deliberately rewards following mechanism rules. A harness that checks
 
 When a case has no reference path, `sequence` is dropped and the other components are rescaled to 1000.
 
-**Product is a gate, not points.** The prompt supplies the target products, so reaching them earns nothing. A mechanism that misses a target scores half.
+**Product is a gate, not points, when it is given.** The prompt supplies the target products, so reaching them earns nothing. A mechanism that misses a target scores half.
+
+**No-product runs** (`eval/baseline --hide-products`) are different, because the model has to predict the product:
+- The main product, in any protonation state, earns **300 points**. FlowER byproducts are not required, and the main product is never a starting material or its conjugate.
+- The eight components share the other 700 in their usual proportions.
+
+To compare runs across modes, every result reports:
+- `mechanism_points`: the eight components on 1000, before any product gate or product points;
+- `product_correct`.
+
+The leaderboard shows these as the **Mechanism** and **Product** columns.
 
 **Pass rule.** A case passes when all of these hold:
 - every target is reached;

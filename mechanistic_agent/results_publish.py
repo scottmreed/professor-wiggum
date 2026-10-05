@@ -30,6 +30,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from mechanistic_agent.agent_bridge import origin_integrity_contaminated
 from mechanistic_agent.quality_scoring import (
+    PRODUCT_POINTS,
     QUALITY_VERSION,
     WEIGHTS as QUALITY_WEIGHTS,
     _baseline_snapshot,
@@ -174,6 +175,9 @@ def _quality_fields(qualities: List[Optional[Dict[str, Any]]], legacy_summary: D
         "scoring": QUALITY_VERSION,
         "summary": {
             "points": int(round(quality["points"])),
+            "mechanism_points": int(round(quality.get("mechanism_points", quality["points"]))),
+            "product_correct": quality.get("product_correct", quality["targets_reached"]),
+            "products_hidden": bool(quality.get("products_hidden")),
             "outcome": "pass" if quality["passed"] == quality["cases"] else "partial",
             "components": quality["components"],
             "cases": quality["cases"],
@@ -632,6 +636,11 @@ RUBRIC_TEXT = [
     "",
     "A case passes when every target is reached, every step is valid, the mechanism closes in mass and charge, "
     "no state repeats, and it scores at least 700. Harness and baseline rows are compared at the same thinking level.",
+    "",
+    "**No-product rows** (the model had to predict the product): the main product, in any protonation state, is worth "
+    "300 points and the eight components share the other 700. The **Mechanism** column is always the eight components "
+    "on 1000 before any product gate or product points, so it compares directly between product-given and "
+    "no-product rows; per-component columns are shown on the 1000 scale too.",
 ]
 BASELINE_NOTE = (
     "Baselines make one full-mechanism call with no harness. Their steps are scored exactly like harness steps, "
@@ -651,18 +660,24 @@ def _comparison_table(records: Sequence[Dict[str, Any]]) -> List[str]:
     )
     if not rows:
         return ["No runs scored with `quality_v1` yet."]
-    header = "| Tier | Model | Mode | Thinking | Cases | Quality | " + " | ".join(
+    header = "| Tier | Model | Mode | Thinking | Cases | Quality | Mechanism | Product | " + " | ".join(
         COMPONENT_LABELS[k] for k in QUALITY_WEIGHTS
     ) + " | Valid steps | Passed | Date | Record |"
-    lines = [header, "|" + "---|" * (11 + len(QUALITY_WEIGHTS))]
+    lines = [header, "|" + "---|" * (13 + len(QUALITY_WEIGHTS))]
     for record in rows:
         s = record["summary"]
         mode = "baseline" if _is_baseline_record(record) else f"harness `{record.get('harness')}`"
-        components = " | ".join(f"{float(s['components'].get(k, 0.0)):.0f}" for k in QUALITY_WEIGHTS)
+        hidden = bool(s.get("products_hidden"))
+        if hidden:
+            mode += " · no product"
+        scale = 1000.0 / (1000.0 - PRODUCT_POINTS) if hidden else 1.0  # components back on the 1000 scale
+        components = " | ".join(f"{float(s['components'].get(k, 0.0)) * scale:.0f}" for k in QUALITY_WEIGHTS)
+        product = f"{s.get('product_correct', s['targets_reached'])}/{s['cases']}" if hidden else "given"
         link = f"[json]({record['_path']})" if record.get("_path") else "—"
         lines.append(
             f"| {record.get('tier') or '—'} | {_model_label(record)} | {mode} | {record.get('thinking_level') or 'default'} | "
-            f"{s['cases']} | **{s['points']}** | {components} | {s['valid_step_fraction']:.0%} | "
+            f"{s['cases']} | **{s['points']}** | {s.get('mechanism_points', s['points'])} | {product} | {components} | "
+            f"{s['valid_step_fraction']:.0%} | "
             f"{s['passed']}/{s['cases']} | {record.get('date')} | {link} |"
         )
     return lines
