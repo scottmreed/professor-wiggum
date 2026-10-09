@@ -1,0 +1,639 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "eval_run_id": "8b349334c3a248c99900c1a1ba0606e1",
+  "run_group": "trial_q5_harness_low_given+resumed",
+  "date": "2026-10-05",
+  "model": "anthropic/claude-opus-5.5",
+  "thinking_level": "low",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "quality_v1 hard10 given trial (jev proton_deferred): headless claude -p --effort low (scripts/bridge_headless_responder.py: --tools '' --restricted --strict-mcp-config --no-session-persistence, empty tmp cwd); sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "headless_claude_cli",
+    "responder_saw_ground_truth": false
+  },
+  "harness": "jev_reaction_type",
+  "harness_bundle_hash": "9e624cb2c2404b571d0d3b1a207b5927ccf7b74a048382a15407dcdd7a0153bd",
+  "tier": "hard",
+  "eval_set_id": "4d5405b940884e469c01a9fdef161b80",
+  "eval_set_name": "trial_quality_v1_hard10",
+  "case_ids_hash": null,
+  "holdout": false,
+  "scoring_version": "v3",
+  "git_commit": "b715781",
+  "sources": [
+    {
+      "eval_run_id": "7231afb3c73e449e9e8a73ebe9219b69",
+      "run_group": "trial_q5_harness_low_given",
+      "cases": [
+        "flower_043864",
+        "flower_047524",
+        "flower_067880",
+        "flower_074675",
+        "flower_119187",
+        "flower_155662"
+      ]
+    },
+    {
+      "eval_run_id": "8b349334c3a248c99900c1a1ba0606e1",
+      "run_group": "trial_q5_harness_low_given_r2",
+      "cases": [
+        "flower_020948",
+        "flower_067967",
+        "flower_177337",
+        "flower_253626"
+      ]
+    }
+  ],
+  "scoring": "quality_v1",
+  "summary": {
+    "points": 916,
+    "mechanism_points": 964,
+    "product_correct": 9,
+    "products_hidden": false,
+    "outcome": "partial",
+    "components": {
+      "step_validity": 248.3,
+      "sequence": 181.0,
+      "electron_conservation": 100.0,
+      "proton_bookkeeping": 90.0,
+      "protonation_states": 100.0,
+      "reagents_and_solvent": 94.4,
+      "efficiency": 100.0,
+      "intermolecular": 50.0
+    },
+    "cases": 10,
+    "targets_reached": 9,
+    "passed": 7,
+    "valid_step_fraction": 0.9655,
+    "avg_latency_s": 1026.8
+  },
+  "legacy": {
+    "points": 828,
+    "outcome": "WIN",
+    "breakdown": {
+      "product": 270,
+      "pathway": 272,
+      "push": 186,
+      "speed": 0,
+      "methodology": 100
+    },
+    "cases": 10,
+    "targets_reached": 9,
+    "passed": 7,
+    "mean_score": 0.9165,
+    "avg_latency_s": 1026.8
+  },
+  "cases": [
+    {
+      "case_id": "flower_020948",
+      "known_steps": 9,
+      "accepted_steps": 9,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 954.4,
+      "valid_steps": "9/9",
+      "score": 0.9081,
+      "latency_s": 6980.1,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_043864",
+      "known_steps": 7,
+      "accepted_steps": 5,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 962.0,
+      "valid_steps": "5/5",
+      "score": 0.9133,
+      "latency_s": 338.4,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_047524",
+      "known_steps": 6,
+      "accepted_steps": 5,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "5/5",
+      "score": 0.979,
+      "latency_s": 340.3,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_067880",
+      "known_steps": 8,
+      "accepted_steps": 8,
+      "target_reached": true,
+      "passed": false,
+      "quality_points": 914.2,
+      "valid_steps": "7/8",
+      "score": 0.9825,
+      "latency_s": 441.0,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_067967",
+      "known_steps": 10,
+      "accepted_steps": 2,
+      "target_reached": false,
+      "passed": false,
+      "quality_points": 477.5,
+      "valid_steps": "2/2",
+      "score": 0.55,
+      "latency_s": 344.0,
+      "run_status": "paused"
+    },
+    {
+      "case_id": "flower_074675",
+      "known_steps": 5,
+      "accepted_steps": 5,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "5/5",
+      "score": 1.0,
+      "latency_s": 290.7,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_119187",
+      "known_steps": 6,
+      "accepted_steps": 6,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "6/6",
+      "score": 0.9734,
+      "latency_s": 393.3,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_155662",
+      "known_steps": 5,
+      "accepted_steps": 5,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "5/5",
+      "score": 1.0,
+      "latency_s": 293.2,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_177337",
+      "known_steps": 8,
+      "accepted_steps": 7,
+      "target_reached": true,
+      "passed": false,
+      "quality_points": 851.7,
+      "valid_steps": "6/7",
+      "score": 0.8882,
+      "latency_s": 410.4,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_253626",
+      "known_steps": 7,
+      "accepted_steps": 6,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "6/6",
+      "score": 0.9708,
+      "latency_s": 436.2,
+      "run_status": "completed"
+    }
+  ],
+  "hardest_solved": {
+    "case_id": "flower_020948",
+    "known_steps": 9,
+    "accepted_steps": 9,
+    "score": 0.9081,
+    "starting_materials": [
+      "COc1cc(I)cc(OC)c1",
+      "COc1cccc(B(O)O)c1",
+      "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+      "CC(=O)[O-]",
+      "CC(=O)[O-]",
+      "[Cs+]",
+      "[F-]",
+      "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+      "CC(=O)[O-]",
+      "O",
+      "C1COCCO1",
+      "O",
+      "[Pd+2]"
+    ],
+    "products": [
+      "CC(=O)O[B-](O)(O)O",
+      "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+      "CC(=O)O[P+](c1ccccc1C)(c1ccccc1C)c1ccccc1C",
+      "[Cs+]",
+      "[F-]",
+      "CC(=O)[O-]",
+      "O",
+      "I",
+      "C1COCCO1",
+      "Cc1ccccc1[P]([Pd])(c1ccccc1C)c1ccccc1C"
+    ],
+    "steps": [
+      {
+        "step_index": 1,
+        "current_state": [
+          "COc1cc(I)cc(OC)c1",
+          "COc1cccc(B(O)O)c1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "[Pd+2]"
+        ],
+        "resulting_state": [
+          "COc1cc(I)cc(OC)c1",
+          "COc1cccc([B-](O)(O)OC(C)=O)c1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "[Pd+2]"
+        ],
+        "reaction_smirks": "[CH3:1][O:2][c:3]1[cH:4][cH:5][cH:6][c:7]([B:20]([OH:21])[OH:22])[cH:8]1.[CH3:24][C:25](=[O:26])[O-:27]>>[CH3:1][O:2][c:3]1[cH:4][cH:5][cH:6][c:7]([B-:20]([OH:21])([OH:22])[O:27][C:25]([CH3:24])=[O:26])[cH:8]1",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:27>20",
+            "source_atom": "27",
+            "target_atom": "20"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 2,
+        "current_state": [
+          "COc1cc(I)cc(OC)c1",
+          "COc1cccc([B-](O)(O)OC(C)=O)c1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "[Pd+2]"
+        ],
+        "resulting_state": [
+          "COc1cc(I)cc(OC)c1",
+          "COc1cccc([B-](O)(O)OC(C)=O)c1",
+          "Cc1ccccc1[P+]([Pd+])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
+        ],
+        "reaction_smirks": "[CH3:41][c:42]1[cH:43][cH:44][cH:45][cH:46][c:47]1[P:30]([c:50]1[cH:51][cH:52][cH:53][cH:54][c:55]1[CH3:56])[c:60]1[cH:61][cH:62][cH:63][cH:64][c:65]1[CH3:66].[Pd+2:40]>>[CH3:41][c:42]1[cH:43][cH:44][cH:45][cH:46][c:47]1[P+:30]([Pd+:40])([c:50]1[cH:51][cH:52][cH:53][cH:54][c:55]1[CH3:56])[c:60]1[cH:61][cH:62][cH:63][cH:64][c:65]1[CH3:66]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:30>40",
+            "source_atom": "30",
+            "target_atom": "40"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 3,
+        "current_state": [
+          "COc1cc(I)cc(OC)c1",
+          "COc1cccc([B-](O)(O)OC(C)=O)c1",
+          "Cc1ccccc1[P+]([Pd+])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
+        ],
+        "resulting_state": [
+          "COc1cc(OC)c[c]([Pd+]([I])[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
+          "COc1cccc([B-](O)(O)OC(C)=O)c1",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
+        ],
+        "reaction_smirks": "[c:9]1([I:19])[cH:10][c:11]([O:12][CH3:13])[cH:14][c:15]([O:16][CH3:17])[cH:18]1.Cc1ccccc1[P+:28]([Pd+:29])(c1ccccc1C)c1ccccc1C>>Cc1ccccc1[P+:28]([Pd+:29]([I:19])[c:9]1[cH:10][c:11]([O:12][CH3:13])[cH:14][c:15]([O:16][CH3:17])[cH:18]1)(c1ccccc1C)c1ccccc1C",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:29>9",
+            "source_atom": "29",
+            "target_atom": "9"
+          },
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:9-19>19",
+            "source_bond": [
+              "9",
+              "19"
+            ],
+            "target_atom": "19",
+            "through_atom": "19"
+          },
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:19>29",
+            "source_atom": "19",
+            "target_atom": "29"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 4,
+        "current_state": [
+          "COc1cc(OC)c[c]([Pd+]([I])[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
+          "COc1cccc([B-](O)(O)OC(C)=O)c1",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
+        ],
+        "resulting_state": [
+          "COc1ccc[c]([Pd+]([c]2cc(OC)cc(OC)c2)[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
+          "CC(=O)OB(O)O",
+          "[I-]",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
+        ],
+        "reaction_smirks": "[CH3:13][O:12][c:11]1[cH:10][c:9]([Pd+:30]([I:19])[P+:31](c2ccccc2C)(c2ccccc2C)c2ccccc2C)[cH:18][c:15]([O:16][CH3:17])[cH:14]1.[CH3:1][O:2][c:3]1[cH:4][cH:5][cH:6][c:7]([B-:20]([OH:21])([OH:22])[O:27][C:25]([CH3:24])=[O:26])[cH:8]1>>[CH3:13][O:12][c:11]1[cH:10][c:9]([Pd+:30]([c:7]2[cH:6][cH:5][cH:4][c:3]([O:2][CH3:1])[cH:8]2)[P+:31](c2ccccc2C)(c2ccccc2C)c2ccccc2C)[cH:18][c:15]([O:16][CH3:17])[cH:14]1.[B:20]([OH:21])([OH:22])[O:27][C:25]([CH3:24])=[O:26].[I-:19]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:20-7>30",
+            "source_bond": [
+              "20",
+              "7"
+            ],
+            "target_atom": "30",
+            "through_atom": "7"
+          },
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:30-19>19",
+            "source_bond": [
+              "30",
+              "19"
+            ],
+            "target_atom": "19",
+            "through_atom": "19"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 5,
+        "current_state": [
+          "COc1ccc[c]([Pd+]([c]2cc(OC)cc(OC)c2)[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
+          "CC(=O)OB(O)O",
+          "[I-]",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
+        ],
+        "resulting_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "Cc1ccccc1[P+]([Pd+])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)OB(O)O",
+          "[I-]",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
+        ],
+        "reaction_smirks": "[CH3:1][O:2][c:3]1[cH:4][cH:5][cH:6][c:7]([Pd+:30]([c:9]2[cH:10][c:11]([O:12][CH3:13])[cH:14][c:15]([O:16][CH3:17])[cH:18]2)[P+:31](c2ccccc2C)(c2ccccc2C)c2ccccc2C)[cH:8]1>>[CH3:1][O:2][c:3]1[cH:4][cH:5][cH:6][c:7](-[c:9]2[cH:10][c:11]([O:12][CH3:13])[cH:14][c:15]([O:16][CH3:17])[cH:18]2)[cH:8]1.[Pd+:30][P+:31](c2ccccc2C)(c2ccccc2C)c2ccccc2C",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:30-9>7",
+            "source_bond": [
+              "30",
+              "9"
+            ],
+            "target_atom": "7",
+            "through_atom": "9"
+          },
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:7-30>30",
+            "source_bond": [
+              "7",
+              "30"
+            ],
+            "target_atom": "30",
+            "through_atom": "30"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 6,
+        "current_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "Cc1ccccc1[P+]([Pd+])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)OB(O)O",
+          "[I-]",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "O",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
+        ],
+        "resulting_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "Cc1ccccc1[P+]([Pd+])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)O[B-](O)(O)[OH2+]",
+          "[I-]",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "O"
+        ],
+        "reaction_smirks": "[CH3:24][C:25](=[O:26])[O:27][B:20]([OH:21])[OH:22].[OH2:23]>>[CH3:24][C:25](=[O:26])[O:27][B-:20]([OH:21])([OH:22])[OH2+:23]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:23>20",
+            "source_atom": "23",
+            "target_atom": "20"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 7,
+        "current_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "Cc1ccccc1[P+]([Pd+])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)O[B-](O)(O)[OH2+]",
+          "[I-]",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "O"
+        ],
+        "resulting_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "Cc1ccccc1[P+]([Pd+])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)O[B-](O)(O)O",
+          "I",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "O"
+        ],
+        "reaction_smirks": "[CH3:24][C:25](=[O:26])[O:27][B-:20]([OH:21])([OH:22])[OH2+:23].[I-:19]>>[CH3:24][C:25](=[O:26])[O:27][B-:20]([OH:21])([OH:22])[OH:23].[IH:19]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:19>23",
+            "source_atom": "19",
+            "target_atom": "23"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 8,
+        "current_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "Cc1ccccc1[P+]([Pd+])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)O[B-](O)(O)O",
+          "I",
+          "CC(=O)[O-]",
+          "[Cs+]",
+          "[F-]",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "O"
+        ],
+        "resulting_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "CC(=O)O[P+](c1ccccc1C)(c1ccccc1C)c1ccccc1C",
+          "[Pd]",
+          "CC(=O)O[B-](O)(O)O",
+          "I",
+          "[Cs+]",
+          "[F-]",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "O",
+          "CC(=O)[O-]"
+        ],
+        "reaction_smirks": "[CH3:24][C:25](=[O:26])[O-:27].[CH3:40][c:41]1[cH:42][cH:43][cH:44][cH:45][c:46]1[P+:30]([Pd+:31])([c:51]1[cH:52][cH:53][cH:54][cH:55][c:56]1[CH3:50])[c:61]1[cH:62][cH:63][cH:64][cH:65][c:66]1[CH3:60]>>[CH3:24][C:25](=[O:26])[O:27][P+:30]([c:46]1[cH:45][cH:44][cH:43][cH:42][c:41]1[CH3:40])([c:51]1[cH:52][cH:53][cH:54][cH:55][c:56]1[CH3:50])[c:61]1[cH:62][cH:63][cH:64][cH:65][c:66]1[CH3:60].[Pd:31]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:27>30",
+            "source_atom": "27",
+            "target_atom": "30"
+          },
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:30-31>31",
+            "source_bond": [
+              "30",
+              "31"
+            ],
+            "target_atom": "31",
+            "through_atom": "31"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 9,
+        "current_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "CC(=O)O[P+](c1ccccc1C)(c1ccccc1C)c1ccccc1C",
+          "[Pd]",
+          "CC(=O)O[B-](O)(O)O",
+          "I",
+          "[Cs+]",
+          "[F-]",
+          "C1COCCO1",
+          "Cc1ccccc1P(c1ccccc1C)c1ccccc1C",
+          "O",
+          "CC(=O)[O-]"
+        ],
+        "resulting_state": [
+          "COc1cccc(-c2cc(OC)cc(OC)c2)c1",
+          "CC(=O)O[P+](c1ccccc1C)(c1ccccc1C)c1ccccc1C",
+          "Cc1ccccc1[P]([Pd])(c1ccccc1C)c1ccccc1C",
+          "CC(=O)O[B-](O)(O)O",
+          "I",
+          "[Cs+]",
+          "[F-]",
+          "C1COCCO1",
+          "O",
+          "CC(=O)[O-]"
+        ],
+        "reaction_smirks": "[CH3:1][c:2]1[cH:3][cH:4][cH:5][cH:6][c:7]1[P:8]([c:9]1[cH:10][cH:11][cH:12][cH:13][c:14]1[CH3:15])[c:16]1[cH:17][cH:18][cH:19][cH:20][c:21]1[CH3:22].[Pd:23]>>[CH3:1][c:2]1[cH:3][cH:4][cH:5][cH:6][c:7]1[P:8]([Pd:23])([c:9]1[cH:10][cH:11][cH:12][cH:13][c:14]1[CH3:15])[c:16]1[cH:17][cH:18][cH:19][cH:20][c:21]1[CH3:22]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:8>23",
+            "source_atom": "8",
+            "target_atom": "23"
+          }
+        ],
+        "acceptance_kind": "validated"
+      }
+    ],
+    "image": "results/mechanisms/trial_q5_harness_low_given_resumed__flower_020948.png"
+  }
+}

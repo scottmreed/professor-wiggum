@@ -4479,6 +4479,7 @@ def _publish_eval_runs(
     dry_run: bool = False,
     branch: Optional[str] = None,
     combine: bool = False,
+    tier: Optional[str] = None,
 ) -> None:
     """Export eval runs to results/, regenerate the public boards, optionally open a PR."""
     from mechanistic_agent import results_publish as rp
@@ -4492,6 +4493,9 @@ def _publish_eval_runs(
     except rp.PublishError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
+    if tier:
+        for record in records:
+            record["tier"] = tier  # a custom slice of a tier (eval sets built from tier cases carry no tier)
 
     for record in records:
         s = record["summary"]
@@ -4538,6 +4542,9 @@ def publish_results_cmd(
     regenerate_only: bool = typer.Option(
         False, "--regenerate-only", help="Only rebuild LEADERBOARD.md and the README block from results/runs/"
     ),
+    tier: Optional[str] = typer.Option(
+        None, "--tier", help="Tier label for runs on a custom slice of a tier (easy|medium|hard)"
+    ),
     combine: bool = typer.Option(
         False,
         "--combine",
@@ -4559,7 +4566,10 @@ def publish_results_cmd(
     if not eval_run_ids:
         raise typer.BadParameter("pass at least one --eval-run-id (or --regenerate-only)")
     store = RunStore(resolve_db_path(Path.cwd()))
-    _publish_eval_runs(store, list(eval_run_ids), open_pr=open_pr, dry_run=dry_run, branch=branch, combine=combine)
+    tier = tier if isinstance(tier, str) else None
+    _publish_eval_runs(
+        store, list(eval_run_ids), open_pr=open_pr, dry_run=dry_run, branch=branch, combine=combine, tier=tier
+    )
 
 
 @app.command(name="eval-runset-official")

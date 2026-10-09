@@ -355,8 +355,10 @@ def export_eval_run(
     eval_set = store.get_eval_set(str(run.get("eval_set_id") or "")) or {}
     holdout = str(eval_set.get("purpose") or "") == "leaderboard_holdout"
     if is_baseline_eval_run(run, results):
-        return _export_baseline_run(store, {**run, "id": run.get("id") or eval_run_id}, results, holdout=holdout,
-                                    base_dir=base_dir)
+        record = _export_baseline_run(store, {**run, "id": run.get("id") or eval_run_id}, results, holdout=holdout,
+                                      base_dir=base_dir)
+        record["eval_set_name"] = eval_set.get("name")
+        return record
     resolver = expected_resolver or default_expected_resolver(store)
     metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
 
@@ -416,6 +418,7 @@ def export_eval_run(
         "harness_bundle_hash": run.get("harness_bundle_hash"),
         "tier": metadata.get("tier_name"),
         "eval_set_id": run.get("eval_set_id"),
+        "eval_set_name": eval_set.get("name"),
         "case_ids_hash": metadata.get("selected_case_ids_hash"),
         "holdout": holdout,
         "scoring_version": scoring_version,
@@ -739,6 +742,14 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
         f'<a id="{BASELINES_ANCHOR}"></a>',
         "## Harness vs harness-free baseline",
         "",
+        "Paired runs (same cases, model and thinking level):",
+        "",
+        *_paired_table(records, link_prefix=""),
+        "",
+        PAIRED_NOTE,
+        "",
+        "All `quality_v1` runs:",
+        "",
         *_comparison_table(records),
         "",
         BASELINE_NOTE,
@@ -803,6 +814,73 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+README_PAIRED_START = "<!-- harness-vs-baseline:start -->"
+README_PAIRED_END = "<!-- harness-vs-baseline:end -->"
+
+
+def paired_comparisons(records: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Harness vs harness-free baseline on the same cases: quality_v1 records that share an eval set,
+    product mode and thinking level, latest of each kind per group."""
+    groups: Dict[tuple, Dict[str, Dict[str, Any]]] = {}
+    for record in records:
+        if not is_quality_record(record) or record.get("holdout"):
+            continue
+        s = record["summary"]
+        key = (str(record.get("eval_set_id") or ""), bool(s.get("products_hidden")),
+               str(record.get("thinking_level") or "default"), _model_key(_effective_model(record)))
+        kind = "baseline" if _is_baseline_record(record) else "harness"
+        current = groups.setdefault(key, {}).get(kind)
+        if current is None or str(record.get("date") or "") >= str(current.get("date") or ""):
+            groups[key][kind] = record
+    pairs = [
+        {"eval_set_id": key[0], "products_hidden": key[1], "thinking_level": key[2], **kinds}
+        for key, kinds in groups.items()
+        if "baseline" in kinds and "harness" in kinds
+    ]
+    return sorted(pairs, key=lambda p: (p["harness"].get("tier") or "", p["products_hidden"], p["eval_set_id"]))
+
+
+def _paired_table(records: Sequence[Dict[str, Any]], *, link_prefix: str) -> List[str]:
+    pairs = paired_comparisons(records)
+    if not pairs:
+        return ["No paired harness / baseline runs published yet."]
+    lines = [
+        "| Cases | Product | Thinking | Model | One-shot baseline | Harness | Mechanism Δ |",
+        "|---|---|---|---|---|---|---|",
+    ]
+
+    def cell(record: Dict[str, Any]) -> str:
+        s = record["summary"]
+        product = f", product {s.get('product_correct', s['targets_reached'])}/{s['cases']}" if s.get("products_hidden") else ""
+        return (f"**{s['points']}** (mechanism {s.get('mechanism_points', s['points'])}{product}, "
+                f"pass {s['passed']}/{s['cases']})")
+
+    for pair in pairs:
+        b, h = pair["baseline"], pair["harness"]
+        delta = int(h["summary"].get("mechanism_points", h["summary"]["points"])) - int(
+            b["summary"].get("mechanism_points", b["summary"]["points"])
+        )
+        label = f"{h['summary']['cases']} {h.get('tier') or ''} ({h.get('eval_set_name') or pair['eval_set_id'][:8]})".strip()
+        lines.append(
+            f"| {label} | {'hidden' if pair['products_hidden'] else 'given'} | {pair['thinking_level']} | "
+            f"{_model_label(h)} | {cell(b)} | {cell(h)} | {delta:+d} |"
+        )
+    return lines
+
+
+PAIRED_NOTE = (
+    "Same cases, same model, same thinking level. **Mechanism** is the eight-component `quality_v1` score on "
+    "1000 (step validity, sequence, electron conservation, proton sources/sinks, protonation states, reagents, "
+    "efficiency, intermolecular shuttles) and compares across modes; with the product **hidden** the model must "
+    "also predict it, worth 300 of the 1000 points. A pass needs the product, every step valid, a mechanism that "
+    "closes in mass and charge, and ≥ 700."
+)
+
+
+def render_paired_block(records: Sequence[Dict[str, Any]]) -> str:
+    return "\n".join([*_paired_table(records, link_prefix="LEADERBOARD.md"), "", PAIRED_NOTE])
+
+
 def render_readme_block(records: Sequence[Dict[str, Any]]) -> str:
     lines = _best_table(records, link_prefix="LEADERBOARD.md")
     hardest = _hardest_overall(records)
@@ -834,11 +912,13 @@ def regenerate_boards(base_dir: Path) -> List[Path]:
     readme = base_dir / README_PATH
     if readme.exists():
         text = readme.read_text(encoding="utf-8")
-        if README_LEADERBOARD_START in text:
-            readme.write_text(
-                splice_block(text, README_LEADERBOARD_START, README_LEADERBOARD_END, render_readme_block(records)),
-                encoding="utf-8",
-            )
+        updated = text
+        if README_LEADERBOARD_START in updated:
+            updated = splice_block(updated, README_LEADERBOARD_START, README_LEADERBOARD_END, render_readme_block(records))
+        if README_PAIRED_START in updated:
+            updated = splice_block(updated, README_PAIRED_START, README_PAIRED_END, render_paired_block(records))
+        if updated != text:
+            readme.write_text(updated, encoding="utf-8")
             written.append(README_PATH)
     return written
 
