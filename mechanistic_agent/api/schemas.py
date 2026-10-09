@@ -58,6 +58,9 @@ class CreateRunRequest(BaseModel):
     ] = "centralized_mas"
     ralph: Optional[RalphRunConfig] = None
     dry_run: bool = False
+    # No-product mode: products may be empty (the model predicts them); any products given are
+    # kept on the run for later scoring but never shown to the model.
+    hide_products: bool = False
 
 
 class CreateRunResponse(BaseModel):

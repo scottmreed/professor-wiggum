@@ -126,3 +126,21 @@ def test_manifest_and_unknown_run(tmp_path: Path) -> None:
     assert manifest["deployment"] == "embedded"
     with pytest.raises(KeyError):
         rt.observatory("nope")
+
+
+def test_no_product_run_needs_hide_products_and_never_shows_products(tmp_path: Path) -> None:
+    rt = _runtime(tmp_path, [])
+    with pytest.raises(ValueError, match="hide_products"):
+        rt.create_run({"mode": "unverified", "starting_materials": ["CCBr", "[Cl-]"], "products": [], "model": "gpt-4o"})
+    run_id = rt.create_run({"mode": "unverified", "starting_materials": ["CCBr", "[Cl-]"], "products": [],
+                            "model": "gpt-4o", "hide_products": True})
+    row = rt.store.get_run_row(run_id)
+    assert row["config"]["hide_products"] is True
+    state = rt.coordinator._build_state(row)
+    assert state.run_config.hide_products is True and state.run_input.products == []
+    # Products given alongside hide_products stay on the run (for scoring) but not in the state.
+    scored = rt.create_run({"mode": "unverified", "starting_materials": ["CCBr", "[Cl-]"], "products": ["CCCl", "[Br-]"],
+                            "model": "gpt-4o", "hide_products": True})
+    scored_row = rt.store.get_run_row(scored)
+    assert scored_row["input_payload"]["products"] == ["CCCl", "[Br-]"]
+    assert rt.coordinator._build_state(scored_row).run_input.products == []
