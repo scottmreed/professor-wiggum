@@ -404,3 +404,25 @@ def test_combined_runs_later_run_wins_per_case() -> None:
     by_case = {c["case_id"]: c for c in record["cases"]}
     assert by_case["c_fail"]["passed"] is True  # replaced by the resumed result
     assert [s["cases"] for s in record["sources"]] == [["c_easy", "c_hard"], ["c_fail"]]
+
+
+def test_paired_comparison_lines_up_harness_and_baseline_on_the_same_cases(tmp_path: Path) -> None:
+    def record(kind: str, hidden: bool, points: int, mech: int, passed: int) -> Dict[str, Any]:
+        rec: Dict[str, Any] = {
+            "schema": rp.RECORD_SCHEMA, "scoring": rp.QUALITY_VERSION, "eval_set_id": "set10", "eval_set_name": "hard10",
+            "tier": "hard", "thinking_level": "low", "model": "anthropic/claude-opus-5.5", "date": "2026-10-05",
+            "run_group": f"{kind}_{hidden}", "eval_run_id": f"{kind}{hidden}", "harness": None if kind == "baseline" else "jev",
+            "summary": {"points": points, "mechanism_points": mech, "products_hidden": hidden, "product_correct": 8,
+                        "cases": 10, "targets_reached": 8, "passed": passed, "valid_step_fraction": 0.9,
+                        "components": {}},
+        }
+        if kind == "baseline":
+            rec["kind"] = "baseline"
+        return rec
+
+    records = [record("baseline", True, 863, 847, 2), record("harness", True, 895, 936, 4),
+               record("baseline", False, 911, 911, 7), record("harness", False, 916, 964, 7)]
+    pairs = rp.paired_comparisons(records)
+    assert [(p["products_hidden"], p["harness"]["summary"]["points"]) for p in pairs] == [(False, 916), (True, 895)]
+    block = rp.render_paired_block(records)
+    assert "| hidden |" in block and "+89" in block and "+53" in block and "product 8/10" in block

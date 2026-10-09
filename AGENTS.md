@@ -87,6 +87,8 @@ Embedding (no HTTP): `mechanistic_agent.runtime.EmbeddedMechanismRuntime(base_di
 ## Published Results and the Public Leaderboard
 
 - Eval runs stay in the local SQLite store until published. `python main.py publish-results --eval-run-id <id> [--open-pr]` (or `eval ... --publish [--open-pr]`) exports one run to `results/runs/<date>_<run_group>.json` (`wiggum.published_eval_run@1`: model, declared bridge origin, harness, tier, 1000-pt rubric from `scoring.graded_to_points`, per-case rows, hardest solved mechanism) plus `results/mechanisms/*.png` (`flower_rendering.render_mechanism_png`), then regenerates `LEADERBOARD.md` and the README `<!-- leaderboard:start/end -->` block from every committed record (`mechanistic_agent/results_publish.py`). `--regenerate-only` rebuilds the boards without the DB.
+- `--tier <easy|medium|hard>` labels runs on a custom slice of a tier (an eval set built from tier cases carries no tier).
+- Harness and baseline records that share an eval set, product mode (`products_hidden`) and thinking level are paired: `LEADERBOARD.md#harness-vs-baseline` and the README `<!-- harness-vs-baseline:start/end -->` block show them side by side, with each arm's Mechanism score and the Mechanism Δ.
 - `--combine` publishes several eval runs of one tier as a single record (a tier resumed after an outage; later runs win per case; the record's `sources` lists which cases came from which run).
 - Ground-truth replays are refused; `leaderboard_holdout` runs publish aggregates only (no per-case rows or mechanisms).
 - `--open-pr` branches from `origin/main`, commits only `results/`, `LEADERBOARD.md`, `README.md`, pushes, and opens a PR; it never merges.
