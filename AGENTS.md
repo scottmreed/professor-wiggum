@@ -76,7 +76,7 @@ Embedding (no HTTP): `mechanistic_agent.runtime.EmbeddedMechanismRuntime(base_di
   | intermolecular proton transfer when a shuttle is available | 50 |
 
 - **No speed or product points when the product is supplied.** The product is then a gate: missing a target halves the score and blocks a pass.
-- **No-product mode (`--hide-products`):**
+- **No-product mode (`--hide-products`; `CreateRunRequest.hide_products` for the API and the embedded runtime, where `products` may then be empty):**
   - The run state gets no products, so no prompt, mapping or completion check sees them, and the run ends when the model declares `final_step`.
   - The main product, in any protonation state, earns 300 points, and the eight components share the other 700.
   - `mechanism_points` (the eight components on 1000, before any product gate or product points) and `product_correct` compare runs across modes.

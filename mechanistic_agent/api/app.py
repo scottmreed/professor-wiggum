@@ -1410,6 +1410,7 @@ def create_app(
         coordination_topology: str = "centralized_mas",
         ralph: Dict[str, Any] | None = None,
         dry_run: bool = False,
+        hide_products: bool = False,
     ) -> tuple[str, Dict[str, Any], Dict[str, str]]:
         public_thinking = _resolve_public_thinking_level(thinking_level)
         model_plan = select_step_models(
@@ -1491,6 +1492,7 @@ def create_app(
                 "mutation_lane": ralph.get("mutation_lane"),
                 "example_id": example_id,
                 "dry_run": dry_run,
+                "hide_products": bool(hide_products),
             },
         )
         prompt_ids_by_step = registry.bind_run_prompts(
@@ -1789,8 +1791,10 @@ def create_app(
     def create_run(payload: CreateRunRequest) -> CreateRunResponse:
         if not payload.starting_materials:
             raise HTTPException(status_code=400, detail="starting_materials cannot be empty")
-        if not payload.products:
-            raise HTTPException(status_code=400, detail="products cannot be empty")
+        if not payload.products and not payload.hide_products:
+            raise HTTPException(
+                status_code=400, detail="products cannot be empty (set hide_products for a no-product run)"
+            )
 
         run_id, _, _ = _create_run_internal(
             mode=payload.mode,
@@ -1828,6 +1832,7 @@ def create_app(
             coordination_topology=payload.coordination_topology,
             ralph=payload.ralph.model_dump() if payload.ralph is not None else None,
             dry_run=payload.dry_run,
+            hide_products=payload.hide_products,
         )
         return CreateRunResponse(
             run_id=run_id,
