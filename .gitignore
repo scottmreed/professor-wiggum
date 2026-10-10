@@ -160,6 +160,8 @@ training_data/*
 # Regenerate full index: see training_data/REGENERATE.md
 !training_data/flower_mechanism_index_sample.jsonl
 !training_data/REGENERATE.md
+# Staged literature contributions from ChemIllusion (reviewed PRs only)
+!training_data/literature_contributions/
 
 # Reaction template PNGs (generated, local only — do not track)
 training_data/rxn_templates/

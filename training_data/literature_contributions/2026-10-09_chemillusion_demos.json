@@ -1,0 +1,17 @@
+[
+  {"id": "lit_chalcone_aldol_anisaldehyde", "name": "Claisen-Schmidt condensation: acetophenone + anisaldehyde (KOH/EtOH)",
+   "starting_materials": ["CC(=O)c1ccccc1", "COc1ccc(C=O)cc1", "[K+]", "[OH-]", "CCO"],
+   "products": ["COc1ccc(/C=C/C(=O)c2ccccc2)cc1", "O"], "temperature_celsius": 40.0,
+   "notes": "Donaire-Arias et al. 2023, Molecules 28, 7576, doi:10.3390/molecules28227576, Scheme 4 (mechanism not drawn in paper). CC BY 4.0.",
+   "tags": ["literature", "aldol", "demo"]},
+  {"id": "lit_azachalcone_naoh_cinnamaldehyde", "name": "Aldol condensation: 2-acetylpyridine + cinnamaldehyde (NaOH)",
+   "starting_materials": ["CC(=O)c1ccccn1", "O=C/C=C/c1ccccc1", "[Na+]", "[OH-]", "CCO"],
+   "products": ["O=C(/C=C/C=C/c1ccccc1)c1ccccn1", "O"], "temperature_celsius": 25.0,
+   "notes": "Rohman et al. 2023, MethodsX 11, 102427, doi:10.1016/j.mex.2023.102427, NaOH comparison route for 2a (only the proline route is drawn). CC BY 4.0.",
+   "tags": ["literature", "aldol", "demo"]},
+  {"id": "lit_benzoxazole_snar_nitro", "name": "N-deprotonation / O-SNAr cyclization to 5-nitro-2-phenylbenzoxazole (K2CO3, DMF)",
+   "starting_materials": ["O=C(Nc1cc([N+](=O)[O-])ccc1F)c1ccccc1", "[K+]", "[K+]", "[O-]C([O-])=O"],
+   "products": ["[O-][N+](=O)c1ccc2oc(-c3ccccc3)nc2c1", "[F-]", "OC([O-])=O"], "temperature_celsius": 90.0,
+   "notes": "Nevels et al. 2024, Molecules 29, 4322, doi:10.3390/molecules29184322. NEGATIVE CONTROL: Scheme 3 draws this mechanism. CC BY 4.0.",
+   "tags": ["literature", "snar", "control_already_illustrated"]}
+]
