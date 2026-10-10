@@ -676,6 +676,48 @@ def test_reconciliation_accepts_catalytic_proton_without_llm() -> None:
     assert payload["audit"]["proton_reconciled"] is True
 
 
+
+def test_reconciliation_resolves_dropped_spare_counter_ion_without_llm() -> None:
+    """2026-10-09 jev run: step 1 (validated) carried one of the two K+ of K2CO3 forward."""
+    store = _MemoryStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    amide, carbonate = "O=C(Nc1cc([N+](=O)[O-])ccc1F)c1ccccc1", "[O-]C([O-])=O"
+    imidate = "[O-]C(=Nc1cc([N+](=O)[O-])ccc1F)c1ccccc1"
+    meisenheimer = "FC12OC(c3ccccc3)=NC1=CC(=[N+]([O-])[O-])C=C2"
+    product, bicarbonate = "[O-][N+](=O)c1ccc2oc(-c3ccccc3)nc2c1", "OC([O-])=O"
+    state = _state(
+        starting_materials=[amide, "[K+]", "[K+]", carbonate],
+        products=[product, "[F-]", bicarbonate],
+        mode="unverified",
+    )
+    for step, current, resulting, extra in (
+        (1, [amide, "[K+]", "[K+]", carbonate], [imidate, "[K+]", bicarbonate],
+         {"excess_reagent_reconciled": {"species": "[K+]", "count": -1, "source": "starting_material"}}),
+        (2, [imidate, "[K+]", bicarbonate], [meisenheimer, "[K+]", bicarbonate], {}),
+        (3, [meisenheimer, "[K+]", bicarbonate], [product, "[F-]", "[K+]", bicarbonate], {}),
+    ):
+        store.append_event(
+            state.run_id,
+            "mechanism_step_accepted",
+            {"step_index": step, "current_state": current, "resulting_state": resulting, **extra},
+            step_name="mechanism_synthesis",
+        )
+    state.current_state = [product, "[F-]", "[K+]", bicarbonate]
+
+    class _NoLLM:
+        @staticmethod
+        def run_missing_reagents(**_kwargs: Any) -> Dict[str, Any]:
+            raise AssertionError("a dropped spare counter-ion must not call the LLM rescue")
+
+    coordinator.missing_reagents_agent.executor = _NoLLM()  # type: ignore[assignment]
+    coordinator._run_overall_balance_reconciliation(state)
+
+    payload = [ev for ev in store.events if ev["event_type"] == "overall_balance_reconciled"][-1]["payload"]
+    assert payload["grade"] == "reconciled"
+    assert payload["audit"]["dropped_species"] == [{"species": "[K+]", "count": 1, "steps": [1]}]
+    assert payload["audit"]["excess_reagent_steps"][0]["count"] == -1
+
+
 # --- Excess solvent/reagent equivalents (hard tier TFA Boc deprotections, flower_064575) ---
 
 TFA = "O=C(O)C(F)(F)F"

@@ -23,6 +23,9 @@ Excess equivalents: a reagent used in excess (TFA as the solvent of a Boc
 deprotection) is often drawn as a second molecule the harness pool holds only
 one of. ``excess_reagent_equivalents`` recognises a residual that is exactly n
 whole equivalents of one pool species, carried intact on the excess side.
+The net audit counts only a surplus as excess; a small spare (at most one heavy
+atom: a K+ counter-ion, a halide, a water) that a validated step dropped is
+resolved as ``dropped_species``, like a small species a flagged step stopped carrying.
 """
 
 from __future__ import annotations
@@ -127,6 +130,35 @@ def _dropped_carrier_candidates(steps: Sequence[Mapping[str, Any]]) -> List[Tupl
                 if (species, copies) not in out:
                     out.append((species, copies))
     return out
+
+
+def _dropped_spare_equivalents(steps: Sequence[Mapping[str, Any]], pool: Any) -> Dict[str, List[int]]:
+    """Small species (<= 1 heavy atom: a K+ / Na+ counter-ion, a halide, a water) that validated
+    steps let go as spare equivalents, species -> one step index per dropped copy.
+
+    The step validator passes a step whose only imbalance is whole equivalents of a pool species
+    dropped while one copy stays (``excess_reagent_equivalents`` with a negative count), so the
+    net equation is then short those copies. The step's recorded ``excess_reagent_reconciled``
+    is used when present; otherwise (quality_v1 audits bare states) it is recomputed."""
+    dropped: Dict[str, List[int]] = {}
+    for step in steps:
+        record = step.get("excess_reagent_reconciled")
+        if not (isinstance(record, Mapping) and record.get("species")):
+            if step.get("balance_flag"):
+                continue
+            record = excess_reagent_equivalents(
+                step.get("current_state") or [], step.get("resulting_state") or [], pool
+            )
+        if not record or int(record.get("count") or 0) >= 0:
+            continue
+        try:
+            species = canonical(str(record["species"]))
+            small = _heavy_atoms(species) <= 1
+        except _InvalidSpecies:
+            continue
+        if small:
+            dropped.setdefault(species, []).extend([int(step.get("step_index") or 0)] * -int(record["count"]))
+    return dropped
 
 
 def _has_proton_donor_or_acceptor(pool: Counter) -> bool:
@@ -350,12 +382,16 @@ def _audit(
         if excess_reagent is not None and excess_reagent["count"] < 0:
             excess_reagent = None
         balanced = excess_reagent is not None
-    # A flagged step that simply stopped carrying a small species (a water, a
-    # hydroxide, a halide: at most one heavy atom) leaves exactly that species
-    # missing from the net equation, possibly plus proton bookkeeping.
+    # A step that simply stopped carrying a small species (a water, a hydroxide, a
+    # halide, an alkali-metal counter-ion: at most one heavy atom) leaves exactly that
+    # species missing from the net equation, possibly plus proton bookkeeping: either a
+    # flagged step, or a validated step that dropped a spare equivalent of it.
     dropped_species: List[Dict[str, Any]] = []
     if not balanced:
-        for species, copies in _dropped_carrier_candidates(ordered):
+        spares = _dropped_spare_equivalents(ordered, reagent_pool)
+        candidates = [(s, len(steps_)) for s, steps_ in sorted(spares.items())]
+        candidates += [c for c in _dropped_carrier_candidates(ordered) if c not in candidates]
+        for species, copies in candidates:
             remainder = dict(net_delta)
             for key, value in composition(species).items():
                 remainder[key] = remainder.get(key, 0) + value * copies
@@ -363,7 +399,10 @@ def _audit(
             if not remainder or (_is_proton_only(remainder) and _has_proton_donor_or_acceptor(left)):
                 balanced = True
                 proton_reconciled = bool(remainder)
-                dropped_species.append({"species": species, "count": copies})
+                item: Dict[str, Any] = {"species": species, "count": copies}
+                if len(spares.get(species, [])) == copies:
+                    item["steps"] = sorted(set(spares[species]))
+                dropped_species.append(item)
                 break
 
     # Conjugate acid/base pairs left in the residual (e.g. AcO- vs AcOH, H3O+ vs H2O).

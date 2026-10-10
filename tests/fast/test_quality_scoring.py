@@ -268,3 +268,20 @@ def test_no_product_runs_award_product_points_and_keep_mechanism_points_comparab
     assert wrong["product_correct"] is False and wrong["components"]["product"] == 0.0
     assert wrong["points"] == pytest.approx(wrong["mechanism_points"] * 0.7, abs=0.2)
     assert wrong["passed"] is False
+
+
+def test_spare_counter_ion_dropped_by_a_validated_step_closes_as_reconciled() -> None:
+    # 2026-10-09 jev run (818.7, not passed): step 1 carried one of the two K+ of K2CO3 forward.
+    amide, carbonate = "O=C(Nc1cc([N+](=O)[O-])ccc1F)c1ccccc1", "[O-]C([O-])=O"
+    imidate = "[O-]C(=Nc1cc([N+](=O)[O-])ccc1F)c1ccccc1"
+    meisenheimer = "FC12OC(c3ccccc3)=NC1=CC(=[N+]([O-])[O-])C=C2"
+    product, bicarbonate = "[O-][N+](=O)c1ccc2oc(-c3ccccc3)nc2c1", "OC([O-])=O"
+    starting = [amide, "[K+]", "[K+]", carbonate]
+    steps = [
+        qs.QualityStep(1, list(starting), [imidate, "[K+]", bicarbonate]),
+        qs.QualityStep(2, [imidate, "[K+]", bicarbonate], [meisenheimer, "[K+]", bicarbonate]),
+        qs.QualityStep(3, [meisenheimer, "[K+]", bicarbonate], [product, "[F-]", "[K+]", bicarbonate]),
+    ]
+    assert qs._atom_balanced(steps[0], starting)[0] is True
+    closure = qs._closure(steps, starting, [product, "[F-]", bicarbonate])
+    assert closure["grade"] == "reconciled" and closure["balanced"] is True

@@ -264,3 +264,67 @@ def test_dropped_organic_fragment_is_not_excused() -> None:
     )
     assert audit["grade"] == "approximate"
     assert audit["unresolved_steps"] == [1]
+
+
+# 2026-10-09 jev_reaction_type run (proton_deferred, product given): K2CO3 benzoxazole SNAr.
+BENZAMIDE = "O=C(Nc1cc([N+](=O)[O-])ccc1F)c1ccccc1"
+IMIDATE = "[O-]C(=Nc1cc([N+](=O)[O-])ccc1F)c1ccccc1"
+MEISENHEIMER = "FC12OC(c3ccccc3)=NC1=CC(=[N+]([O-])[O-])C=C2"
+BENZOXAZOLE = "[O-][N+](=O)c1ccc2oc(-c3ccccc3)nc2c1"
+CARBONATE = "[O-]C([O-])=O"
+BICARBONATE = "OC([O-])=O"
+
+
+def _benzoxazole_path(*, drop: str = "[K+]", record: bool = True):
+    step1 = _step(1, [BENZAMIDE, "[K+]", "[K+]", CARBONATE], [IMIDATE, drop, BICARBONATE])
+    if record:  # what validate_mechanism_step_output stored on the validated step
+        step1["excess_reagent_reconciled"] = excess_reagent_equivalents(
+            step1["current_state"], step1["resulting_state"],
+            {s: "starting_material" for s in [BENZAMIDE, "[K+]", CARBONATE]},
+        )
+    return [
+        step1,
+        _step(2, [IMIDATE, drop, BICARBONATE], [MEISENHEIMER, drop, BICARBONATE]),
+        _step(3, [MEISENHEIMER, drop, BICARBONATE], [BENZOXAZOLE, "[F-]", drop, BICARBONATE]),
+    ]
+
+
+def test_validated_step_dropping_a_spare_counter_ion_is_resolved() -> None:
+    steps = _benzoxazole_path()
+    assert steps[0]["excess_reagent_reconciled"]["count"] == -1  # the step validated as a dropped equivalent
+    for recorded in (True, False):  # quality_v1 audits the path without the per-step records
+        audit = audit_mechanism(
+            starting=[BENZAMIDE, "[K+]", "[K+]", CARBONATE],
+            targets=[BENZOXAZOLE, "[F-]", BICARBONATE],
+            steps=_benzoxazole_path(record=recorded),
+        )
+        assert audit["net_delta"] == {"+": -1, "K": -1}
+        assert audit["balanced"] is True
+        assert audit["grade"] == "reconciled"
+        assert audit["dropped_species"] == [{"species": "[K+]", "count": 1, "steps": [1]}]
+        assert any(f["type"] == "dropped_species" and f["species"] == "[K+]" for f in audit["findings"])
+        assert audit["targets_reached"] is True
+
+
+def test_counter_ion_that_vanishes_without_a_spare_left_stays_unresolved() -> None:
+    # Both potassium ions gone: no step dropped a *spare* equivalent, so the deficit is real.
+    steps = [
+        _step(1, [BENZAMIDE, "[K+]", "[K+]", CARBONATE], [IMIDATE, BICARBONATE]),
+        _step(2, [IMIDATE, BICARBONATE], [MEISENHEIMER, BICARBONATE]),
+        _step(3, [MEISENHEIMER, BICARBONATE], [BENZOXAZOLE, "[F-]", BICARBONATE]),
+    ]
+    audit = audit_mechanism(
+        starting=[BENZAMIDE, "[K+]", "[K+]", CARBONATE], targets=[BENZOXAZOLE, "[F-]", BICARBONATE], steps=steps
+    )
+    assert audit["grade"] == "approximate"
+    assert audit["dropped_species"] == []
+
+
+def test_dropped_spare_equivalent_of_a_heavy_reagent_is_still_a_deficit() -> None:
+    # A spare TFA the step validator let go stays a net deficit: only small spectators are excused.
+    step1 = _step(1, [TFA, TFA, BOC], [BOC_H, TFA_ANION])
+    step1["excess_reagent_reconciled"] = {"species": TFA, "count": -1, "source": "starting_material"}
+    step2 = _step(2, [BOC_H, TFA_ANION], [AMINE, "O=C=O", "C=C(C)C", TFA])
+    audit = audit_mechanism(starting=[TFA, TFA, BOC], targets=[AMINE], steps=[step1, step2])
+    assert audit["grade"] == "approximate"
+    assert audit["dropped_species"] == []

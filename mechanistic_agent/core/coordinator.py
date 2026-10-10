@@ -5971,10 +5971,15 @@ class RunCoordinator:
             # Balanced only because of catalysts / recorded additions / resolved flags.
             grade = "reconciled"
         # The residual is exactly n protons from an acid/base catalyst whose conjugate
-        # was not carried in the state, or n whole equivalents of a pool species used
-        # in excess (TFA as the solvent): reconciled by the audit, no LLM.
+        # was not carried in the state, n whole equivalents of a pool species used in
+        # excess (TFA as the solvent), or a small species a step stopped carrying (a
+        # leaving water, a spare K+ counter-ion): reconciled by the audit, no LLM.
         audit_reconciled = (
-            bool(audit.get("proton_reconciled") or audit.get("excess_reagent_reconciled"))
+            bool(
+                audit.get("proton_reconciled")
+                or audit.get("excess_reagent_reconciled")
+                or audit.get("dropped_species")
+            )
             and audit.get("grade") == "reconciled"
         )
         if audit_reconciled:
