@@ -412,6 +412,102 @@
       "output": 20.0
     }
   },
+  "anthropic/claude-haiku-5.5": {
+    "id": "anthropic/claude-haiku-5.5",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "forced_tool_choice": false,
+    "best_in_class": false,
+    "label": "Claude Haiku 5.5",
+    "description": "Anthropic Claude Haiku 5.5 (claude-haiku-5-5). Not called through the API: eval runs use the keyless agent bridge, where each model call is answered by a fresh blind subagent on the declared model. Pricing is unset because the bridge cost is opaque. Forced tool_choice is rejected by this model, so the adapter sends tool_choice=auto plus an explicit instruction naming the tool; thinking cannot be disabled (effort only, default medium).",
+    "reasoning": {
+      "parameter": "thinking",
+      "merge_levels": true,
+      "default": "medium",
+      "levels": {
+        "low": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "low"
+        },
+        "medium": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "medium"
+        },
+        "high": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "high"
+        },
+        "highest": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "xhigh"
+        },
+        "max": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "max"
+        }
+      }
+    },
+    "pricing_per_million": {}
+  },
+  "anthropic/claude-sonnet-5.5": {
+    "id": "anthropic/claude-sonnet-5.5",
+    "family": "claude",
+    "provider": "openrouter",
+    "supports_tools": true,
+    "forced_tool_choice": false,
+    "best_in_class": false,
+    "label": "Claude Sonnet 5.5",
+    "description": "Anthropic Claude Sonnet 5.5 (claude-sonnet-5-5). Not called through the API: eval runs use the keyless agent bridge, where each model call is answered by a fresh blind subagent on the declared model. Pricing is unset because the bridge cost is opaque. Forced tool_choice is rejected by this model, so the adapter sends tool_choice=auto plus an explicit instruction naming the tool; thinking cannot be disabled (effort only, default medium).",
+    "reasoning": {
+      "parameter": "thinking",
+      "merge_levels": true,
+      "default": "medium",
+      "levels": {
+        "low": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "low"
+        },
+        "medium": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "medium"
+        },
+        "high": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "high"
+        },
+        "highest": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "xhigh"
+        },
+        "max": {
+          "thinking": {
+            "type": "adaptive"
+          },
+          "effort": "max"
+        }
+      }
+    },
+    "pricing_per_million": {}
+  },
   "anthropic/claude-3.5-haiku": {
     "id": "anthropic/claude-3.5-haiku",
     "family": "claude",
