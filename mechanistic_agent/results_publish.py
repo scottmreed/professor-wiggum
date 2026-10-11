@@ -30,12 +30,17 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from mechanistic_agent.agent_bridge import origin_integrity_contaminated
 from mechanistic_agent.quality_scoring import (
-    PRODUCT_POINTS,
     QUALITY_VERSION,
-    WEIGHTS as QUALITY_WEIGHTS,
+    WEIGHTS as QUALITY_WEIGHTS,  # noqa: F401 - re-exported for callers and tests
     _baseline_snapshot,
     quality_or_error,
     summarize as summarize_quality,
+)
+from mechanistic_agent.quality_v2 import (
+    AXES as V2_AXES,
+    AXIS_LABELS as V2_AXIS_LABELS,
+    QUALITY_V2_VERSION,
+    summarize as summarize_v2,
 )
 from mechanistic_agent.rescoring import default_expected_resolver
 from mechanistic_agent.scoring import (
@@ -50,6 +55,7 @@ RECORD_SCHEMA = "wiggum.published_eval_run@1"  # @1 records without ``scoring`` 
 RESULTS_DIR = Path("results")
 RUNS_DIR = RESULTS_DIR / "runs"
 MECHANISMS_DIR = RESULTS_DIR / "mechanisms"
+RADAR_DIR = RESULTS_DIR / "radar"
 LEADERBOARD_PATH = Path("LEADERBOARD.md")
 README_PATH = Path("README.md")
 README_LEADERBOARD_START = "<!-- leaderboard:start -->"
@@ -156,14 +162,28 @@ def _case_quality(summary: Dict[str, Any], snapshot: Optional[Dict[str, Any]], e
     """The case's quality_v1 result: the stored one, else computed from the snapshot (harness) or
     the saved baseline steps. None when there is nothing to re-check (a legacy baseline)."""
     stored = summary.get("quality")
-    if isinstance(stored, dict) and stored.get("version") == QUALITY_VERSION and "error" not in stored:
+    stored_ok = isinstance(stored, dict) and stored.get("version") == QUALITY_VERSION and "error" not in stored
+    if stored_ok and isinstance(stored.get("quality_v2"), dict):
         return stored
-    if not expected:
-        return None
-    snapshot = snapshot or _baseline_snapshot(summary, expected)
+    snapshot = (snapshot or _baseline_snapshot(summary, expected)) if expected else None
     if not snapshot:
-        return None
+        return stored if stored_ok else None
     return quality_or_error(snapshot, expected)
+
+
+def _v2_case_fields(quality: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Per-case quality_v2 columns of a record (the v1 points are kept alongside)."""
+    v2 = (quality or {}).get("quality_v2")
+    if not isinstance(v2, dict):
+        return {}
+    return {
+        "quality_v1_points": quality.get("points"),
+        "quality_points": v2.get("points"),
+        "axes": v2.get("axes"),
+        "failed_start": bool(v2.get("failed_start")),
+        "connected_steps": f"{sum(1 for link in v2.get('links') or [] if link.get('connected'))}/{v2.get('step_count')}",
+        "broken_links": [link for link in v2.get("links") or [] if not link.get("connected")],
+    }
 
 
 def _quality_fields(qualities: List[Optional[Dict[str, Any]]], legacy_summary: Dict[str, Any]) -> Dict[str, Any]:
@@ -171,21 +191,38 @@ def _quality_fields(qualities: List[Optional[Dict[str, Any]]], legacy_summary: D
     if not qualities or any(q is None for q in qualities):
         return {"scoring": "legacy", "summary": legacy_summary}
     quality = summarize_quality([q for q in qualities if q is not None])
+    v1_summary = {
+        "points": int(round(quality["points"])),
+        "mechanism_points": int(round(quality.get("mechanism_points", quality["points"]))),
+        "product_correct": quality.get("product_correct", quality["targets_reached"]),
+        "products_hidden": bool(quality.get("products_hidden")),
+        "outcome": "pass" if quality["passed"] == quality["cases"] else "partial",
+        "components": quality["components"],
+        "cases": quality["cases"],
+        "targets_reached": quality["targets_reached"],
+        "passed": quality["passed"],
+        "valid_step_fraction": quality["valid_step_fraction"],
+        "avg_latency_s": legacy_summary.get("avg_latency_s"),
+    }
+    v2_cases = [q.get("quality_v2") for q in qualities if q is not None]
+    if not all(isinstance(v, dict) for v in v2_cases):
+        return {"scoring": QUALITY_VERSION, "summary": v1_summary, "legacy": legacy_summary}
+    v2 = summarize_v2(v2_cases)
     return {
-        "scoring": QUALITY_VERSION,
+        "scoring": QUALITY_V2_VERSION,
         "summary": {
-            "points": int(round(quality["points"])),
-            "mechanism_points": int(round(quality.get("mechanism_points", quality["points"]))),
-            "product_correct": quality.get("product_correct", quality["targets_reached"]),
-            "products_hidden": bool(quality.get("products_hidden")),
-            "outcome": "pass" if quality["passed"] == quality["cases"] else "partial",
-            "components": quality["components"],
-            "cases": quality["cases"],
-            "targets_reached": quality["targets_reached"],
-            "passed": quality["passed"],
-            "valid_step_fraction": quality["valid_step_fraction"],
-            "avg_latency_s": legacy_summary.get("avg_latency_s"),
+            **v1_summary,
+            "points": int(round(v2["points"])),
+            "outcome": "pass" if v2["passed"] == v2["cases"] else "partial",
+            "passed": v2["passed"],
+            "axes": v2["axes"],
+            "step_quality": v2["step_quality"],
+            "polygon_area": v2["polygon_area"],
+            "failed_starts": v2["failed_starts"],
+            "failed_start_fraction": v2["failed_start_fraction"],
+            "fully_connected": v2["fully_connected"],
         },
+        "quality_v1": v1_summary,
         "legacy": legacy_summary,
     }
 
@@ -251,8 +288,9 @@ def _export_baseline_run(
             {
                 "case_id": str(result.get("case_id") or ""),
                 "quality_points": quality.get("points") if quality else None,
-                "quality_passed": bool(quality.get("passed")) if quality else None,
+                "quality_passed": bool(((quality or {}).get("quality_v2") or quality).get("passed")) if quality else None,
                 "valid_steps": f"{quality.get('valid_steps')}/{quality.get('step_count')}" if quality else None,
+                **_v2_case_fields(quality),
                 "score": round(float(score or 0.0), 4),
                 "target_reached": bool(breakdown.get("final_product_reached")),
                 "alignment": round(float(breakdown.get("known_alignment_component") or 0.0), 4),
@@ -392,9 +430,10 @@ def export_eval_run(
             "known_steps": known_steps,
             "accepted_steps": int(graded.get("accepted_path_step_count") or 0),
             "target_reached": bool(graded.get("final_product_reached")),
-            "passed": bool(quality.get("passed")) if quality else bool(graded.get("passed", result.get("pass_bool"))),
+            "passed": bool(((quality.get("quality_v2") or quality)).get("passed")) if quality else bool(graded.get("passed", result.get("pass_bool"))),
             "quality_points": quality.get("points") if quality else None,
             "valid_steps": f"{quality.get('valid_steps')}/{quality.get('step_count')}" if quality else None,
+            **_v2_case_fields(quality),
             "score": round(float(graded.get("score", result.get("score") or 0.0)), 4),
             "latency_s": round(latency / 1000.0, 1),
             "run_status": (snapshot or {}).get("status"),
@@ -558,11 +597,13 @@ def _anchor(record: Dict[str, Any]) -> str:
 
 
 def is_quality_record(record: Dict[str, Any]) -> bool:
-    return record.get("scoring") == QUALITY_VERSION
+    """Scored by the current rubric (``quality_v2``). ``quality_v1``-only records are listed with
+    the legacy scores until they are re-published."""
+    return record.get("scoring") == QUALITY_V2_VERSION
 
 
 def best_by_tier(records: Sequence[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Best quality_v1 harness record per tier (baselines, holdout and legacy-scored records excluded)."""
+    """Best quality_v2 harness record per tier (baselines, holdout and legacy-scored records excluded)."""
     best: Dict[str, Dict[str, Any]] = {}
     for record in records:
         tier = str(record.get("tier") or "")
@@ -620,39 +661,39 @@ COMPONENT_LABELS = {
     "intermolecular": "Intermolecular",
 }
 RUBRIC_TEXT = [
-    "Every mechanism, harness or harness-free baseline, is scored by the same `quality_v1` rubric "
-    "(`mechanistic_agent/quality_scoring.py`, [docs/scoring_quality_v1.md](docs/scoring_quality_v1.md)). Each accepted "
-    "step is re-checked with the same deterministic code whatever produced it. The target product is given in the "
-    "prompt, so reaching it earns no points: it is a gate (a mechanism that misses a target scores half and cannot "
-    "pass). There are no speed points.",
+    "Every mechanism, harness or harness-free baseline, is scored by the same `quality_v2` rubric "
+    "(`mechanistic_agent/quality_v2.py`, [docs/scoring_quality_v2.md](docs/scoring_quality_v2.md)). Each step is "
+    "re-checked with the same deterministic code whatever produced it, and every measure is one axis from 0 to 1:",
     "",
-    "| Component | Points | Earned by |",
-    "|---|---|---|",
-    "| Step validity | 250 | atom and charge balance, arrows that parse into a bond/electron change, SMIRKS that match the stated species, state progress |",
-    "| Sequence | 200 | heavy-atom events in the FlowER reference order; proton-shuttle choice is not penalized |",
-    "| Electron conservation | 100 | every step conserves electrons in the bond-electron matrix |",
-    "| Proton sources/sinks | 100 | protons move between explicit donors and acceptors (no bare H+); net protons close |",
-    "| Protonation states | 100 | no free strong base under acidic conditions, no free strong acid under basic conditions |",
-    "| Reagents & solvent | 100 | every species entering a step was supplied or made earlier; mass and charge close |",
-    "| Efficiency | 100 | no repeated or undone states, no heavy-atom steps beyond the reference |",
-    "| Intermolecular | 50 | proton transfers use an available shuttle (solvent, acid, base) rather than an intramolecular shift |",
+    "| Axis | Measures |",
+    "|---|---|",
+    "| Product correct | all targets reached (product given) or the main product in any protonation state (product hidden) |",
+    "| Step connectivity | each step starts where the path left off: no intermediate vanishes, no product or intermediate appears from nowhere (small species and solvents ignored) |",
+    "| Balanced, progressing | per step: atom and charge balance, and the state changes |",
+    "| Arrows + SMIRKS | per step: arrows parse into a bond/electron change and the SMIRKS matches the stated species |",
+    "| Electron conservation | per step: the mapped SMIRKS conserves electrons in the bond-electron matrix |",
+    "| Matches reference | heavy-atom events in the FlowER reference order (proton-shuttle agnostic) |",
     "",
-    "A case passes when every target is reached, every step is valid, the mechanism closes in mass and charge, "
-    "no state repeats, and it scores at least 700. Harness and baseline rows are compared at the same thinking level.",
-    "",
-    "**No-product rows** (the model had to predict the product): the main product, in any protonation state, is worth "
-    "300 points and the eight components share the other 700. The **Mechanism** column is always the eight components "
-    "on 1000 before any product gate or product points, so it compares directly between product-given and "
-    "no-product rows; per-component columns are shown on the 1000 scale too.",
+    "**Score** = 1000 × (0.2 · product + 0.3 · connectivity + 0.5 · step quality), where step quality is the mean of "
+    "the four step axes over the steps the mechanism made. Stopping early costs the product, not step quality; "
+    "reaching the product through disconnected steps costs more than the product earns. A mechanism with no step "
+    "(a **failed start**) scores 0 on every axis. **Area** is the radar polygon area (1 = perfect on every axis). "
+    "A case passes when it also passes `quality_v1` (product, every step valid, mass and charge close, no repeated "
+    "state), every step is connected, and it scores at least 700.",
 ]
 BASELINE_NOTE = (
     "Baselines make one full-mechanism call with no harness. Their steps are scored exactly like harness steps, "
-    "so an unbalanced or unparseable step costs the same."
+    "so an unbalanced, unparseable or disconnected step costs the same. `quality_v1` points stay in each record "
+    "(`quality_v1`) for reference."
 )
 
 
+def _pct(value: Any) -> str:
+    return f"{float(value or 0.0):.0%}"
+
+
 def _comparison_table(records: Sequence[Dict[str, Any]]) -> List[str]:
-    """Every quality_v1 record (harness and baseline), by tier then score."""
+    """Every quality_v2 record (harness and baseline), by tier then score."""
     rows = sorted(
         (r for r in records if is_quality_record(r)),
         key=lambda r: (
@@ -662,26 +703,22 @@ def _comparison_table(records: Sequence[Dict[str, Any]]) -> List[str]:
         ),
     )
     if not rows:
-        return ["No runs scored with `quality_v1` yet."]
-    header = "| Tier | Model | Mode | Thinking | Cases | Quality | Mechanism | Product | " + " | ".join(
-        COMPONENT_LABELS[k] for k in QUALITY_WEIGHTS
-    ) + " | Valid steps | Passed | Date | Record |"
-    lines = [header, "|" + "---|" * (13 + len(QUALITY_WEIGHTS))]
+        return ["No runs scored with `quality_v2` yet."]
+    header = "| Tier | Model | Mode | Thinking | Cases | Score | Area | Failed starts | " + " | ".join(
+        V2_AXIS_LABELS[k] for k in V2_AXES
+    ) + " | Passed | Date | Record |"
+    lines = [header, "|" + "---|" * (11 + len(V2_AXES))]
     for record in rows:
         s = record["summary"]
         mode = "baseline" if _is_baseline_record(record) else f"harness `{record.get('harness')}`"
-        hidden = bool(s.get("products_hidden"))
-        if hidden:
+        if s.get("products_hidden"):
             mode += " · no product"
-        scale = 1000.0 / (1000.0 - PRODUCT_POINTS) if hidden else 1.0  # components back on the 1000 scale
-        components = " | ".join(f"{float(s['components'].get(k, 0.0)) * scale:.0f}" for k in QUALITY_WEIGHTS)
-        product = f"{s.get('product_correct', s['targets_reached'])}/{s['cases']}" if hidden else "given"
+        axes = " | ".join(f"{float(s['axes'].get(k, 0.0)):.2f}" for k in V2_AXES)
         link = f"[json]({record['_path']})" if record.get("_path") else "—"
         lines.append(
             f"| {record.get('tier') or '—'} | {_model_label(record)} | {mode} | {record.get('thinking_level') or 'default'} | "
-            f"{s['cases']} | **{s['points']}** | {s.get('mechanism_points', s['points'])} | {product} | {components} | "
-            f"{s['valid_step_fraction']:.0%} | "
-            f"{s['passed']}/{s['cases']} | {record.get('date')} | {link} |"
+            f"{s['cases']} | **{s['points']}** | {float(s['polygon_area']):.2f} | {_pct(s['failed_start_fraction'])} | "
+            f"{axes} | {s['passed']}/{s['cases']} | {record.get('date')} | {link} |"
         )
     return lines
 
@@ -748,7 +785,7 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
         "",
         PAIRED_NOTE,
         "",
-        "All `quality_v1` runs:",
+        "All `quality_v2` runs:",
         "",
         *_comparison_table(records),
         "",
@@ -761,13 +798,16 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
     ]
     for record in ordered:
         s = record["summary"]
-        parts = ", ".join(f"{COMPONENT_LABELS[k].lower()} {float(s['components'].get(k, 0.0)):.0f}" for k in QUALITY_WEIGHTS)
+        parts = ", ".join(f"{V2_AXIS_LABELS[k].lower()} {float(s['axes'].get(k, 0.0)):.2f}" for k in V2_AXES)
         lines += [
             f'<a id="{_anchor(record)}"></a>',
             f"### {record.get('tier') or 'eval'} · {_model_label(record)} · {record.get('date')}",
             "",
-            f"- **{s['points']}/1000** — {parts}",
+            f"- **{s['points']}/1000** (area {float(s['polygon_area']):.2f}, failed starts "
+            f"{_pct(s['failed_start_fraction'])}) — {parts}",
             f"- Targets reached {s['targets_reached']}/{s['cases']}, passed {s['passed']}/{s['cases']}, "
+            f"fully connected {s.get('fully_connected', 0)}/{s['cases']}, `quality_v1` "
+            f"{(record.get('quality_v1') or {}).get('points', '—')}, "
             f"valid steps {s['valid_step_fraction']:.0%}, thinking `{record.get('thinking_level') or 'default'}`",
             f"- Model id `{record.get('model')}`, harness `{record.get('harness')}`, run group `{record.get('run_group')}`, eval run "
             f"`{record.get('eval_run_id')}`, commit `{record.get('git_commit')}` — [record]({record.get('_path')})",
@@ -777,12 +817,13 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
             lines.append(f"- Combined from resumed eval runs: {srcs}")
         lines.append("")
         if record.get("cases"):
-            lines += ["| Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |",
-                      "|---|---|---|---|---|---|---|"]
+            lines += ["| Case | Known steps | Accepted steps | Valid steps | Connected | Target | Passed | Score |",
+                      "|---|---|---|---|---|---|---|---|"]
             for case in record["cases"]:
                 q = case.get("quality_points")
                 lines.append(
                     f"| `{case['case_id']}` | {case['known_steps']} | {case['accepted_steps']} | {case.get('valid_steps') or '—'} | "
+                    f"{case.get('connected_steps') or '—'} | "
                     f"{'✓' if case['target_reached'] else '✗'} | {'✓' if case['passed'] else '✗'} | "
                     f"{f'{q:.0f}' if q is not None else '—'} |"
                 )
@@ -800,8 +841,8 @@ def render_leaderboard_markdown(records: Sequence[Dict[str, Any]]) -> str:
         f'<a id="{LEGACY_ANCHOR}"></a>',
         "## Legacy scores",
         "",
-        "Records published before `quality_v1`, or baselines run before their steps were saved, keep their old "
-        "numbers here. They are not comparable with the table above: harness rows used a Clawdiators-style "
+        "Records published before `quality_v2`, or baselines run before their steps were saved, keep their old "
+        "numbers here. They are not comparable with the tables above: harness rows used a Clawdiators-style "
         "1000-point rubric with product and speed points, and baseline rows used the mean case score × 1000.",
         "",
         *_legacy_table(records),
@@ -819,7 +860,7 @@ README_PAIRED_END = "<!-- harness-vs-baseline:end -->"
 
 
 def paired_comparisons(records: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Harness vs harness-free baseline on the same cases: quality_v1 records that share an eval set,
+    """Harness vs harness-free baseline on the same cases: quality_v2 records that share an eval set,
     product mode and thinking level, latest of each kind per group."""
     groups: Dict[tuple, Dict[str, Dict[str, Any]]] = {}
     for record in records:
@@ -837,7 +878,45 @@ def paired_comparisons(records: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]
         for key, kinds in groups.items()
         if "baseline" in kinds and "harness" in kinds
     ]
-    return sorted(pairs, key=lambda p: (p["harness"].get("tier") or "", p["products_hidden"], p["eval_set_id"]))
+    def family(pair: Dict[str, Any]) -> tuple:
+        key = _model_key(_effective_model(pair["harness"]))
+        return (next((i for i, f in enumerate(("opus", "sonnet", "haiku")) if f in key), 3), key)
+
+    return sorted(pairs, key=lambda p: (p["harness"].get("tier") or "", p["products_hidden"], p["eval_set_id"], family(p)))
+
+
+def radar_path(pair: Dict[str, Any]) -> Path:
+    h = pair["harness"]
+    name = (f"{_model_key(_effective_model(h))}_{(h.get('tier') or 'eval')}_{pair['eval_set_id'][:8]}_"
+            f"{'hidden' if pair['products_hidden'] else 'given'}_{pair['thinking_level']}")
+    return RADAR_DIR / f"{_slug(name)}.svg"
+
+
+def _radar_note(record: Dict[str, Any]) -> str:
+    s = record["summary"]
+    return (f"score {s['points']} · area {float(s['polygon_area']):.2f}\n"
+            f"failed starts {_pct(s['failed_start_fraction'])}")
+
+
+def write_radars(base_dir: Path, records: Sequence[Dict[str, Any]]) -> List[Path]:
+    """One radar SVG per harness/baseline pair (baseline orange, harness blue)."""
+    from mechanistic_agent.quality_radar import BASELINE_COLOR, HARNESS_COLOR, radar_svg
+
+    written: List[Path] = []
+    for pair in paired_comparisons(records):
+        b, h = pair["baseline"], pair["harness"]
+        title = (f"{_model_plain(h)} · {h['summary']['cases']} {h.get('tier') or ''} · product "
+                 f"{'hidden' if pair['products_hidden'] else 'given'} · {pair['thinking_level']} thinking")
+        svg = radar_svg(
+            [("One-shot baseline", BASELINE_COLOR, b["summary"]["axes"], _radar_note(b)),
+             ("Harness", HARNESS_COLOR, h["summary"]["axes"], _radar_note(h))],
+            title=title,
+        )
+        path = radar_path(pair)
+        (base_dir / path).parent.mkdir(parents=True, exist_ok=True)
+        (base_dir / path).write_text(svg, encoding="utf-8")
+        written.append(path)
+    return written
 
 
 def _paired_table(records: Sequence[Dict[str, Any]], *, link_prefix: str) -> List[str]:
@@ -845,35 +924,35 @@ def _paired_table(records: Sequence[Dict[str, Any]], *, link_prefix: str) -> Lis
     if not pairs:
         return ["No paired harness / baseline runs published yet."]
     lines = [
-        "| Cases | Product | Thinking | Model | One-shot baseline | Harness | Mechanism Δ |",
-        "|---|---|---|---|---|---|---|",
+        "| Cases | Product | Thinking | Model | Radar | One-shot baseline | Harness | Score Δ |",
+        "|---|---|---|---|---|---|---|---|",
     ]
 
     def cell(record: Dict[str, Any]) -> str:
         s = record["summary"]
-        product = f", product {s.get('product_correct', s['targets_reached'])}/{s['cases']}" if s.get("products_hidden") else ""
-        return (f"**{s['points']}** (mechanism {s.get('mechanism_points', s['points'])}{product}, "
-                f"pass {s['passed']}/{s['cases']})")
+        product = f"{s.get('product_correct', s['targets_reached'])}/{s['cases']}"
+        return (f"**{s['points']}**<br>area {float(s['polygon_area']):.2f}<br>"
+                f"failed starts {_pct(s['failed_start_fraction'])}<br>product {product}, "
+                f"pass {s['passed']}/{s['cases']}")
 
     for pair in pairs:
         b, h = pair["baseline"], pair["harness"]
-        delta = int(h["summary"].get("mechanism_points", h["summary"]["points"])) - int(
-            b["summary"].get("mechanism_points", b["summary"]["points"])
-        )
+        delta = int(h["summary"]["points"]) - int(b["summary"]["points"])
         label = f"{h['summary']['cases']} {h.get('tier') or ''} ({h.get('eval_set_name') or pair['eval_set_id'][:8]})".strip()
+        image = radar_path(pair).as_posix()
         lines.append(
             f"| {label} | {'hidden' if pair['products_hidden'] else 'given'} | {pair['thinking_level']} | "
-            f"{_model_label(h)} | {cell(b)} | {cell(h)} | {delta:+d} |"
+            f"{_model_label(h)} | <img src=\"{image}\" width=\"260\" alt=\"radar\"> | {cell(b)} | {cell(h)} | "
+            f"{delta:+d} |"
         )
     return lines
 
 
 PAIRED_NOTE = (
-    "Same cases, same model, same thinking level. **Mechanism** is the eight-component `quality_v1` score on "
-    "1000 (step validity, sequence, electron conservation, proton sources/sinks, protonation states, reagents, "
-    "efficiency, intermolecular shuttles) and compares across modes; with the product **hidden** the model must "
-    "also predict it, worth 300 of the 1000 points. A pass needs the product, every step valid, a mechanism that "
-    "closes in mass and charge, and ≥ 700."
+    "Same cases, same model, same thinking level. Radar: one-shot baseline orange, harness blue, on the six "
+    "`quality_v2` axes. **Score** is on 1000 (0.2 product + 0.3 step connectivity + 0.5 mean step quality); "
+    "**area** is the radar polygon area (1 = perfect); **failed starts** is the share of cases where the "
+    "mechanism made no step. With the product **hidden** the model also had to predict it."
 )
 
 
@@ -890,7 +969,7 @@ def render_readme_block(records: Sequence[Dict[str, Any]]) -> str:
             "",
             f"Hardest mechanism solved so far: [`{h['case_id']}`, a {h['known_steps']}-step mechanism "
             f"({hardest.get('tier')} tier, {_model_plain(hardest)})]({h['image']}). "
-            "Scored with the `quality_v1` rubric; harness vs baseline and legacy scores: [LEADERBOARD.md](LEADERBOARD.md).",
+            "Scored with the `quality_v2` rubric; harness vs baseline and legacy scores: [LEADERBOARD.md](LEADERBOARD.md).",
         ]
     lines += ["", PROVENANCE_NOTE]
     return "\n".join(lines)
@@ -907,8 +986,9 @@ def splice_block(text: str, start: str, end: str, block: str) -> str:
 def regenerate_boards(base_dir: Path) -> List[Path]:
     """Rewrite LEADERBOARD.md and the README leaderboard block from committed records."""
     records = load_records(base_dir)
+    written = write_radars(base_dir, records)
     (base_dir / LEADERBOARD_PATH).write_text(render_leaderboard_markdown(records), encoding="utf-8")
-    written = [LEADERBOARD_PATH]
+    written.append(LEADERBOARD_PATH)
     readme = base_dir / README_PATH
     if readme.exists():
         text = readme.read_text(encoding="utf-8")

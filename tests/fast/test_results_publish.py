@@ -70,8 +70,12 @@ _KNOWN = {"c_easy": 1, "c_hard": 4, "c_fail": 6}
 
 def _quality(points: float, passed: bool, reached: bool, valid: int, steps: int) -> Dict[str, Any]:
     components = {k: round(points * w / 1000.0, 1) for k, w in rp.QUALITY_WEIGHTS.items()}
+    v2 = {"version": rp.QUALITY_V2_VERSION, "points": points, "score": points / 1000.0, "passed": passed,
+          "axes": {k: points / 1000.0 for k in rp.V2_AXES}, "step_quality": points / 1000.0, "failed_start": False,
+          "step_count": steps, "all_connected": True,
+          "links": [{"step_index": i + 1, "connected": True} for i in range(steps)]}
     return {"version": rp.QUALITY_VERSION, "points": points, "passed": passed, "components": components,
-            "targets": {"all_reached": reached}, "valid_steps": valid, "step_count": steps}
+            "targets": {"all_reached": reached}, "valid_steps": valid, "step_count": steps, "quality_v2": v2}
 
 
 _QUALITY = {
@@ -108,12 +112,14 @@ def test_export_record_shape_scores_and_hardest_case() -> None:
     assert record["harness"] == "jev_reaction_type"
     assert record["tier"] == "hard"
     assert record["origin"]["declared_underlying_model"].startswith("claude-opus-5-5")
-    assert record["scoring"] == rp.QUALITY_VERSION
+    assert record["scoring"] == rp.QUALITY_V2_VERSION
     summary = record["summary"]
     assert (summary["cases"], summary["targets_reached"], summary["passed"]) == (3, 2, 2)
     assert summary["points"] == round((990 + 910 + 300) / 3)
     assert summary["valid_step_fraction"] == round(7 / 8, 4)
     assert set(summary["components"]) == set(rp.QUALITY_WEIGHTS)
+    assert set(summary["axes"]) == set(rp.V2_AXES) and summary["failed_starts"] == 0
+    assert record["quality_v1"]["points"] == round((990 + 910 + 300) / 3)
     # The old Clawdiators-style rubric survives only as the record's legacy block.
     assert record["legacy"]["points"] == graded_to_points(list(_GRADES.values()), [60_000, 120_000, 90_000])["total"]
     assert {c["case_id"]: c["quality_points"] for c in record["cases"]}["c_hard"] == 910.0
@@ -173,7 +179,7 @@ def test_regenerate_boards_is_idempotent_and_splices_readme(tmp_path: Path) -> N
     leaderboard, readme = first
     assert "| easy | **Claude Opus 5.5** | default | **940**/1000" in leaderboard
     assert "| hard | **Claude Opus 5.5** † | default | **823**/1000" in leaderboard
-    assert "quality_v1" in leaderboard and "Speed" not in leaderboard.split("## Legacy scores")[0]
+    assert "quality_v2" in leaderboard and "Speed" not in leaderboard.split("## Legacy scores")[0]
     assert "| medium | — |" in leaderboard
     assert readme.startswith("# Title\n\nIntro.") and readme.rstrip().endswith("Footer.")
     assert "old" not in readme and "LEADERBOARD.md#" in readme
@@ -382,13 +388,13 @@ def test_baseline_with_saved_steps_is_scored_like_a_harness_run(tmp_path: Path) 
         store.update_eval_run_result(result["id"], score=result["score"], passed=False, summary=summary)
 
     record = rp.export_eval_run(store, eval_run_id)
-    assert record["scoring"] == rp.QUALITY_VERSION
+    assert record["scoring"] == rp.QUALITY_V2_VERSION
     assert record["summary"]["points"] == 620 and record["summary"]["valid_step_fraction"] == round(6 / 9, 4)
     assert record["legacy"]["points"] == 400
     rp.write_record(record, tmp_path, render_image=False)
     board = rp.render_leaderboard_markdown(rp.load_records(tmp_path))
     comparison = board.split("## Harness vs harness-free baseline", 1)[1].split("## Published runs", 1)[0]
-    assert "| easy | **Claude Opus 4.6** | baseline | high | 3 | **620** | 620 | given |" in comparison
+    assert "| easy | **Claude Opus 4.6** | baseline | high | 3 | **620** | 0.38 | 0% |" in comparison
 
 
 def test_combined_runs_later_run_wins_per_case() -> None:
@@ -409,12 +415,13 @@ def test_combined_runs_later_run_wins_per_case() -> None:
 def test_paired_comparison_lines_up_harness_and_baseline_on_the_same_cases(tmp_path: Path) -> None:
     def record(kind: str, hidden: bool, points: int, mech: int, passed: int) -> Dict[str, Any]:
         rec: Dict[str, Any] = {
-            "schema": rp.RECORD_SCHEMA, "scoring": rp.QUALITY_VERSION, "eval_set_id": "set10", "eval_set_name": "hard10",
+            "schema": rp.RECORD_SCHEMA, "scoring": rp.QUALITY_V2_VERSION, "eval_set_id": "set10", "eval_set_name": "hard10",
             "tier": "hard", "thinking_level": "low", "model": "anthropic/claude-opus-5.5", "date": "2026-10-05",
             "run_group": f"{kind}_{hidden}", "eval_run_id": f"{kind}{hidden}", "harness": None if kind == "baseline" else "jev",
             "summary": {"points": points, "mechanism_points": mech, "products_hidden": hidden, "product_correct": 8,
                         "cases": 10, "targets_reached": 8, "passed": passed, "valid_step_fraction": 0.9,
-                        "components": {}},
+                        "components": {}, "axes": {k: points / 1000 for k in rp.V2_AXES},
+                        "polygon_area": (points / 1000) ** 2, "failed_start_fraction": 0.1 if kind == "harness" else 0.0},
         }
         if kind == "baseline":
             rec["kind"] = "baseline"
@@ -425,4 +432,9 @@ def test_paired_comparison_lines_up_harness_and_baseline_on_the_same_cases(tmp_p
     pairs = rp.paired_comparisons(records)
     assert [(p["products_hidden"], p["harness"]["summary"]["points"]) for p in pairs] == [(False, 916), (True, 895)]
     block = rp.render_paired_block(records)
-    assert "| hidden |" in block and "+89" in block and "+53" in block and "product 8/10" in block
+    assert "| hidden |" in block and "+32" in block and "+5" in block and "product 8/10" in block
+    assert "failed starts 10%" in block and "area 0.84" in block and 'src="results/radar/' in block
+    written = rp.write_radars(tmp_path, records)
+    assert len(written) == 2
+    svg = (tmp_path / written[0]).read_text()
+    assert svg.startswith("<svg") and "One-shot baseline" in svg and ">connectivity<" in svg

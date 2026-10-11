@@ -59,7 +59,10 @@ Every step's engine and model are recorded by the actual engine, not the run's c
 
 Embedding (no HTTP): `mechanistic_agent.runtime.EmbeddedMechanismRuntime(base_dir, work_dir, event_sink)` — `create_run(dict)`, blocking `execute(run_id, stop_event=)`, `observatory(run_id)`, `manifest()`. `RunStore(db_path, event_sink=callable)` mirrors every event (after commit, `list_events` row shape) so a host product can keep the durable log; `create_app(base, db_path=, event_sink=)` passes both through and exposes `app.state.store/coordinator/run_manager/registry`.
 
-## Mechanism Quality Rubric (`quality_v1`)
+## Mechanism Quality Rubric (`quality_v2`, built on `quality_v1`)
+
+- **Published score is `quality_v2`** (`mechanistic_agent/quality_v2.py`, [docs/scoring_quality_v2.md](docs/scoring_quality_v2.md)): six 0–1 axes (product correct, step connectivity, balanced+progressing, arrows+SMIRKS, electron conservation, matches reference), `score = 1000 × (0.2·product + 0.3·connectivity + 0.5·mean step quality)`, step axes averaged over the steps made, 0-step cases count 0 everywhere and are reported as failed starts. Connectivity ignores ≤1-heavy-atom species and inert solvents, compares by neutral parent, and breaks a link when a path-made species vanishes or a species appears that is neither in the starting pool nor made earlier. `score_snapshot_quality` attaches it as `quality["quality_v2"]`; records carry `scoring: quality_v2`, `summary.axes/polygon_area/failed_starts`, and keep the v1 summary under `quality_v1`. The paired harness-vs-baseline section renders one radar SVG per pair to `results/radar/`.
+- The `quality_v1` details below still compute every step check that v2 reuses.
 
 - **One score for every run type.** Harness and harness-free baseline runs, API or bridge, get one 1000-point score from `mechanistic_agent/quality_scoring.py` ([docs/scoring_quality_v1.md](docs/scoring_quality_v1.md)). It is computed from the accepted path alone (states, SMIRKS, arrows), with the same deterministic checks for every run type.
 - **Components:**
@@ -81,7 +84,7 @@ Embedding (no HTTP): `mechanistic_agent.runtime.EmbeddedMechanismRuntime(base_di
   - The main product, in any protonation state, earns 300 points, and the eight components share the other 700.
   - `mechanism_points` (the eight components on 1000, before any product gate or product points) and `product_correct` compare runs across modes.
 - **Where it's stored:** `eval` / `baseline` and the API runsets store `summary.quality` per case. Baselines also store `baseline_steps`, so they can be re-scored. `rescore-quality --eval-run-id <id> [--apply]` scores stored runs.
-- **Publishing:** records get `scoring: quality_v1`, with the old numbers kept under `legacy`. Records that cannot be re-checked stay `scoring: legacy` and render under **Legacy scores**. The DB case score (`scoring_version` v1–v3) is unchanged and still drives the internal dev leaderboard.
+- **Publishing:** records get `scoring: quality_v2` (v1 summary under `quality_v1`), with the old numbers kept under `legacy`. Records still at `scoring: quality_v1` render under **Legacy scores** until re-published. Records that cannot be re-checked stay `scoring: legacy` and render under **Legacy scores**. The DB case score (`scoring_version` v1–v3) is unchanged and still drives the internal dev leaderboard.
 - **Thinking parity:** compare harness and baseline at the same `--thinking-level`. Bridge runs dispatch to `.claude/agents/bridge-model-<level>.md` (`effort` frontmatter), or set `RESPONDER_EFFORT` for the headless responder.
 
 ## Published Results and the Public Leaderboard

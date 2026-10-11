@@ -1,0 +1,559 @@
+{
+  "schema": "wiggum.published_eval_run@1",
+  "eval_run_id": "1e2017aa669d4b68bc44bf25d9a6cdd7",
+  "run_group": "haiku55_jev_hard10_hidden_flower_020948+resumed",
+  "date": "2026-10-11",
+  "model": "agent-bridge",
+  "thinking_level": "low",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-haiku-5-5",
+    "notes": "fresh blind Claude Code subagent (Haiku 5.5, low effort) per call; sees only model_input",
+    "responder": "agent-bridge",
+    "responder_integrity": {
+      "audited_at": 1791721270.741004,
+      "auditor": "scripts/bridge_responder.py audit",
+      "calls_audited": 9,
+      "calls_by_verdict": {
+        "clean": 9,
+        "contaminated": 0,
+        "procedural": 0,
+        "unaudited": 0
+      },
+      "status": "clean",
+      "violations": []
+    },
+    "responder_kind": "orchestrator_subagents",
+    "responder_saw_ground_truth": false
+  },
+  "harness": "jev_reaction_type",
+  "harness_bundle_hash": "5e82f1087e2d812294db9e37e4f3f68c45a4ca299f1e71b3d1cae657a842e388",
+  "tier": "hard",
+  "eval_set_id": "4d5405b940884e469c01a9fdef161b80",
+  "eval_set_name": "trial_quality_v1_hard10",
+  "case_ids_hash": null,
+  "holdout": false,
+  "scoring_version": "v3",
+  "git_commit": "c8eb689",
+  "sources": [
+    {
+      "eval_run_id": "bedb62bf720f4d23afe591f6ea0cad89",
+      "run_group": "haiku55_jev_hard10_hidden_flower_020948",
+      "cases": [
+        "flower_020948"
+      ]
+    },
+    {
+      "eval_run_id": "ebb6923fc59c461782b2fc805caa98e9",
+      "run_group": "haiku55_jev_hard10_hidden_flower_043864",
+      "cases": [
+        "flower_043864"
+      ]
+    },
+    {
+      "eval_run_id": "7d7fbf6c36924579a6fe0c4526ff45f5",
+      "run_group": "haiku55_jev_hard10_hidden_flower_047524",
+      "cases": [
+        "flower_047524"
+      ]
+    },
+    {
+      "eval_run_id": "bacdb2f61f7948d78ec9904538b66493",
+      "run_group": "haiku55_jev_hard10_hidden_flower_067880",
+      "cases": [
+        "flower_067880"
+      ]
+    },
+    {
+      "eval_run_id": "6d6f93997db64d0bbef6e2b6aa8d26be",
+      "run_group": "haiku55_jev_hard10_hidden_flower_067967",
+      "cases": [
+        "flower_067967"
+      ]
+    },
+    {
+      "eval_run_id": "40d12d2e8e18465f8bb1b78ffb9ca68e",
+      "run_group": "haiku55_jev_hard10_hidden_flower_074675",
+      "cases": [
+        "flower_074675"
+      ]
+    },
+    {
+      "eval_run_id": "a00bb412165e413780ed952ee7d6e5b7",
+      "run_group": "haiku55_jev_hard10_hidden_flower_119187",
+      "cases": [
+        "flower_119187"
+      ]
+    },
+    {
+      "eval_run_id": "236730bf6f3b429593aa91845850c51d",
+      "run_group": "haiku55_jev_hard10_hidden_flower_155662",
+      "cases": [
+        "flower_155662"
+      ]
+    },
+    {
+      "eval_run_id": "292dfb4c277e4572b7b68787893f35a8",
+      "run_group": "haiku55_jev_hard10_hidden_flower_177337",
+      "cases": [
+        "flower_177337"
+      ]
+    },
+    {
+      "eval_run_id": "1e2017aa669d4b68bc44bf25d9a6cdd7",
+      "run_group": "haiku55_jev_hard10_hidden_flower_253626",
+      "cases": [
+        "flower_253626"
+      ]
+    }
+  ],
+  "scoring": "quality_v2",
+  "summary": {
+    "points": 649,
+    "mechanism_points": 704,
+    "product_correct": 4,
+    "products_hidden": true,
+    "outcome": "partial",
+    "components": {
+      "step_validity": 132.7,
+      "sequence": 77.8,
+      "electron_conservation": 44.9,
+      "proton_bookkeeping": 49.0,
+      "protonation_states": 54.2,
+      "reagents_and_solvent": 51.8,
+      "efficiency": 54.6,
+      "intermolecular": 28.0,
+      "product": 120.0
+    },
+    "cases": 10,
+    "targets_reached": 4,
+    "passed": 2,
+    "valid_step_fraction": 0.8077,
+    "avg_latency_s": 820.5,
+    "axes": {
+      "product": 0.4,
+      "connectivity": 0.8,
+      "balance": 0.7417,
+      "notation": 0.6917,
+      "electrons": 0.6417,
+      "sequence": 0.5556
+    },
+    "step_quality": 0.6576,
+    "polygon_area": 0.4082,
+    "failed_starts": 2,
+    "failed_start_fraction": 0.2,
+    "fully_connected": 8
+  },
+  "quality_v1": {
+    "points": 613,
+    "mechanism_points": 704,
+    "product_correct": 4,
+    "products_hidden": true,
+    "outcome": "partial",
+    "components": {
+      "step_validity": 132.7,
+      "sequence": 77.8,
+      "electron_conservation": 44.9,
+      "proton_bookkeeping": 49.0,
+      "protonation_states": 54.2,
+      "reagents_and_solvent": 51.8,
+      "efficiency": 54.6,
+      "intermolecular": 28.0,
+      "product": 120.0
+    },
+    "cases": 10,
+    "targets_reached": 4,
+    "passed": 2,
+    "valid_step_fraction": 0.8077,
+    "avg_latency_s": 820.5
+  },
+  "legacy": {
+    "points": 533,
+    "outcome": "DRAW",
+    "breakdown": {
+      "product": 120,
+      "pathway": 167,
+      "push": 146,
+      "speed": 0,
+      "methodology": 100
+    },
+    "cases": 10,
+    "targets_reached": 4,
+    "passed": 2,
+    "mean_score": 0.6198,
+    "avg_latency_s": 820.5
+  },
+  "cases": [
+    {
+      "case_id": "flower_020948",
+      "known_steps": 9,
+      "accepted_steps": 0,
+      "target_reached": false,
+      "passed": false,
+      "quality_points": 0.0,
+      "valid_steps": "None/None",
+      "quality_v1_points": 0,
+      "axes": {
+        "product": 0.0,
+        "connectivity": 0.0,
+        "balance": 0.0,
+        "notation": 0.0,
+        "electrons": 0.0,
+        "sequence": 0.0
+      },
+      "failed_start": true,
+      "connected_steps": "0/0",
+      "broken_links": [],
+      "score": 0.2,
+      "latency_s": 677.7,
+      "run_status": "paused"
+    },
+    {
+      "case_id": "flower_043864",
+      "known_steps": 7,
+      "accepted_steps": 1,
+      "target_reached": false,
+      "passed": false,
+      "quality_points": 800.0,
+      "valid_steps": "1/1",
+      "quality_v1_points": 645.4,
+      "axes": {
+        "product": 0.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "1/1",
+      "broken_links": [],
+      "score": 0.55,
+      "latency_s": 794.0,
+      "run_status": "failed"
+    },
+    {
+      "case_id": "flower_047524",
+      "known_steps": 6,
+      "accepted_steps": 4,
+      "target_reached": true,
+      "passed": false,
+      "quality_points": 901.6,
+      "valid_steps": "2/4",
+      "quality_v1_points": 923.9,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 0.5,
+        "electrons": 1.0,
+        "sequence": 0.7125
+      },
+      "failed_start": false,
+      "connected_steps": "4/4",
+      "broken_links": [],
+      "score": 0.9019,
+      "latency_s": 1016.6,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_067880",
+      "known_steps": 8,
+      "accepted_steps": 5,
+      "target_reached": false,
+      "passed": false,
+      "quality_points": 738.8,
+      "valid_steps": "5/5",
+      "quality_v1_points": 631.4,
+      "axes": {
+        "product": 0.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 0.51
+      },
+      "failed_start": false,
+      "connected_steps": "5/5",
+      "broken_links": [],
+      "score": 0.55,
+      "latency_s": 1191.8,
+      "run_status": "paused"
+    },
+    {
+      "case_id": "flower_067967",
+      "known_steps": 10,
+      "accepted_steps": 1,
+      "target_reached": false,
+      "passed": false,
+      "quality_points": 593.8,
+      "valid_steps": "1/1",
+      "quality_v1_points": 539.0,
+      "axes": {
+        "product": 0.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 0.0,
+        "sequence": 0.35
+      },
+      "failed_start": false,
+      "connected_steps": "1/1",
+      "broken_links": [],
+      "score": 0.55,
+      "latency_s": 546.7,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_074675",
+      "known_steps": 5,
+      "accepted_steps": 4,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 937.5,
+      "valid_steps": "4/4",
+      "quality_v1_points": 947.5,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 0.75,
+        "sequence": 0.75
+      },
+      "failed_start": false,
+      "connected_steps": "4/4",
+      "broken_links": [],
+      "score": 0.92,
+      "latency_s": 949.2,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_119187",
+      "known_steps": 6,
+      "accepted_steps": 4,
+      "target_reached": true,
+      "passed": true,
+      "quality_points": 1000.0,
+      "valid_steps": "4/4",
+      "quality_v1_points": 1000.0,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "4/4",
+      "broken_links": [],
+      "score": 0.8738,
+      "latency_s": 893.5,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_155662",
+      "known_steps": 5,
+      "accepted_steps": 4,
+      "target_reached": true,
+      "passed": false,
+      "quality_points": 906.2,
+      "valid_steps": "3/4",
+      "quality_v1_points": 922.9,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 0.75,
+        "notation": 0.75,
+        "electrons": 1.0,
+        "sequence": 0.75
+      },
+      "failed_start": false,
+      "connected_steps": "4/4",
+      "broken_links": [],
+      "score": 0.9025,
+      "latency_s": 952.5,
+      "run_status": "completed"
+    },
+    {
+      "case_id": "flower_177337",
+      "known_steps": 8,
+      "accepted_steps": 3,
+      "target_reached": false,
+      "passed": false,
+      "quality_points": 610.4,
+      "valid_steps": "1/3",
+      "quality_v1_points": 520.6,
+      "axes": {
+        "product": 0.0,
+        "connectivity": 1.0,
+        "balance": 0.6667,
+        "notation": 0.6667,
+        "electrons": 0.6667,
+        "sequence": 0.4833
+      },
+      "failed_start": false,
+      "connected_steps": "3/3",
+      "broken_links": [],
+      "score": 0.55,
+      "latency_s": 901.7,
+      "run_status": "paused"
+    },
+    {
+      "case_id": "flower_253626",
+      "known_steps": 7,
+      "accepted_steps": 0,
+      "target_reached": false,
+      "passed": false,
+      "quality_points": 0.0,
+      "valid_steps": "None/None",
+      "quality_v1_points": 0,
+      "axes": {
+        "product": 0.0,
+        "connectivity": 0.0,
+        "balance": 0.0,
+        "notation": 0.0,
+        "electrons": 0.0,
+        "sequence": 0.0
+      },
+      "failed_start": true,
+      "connected_steps": "0/0",
+      "broken_links": [],
+      "score": 0.2,
+      "latency_s": 281.4,
+      "run_status": "paused"
+    }
+  ],
+  "hardest_solved": {
+    "case_id": "flower_119187",
+    "known_steps": 6,
+    "accepted_steps": 4,
+    "score": 0.8738,
+    "starting_materials": [
+      "O=C(O)C(F)(F)F",
+      "CC(C)(C)OC(=O)N1CC(N)C(n2ccnn2)C1"
+    ],
+    "products": [
+      "O=C=O",
+      "C=C(C)C",
+      "O=C(O)C(F)(F)F",
+      "NC1CNCC1n1ccnn1"
+    ],
+    "steps": [
+      {
+        "step_index": 1,
+        "current_state": [
+          "O=C(O)C(F)(F)F",
+          "CC(C)(C)OC(=O)N1CC(N)C(n2ccnn2)C1"
+        ],
+        "resulting_state": [
+          "CC(C)(C)OC(=[OH+])N1CC(N)C(n2ccnn2)C1",
+          "O=C([O-])C(F)(F)F"
+        ],
+        "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH3:4])[O:7][C:8](=[O:5])[N:9].[OH:6][C:10](=[O:11])[C:12](F)(F)F>>[CH3:1][C:2]([CH3:3])([CH3:4])[O:7][C:8](=[OH+:5])[N:9].[O-:6][C:10](=[O:11])[C:12](F)(F)F",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:5>6",
+            "source_atom": "5",
+            "target_atom": "6"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 2,
+        "current_state": [
+          "CC(C)(C)OC(=[OH+])N1CC(N)C(n2ccnn2)C1",
+          "O=C([O-])C(F)(F)F"
+        ],
+        "resulting_state": [
+          "NC1CN(C(=O)O)CC1n1ccnn1",
+          "C=C(C)C",
+          "O=C(O)C(F)(F)F"
+        ],
+        "reaction_smirks": "[CH3:1][C:2]([CH3:3])([CH3:4])[O:5][C:6](=[OH+:7])N1CC(N)C(n2ccnn2)C1.[O-:9]C(=O)C(F)(F)F>>[CH2:1]=[C:2]([CH3:3])[CH3:4].[OH:5][C:6](=[O:7])N1CC(N)C(n2ccnn2)C1.[OH:9]C(=O)C(F)(F)F",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:2-5>5",
+            "source_bond": [
+              "2",
+              "5"
+            ],
+            "target_atom": "5",
+            "through_atom": "5"
+          },
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:9>2",
+            "source_atom": "9",
+            "target_atom": "2"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 3,
+        "current_state": [
+          "NC1CN(C(=O)O)CC1n1ccnn1",
+          "C=C(C)C",
+          "O=C(O)C(F)(F)F"
+        ],
+        "resulting_state": [
+          "NC1CNCC1n1ccnn1",
+          "O=C=O",
+          "C=C(C)C",
+          "O=C(O)C(F)(F)F"
+        ],
+        "reaction_smirks": "[C:1][N:2][C:3](=[O:4])[OH:5]>>[C:1][NH:2].[C:3](=[O:4])=[O:5]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "sigma_bond",
+            "notation": "sigma:3-2>2",
+            "source_bond": [
+              "3",
+              "2"
+            ],
+            "target_atom": "2",
+            "through_atom": "2"
+          }
+        ],
+        "acceptance_kind": "validated"
+      },
+      {
+        "step_index": 4,
+        "current_state": [
+          "NC1CNCC1n1ccnn1",
+          "O=C=O",
+          "C=C(C)C",
+          "O=C(O)C(F)(F)F"
+        ],
+        "resulting_state": [
+          "NC1C[NH2+]CC1n1ccnn1",
+          "O=C([O-])C(F)(F)F",
+          "O=C=O",
+          "C=C(C)C"
+        ],
+        "reaction_smirks": "[NH:4].[OH:12][C:13](=[O:14])[C:15]([F:16])([F:17])[F:18]>>[NH2+:4].[O-:12][C:13](=[O:14])[C:15]([F:16])([F:17])[F:18]",
+        "electron_pushes": [
+          {
+            "electrons": 2,
+            "kind": "lone_pair",
+            "notation": "lp:4>12",
+            "source_atom": "4",
+            "target_atom": "12"
+          }
+        ],
+        "acceptance_kind": "validated"
+      }
+    ],
+    "image": "results/mechanisms/haiku55_jev_hard10_hidden_flower_020948_resumed__flower_119187.png"
+  }
+}
