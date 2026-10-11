@@ -39,7 +39,9 @@ Paired runs (same cases, model and thinking level):
 | Cases | Product | Thinking | Model | One-shot baseline | Harness | Mechanism Δ |
 |---|---|---|---|---|---|---|
 | 10 hard (trial_quality_v1_hard10) | given | low | **Claude Opus 5.5** † | **911** (mechanism 911, pass 7/10) | **916** (mechanism 964, pass 7/10) | +53 |
+| 10 hard (trial_quality_v1_hard10) | given | low | **Claude Sonnet 5.5** † | **762** (mechanism 796, pass 1/10) | **848** (mechanism 940, pass 5/10) | +144 |
 | 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Opus 5.5** † | **863** (mechanism 847, product 9/10, pass 2/10) | **895** (mechanism 936, product 8/10, pass 4/10) | +89 |
+| 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Sonnet 5.5** † | **781** (mechanism 773, product 8/10, pass 1/10) | **828** (mechanism 839, product 8/10, pass 4/10) | +66 |
 
 Same cases, same model, same thinking level. **Mechanism** is the eight-component `quality_v1` score on 1000 (step validity, sequence, electron conservation, proton sources/sinks, protonation states, reagents, efficiency, intermolecular shuttles) and compares across modes; with the product **hidden** the model must also predict it, worth 300 of the 1000 points. A pass needs the product, every step valid, a mechanism that closes in mass and charge, and ≥ 700.
 
@@ -57,6 +59,10 @@ All `quality_v1` runs:
 | hard | **Claude Opus 5.5** † | baseline | low | 10 | **911** | 911 | given | 241 | 160 | 91 | 89 | 94 | 90 | 100 | 46 | 86% | 7/10 | 2026-10-05 | [json](results/runs/2026-10-05_harness_free_baseline_claude-opus-5-5_81593488.json) |
 | hard | **Claude Opus 5.5** † | harness `jev_reaction_type` · no product | low | 10 | **895** | 936 | 8/10 | 248 | 170 | 100 | 80 | 100 | 89 | 100 | 49 | 96% | 4/10 | 2026-10-05 | [json](results/runs/2026-10-05_trial_q5_harness_low_noprod_resumed.json) |
 | hard | **Claude Opus 5.5** † | baseline · no product | low | 10 | **863** | 847 | 9/10 | 242 | 153 | 87 | 58 | 94 | 68 | 98 | 46 | 89% | 2/10 | 2026-10-05 | [json](results/runs/2026-10-05_harness_free_baseline_no_product_claude-opus-5-5_064f00ba.json) |
+| hard | **Claude Sonnet 5.5** † | harness `jev_reaction_type` | low | 10 | **848** | 940 | given | 247 | 168 | 98 | 85 | 100 | 92 | 100 | 50 | 94% | 5/10 | 2026-10-10 | [json](results/runs/2026-10-10_sonnet55_harn_given.json) |
+| hard | **Claude Sonnet 5.5** † | harness `jev_reaction_type` · no product | low | 10 | **828** | 839 | 8/10 | 223 | 152 | 90 | 70 | 90 | 79 | 90 | 45 | 95% | 4/10 | 2026-10-10 | [json](results/runs/2026-10-10_sonnet55_harn_hidden.json) |
+| hard | **Claude Sonnet 5.5** † | baseline · no product | low | 10 | **781** | 773 | 8/10 | 174 | 163 | 35 | 72 | 97 | 86 | 100 | 45 | 22% | 1/10 | 2026-10-10 | [json](results/runs/2026-10-10_harness_free_baseline_no_product_claude-sonnet-5-5_bdb3b3d0.json) |
+| hard | **Claude Sonnet 5.5** † | baseline | low | 10 | **762** | 796 | given | 156 | 163 | 33 | 100 | 100 | 100 | 98 | 46 | 8% | 1/10 | 2026-10-10 | [json](results/runs/2026-10-10_harness_free_baseline_claude-sonnet-5-5_56a80975.json) |
 
 Baselines make one full-mechanism call with no harness. Their steps are scored exactly like harness steps, so an unbalanced or unparseable step costs the same.
 
@@ -258,6 +264,54 @@ Hardest mechanism solved: `flower_020948` — reference 9 steps, predicted 9 ste
 Hardest mechanism solved: `flower_119187` — reference 6 steps, predicted 7 steps
 
 ![flower_119187](results/mechanisms/trial_q5_harness_low_noprod_resumed__flower_119187.png)
+
+<a id="2026-10-10-sonnet55-harn-given"></a>
+### hard · **Claude Sonnet 5.5** † · 2026-10-10
+
+- **848/1000** — step validity 247, sequence 168, electron conservation 98, proton sources/sinks 85, protonation states 100, reagents & solvent 92, efficiency 100, intermolecular 50
+- Targets reached 8/10, passed 5/10, valid steps 94%, thinking `low`
+- Model id `anthropic/claude-sonnet-5.5`, harness `jev_reaction_type`, run group `sonnet55_harn_given`, eval run `26618d7639a24a13b1534a42f0e7bdfa`, commit `f37fb59` — [record](results/runs/2026-10-10_sonnet55_harn_given.json)
+
+| Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |
+|---|---|---|---|---|---|---|
+| `flower_020948` | 9 | 4 | 4/4 | ✗ | ✗ | 466 |
+| `flower_043864` | 7 | 5 | 4/5 | ✓ | ✗ | 854 |
+| `flower_047524` | 6 | 4 | 4/4 | ✓ | ✓ | 1000 |
+| `flower_067880` | 8 | 8 | 7/8 | ✓ | ✗ | 914 |
+| `flower_067967` | 10 | 2 | 2/2 | ✗ | ✗ | 445 |
+| `flower_074675` | 5 | 5 | 5/5 | ✓ | ✓ | 1000 |
+| `flower_119187` | 6 | 4 | 4/4 | ✓ | ✓ | 1000 |
+| `flower_155662` | 5 | 5 | 5/5 | ✓ | ✓ | 1000 |
+| `flower_177337` | 8 | 7 | 6/7 | ✓ | ✗ | 823 |
+| `flower_253626` | 7 | 6 | 6/6 | ✓ | ✓ | 983 |
+
+Hardest mechanism solved: `flower_253626` — reference 7 steps, predicted 6 steps
+
+![flower_253626](results/mechanisms/sonnet55_harn_given__flower_253626.png)
+
+<a id="2026-10-10-sonnet55-harn-hidden"></a>
+### hard · **Claude Sonnet 5.5** † · 2026-10-10
+
+- **828/1000** — step validity 156, sequence 107, electron conservation 63, proton sources/sinks 49, protonation states 63, reagents & solvent 55, efficiency 63, intermolecular 32
+- Targets reached 8/10, passed 4/10, valid steps 95%, thinking `low`
+- Model id `anthropic/claude-sonnet-5.5`, harness `jev_reaction_type`, run group `sonnet55_harn_hidden`, eval run `a6b823d077484229bb095eaeb8bd7b07`, commit `f37fb59` — [record](results/runs/2026-10-10_sonnet55_harn_hidden.json)
+
+| Case | Known steps | Accepted steps | Valid steps | Target | Passed | Quality |
+|---|---|---|---|---|---|---|
+| `flower_020948` | 9 | 0 | None/None | ✗ | ✗ | 0 |
+| `flower_043864` | 7 | 4 | 4/4 | ✓ | ✗ | 928 |
+| `flower_047524` | 6 | 4 | 4/4 | ✓ | ✓ | 1000 |
+| `flower_067880` | 8 | 6 | 5/6 | ✓ | ✗ | 901 |
+| `flower_067967` | 10 | 1 | 1/1 | ✗ | ✗ | 609 |
+| `flower_074675` | 5 | 5 | 5/5 | ✓ | ✓ | 1000 |
+| `flower_119187` | 6 | 4 | 4/4 | ✓ | ✓ | 1000 |
+| `flower_155662` | 5 | 5 | 5/5 | ✓ | ✓ | 1000 |
+| `flower_177337` | 8 | 8 | 7/8 | ✓ | ✗ | 892 |
+| `flower_253626` | 7 | 6 | 6/6 | ✓ | ✗ | 945 |
+
+Hardest mechanism solved: `flower_047524` — reference 6 steps, predicted 4 steps
+
+![flower_047524](results/mechanisms/sonnet55_harn_hidden__flower_047524.png)
 
 <a id="legacy-scores"></a>
 ## Legacy scores
