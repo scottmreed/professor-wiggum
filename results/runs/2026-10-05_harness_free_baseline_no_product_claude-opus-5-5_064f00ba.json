@@ -21,9 +21,45 @@
   "case_ids_hash": "52df89b8e9ebb1bff10acec6ec78a2f7e554dda468d4c3268cd3a0020336eabb",
   "holdout": false,
   "scoring_version": "v3",
-  "git_commit": "b715781",
-  "scoring": "quality_v1",
+  "git_commit": "c8eb689",
+  "scoring": "quality_v2",
   "summary": {
+    "points": 900,
+    "mechanism_points": 847,
+    "product_correct": 9,
+    "products_hidden": true,
+    "outcome": "partial",
+    "components": {
+      "step_validity": 169.5,
+      "sequence": 106.8,
+      "electron_conservation": 61.0,
+      "proton_bookkeeping": 40.6,
+      "protonation_states": 65.8,
+      "reagents_and_solvent": 47.9,
+      "efficiency": 68.6,
+      "intermolecular": 32.5,
+      "product": 270.0
+    },
+    "cases": 10,
+    "targets_reached": 9,
+    "passed": 2,
+    "valid_step_fraction": 0.8868,
+    "avg_latency_s": 26.4,
+    "axes": {
+      "product": 0.9,
+      "connectivity": 0.9375,
+      "balance": 0.9107,
+      "notation": 0.9625,
+      "electrons": 0.8714,
+      "sequence": 0.7631
+    },
+    "step_quality": 0.877,
+    "polygon_area": 0.7941,
+    "failed_starts": 0,
+    "failed_start_fraction": 0.0,
+    "fully_connected": 7
+  },
+  "quality_v1": {
     "points": 863,
     "mechanism_points": 847,
     "product_correct": 9,
@@ -59,9 +95,29 @@
   "cases": [
     {
       "case_id": "flower_020948",
-      "quality_points": 462.6,
+      "quality_points": 475.0,
       "quality_passed": false,
       "valid_steps": "2/4",
+      "quality_v1_points": 462.6,
+      "axes": {
+        "product": 0.0,
+        "connectivity": 0.75,
+        "balance": 0.5,
+        "notation": 1.0,
+        "electrons": 0.0,
+        "sequence": 0.5
+      },
+      "failed_start": false,
+      "connected_steps": "3/4",
+      "broken_links": [
+        {
+          "step_index": 2,
+          "connected": false,
+          "vanished": [
+            "COc1cc(OC)cc([Pd](I)[PH](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1"
+          ]
+        }
+      ],
       "score": 0.36,
       "target_reached": false,
       "alignment": 0.5,
@@ -73,9 +129,21 @@
     },
     {
       "case_id": "flower_043864",
-      "quality_points": 918.8,
+      "quality_points": 976.3,
       "quality_passed": false,
       "valid_steps": "5/5",
+      "quality_v1_points": 918.8,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 0.81
+      },
+      "failed_start": false,
+      "connected_steps": "5/5",
+      "broken_links": [],
       "score": 0.5575,
       "target_reached": true,
       "alignment": 0.81,
@@ -87,9 +155,29 @@
     },
     {
       "case_id": "flower_047524",
-      "quality_points": 885.5,
+      "quality_points": 871.9,
       "quality_passed": false,
       "valid_steps": "3/4",
+      "quality_v1_points": 885.5,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 0.75,
+        "balance": 1.0,
+        "notation": 0.75,
+        "electrons": 1.0,
+        "sequence": 0.825
+      },
+      "failed_start": false,
+      "connected_steps": "3/4",
+      "broken_links": [
+        {
+          "step_index": 3,
+          "connected": false,
+          "vanished": [
+            "CC1NOc2c1ccc(F)c2NC(=O)O"
+          ]
+        }
+      ],
       "score": 0.4412,
       "target_reached": false,
       "alignment": 0.825,
@@ -101,9 +189,21 @@
     },
     {
       "case_id": "flower_067880",
-      "quality_points": 894.2,
+      "quality_points": 950.9,
       "quality_passed": false,
       "valid_steps": "6/7",
+      "quality_v1_points": 894.2,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 0.8571,
+        "notation": 1.0,
+        "electrons": 0.8571,
+        "sequence": 0.8929
+      },
+      "failed_start": false,
+      "connected_steps": "7/7",
+      "broken_links": [],
       "score": 0.6582,
       "target_reached": true,
       "alignment": 0.8929,
@@ -115,9 +215,21 @@
     },
     {
       "case_id": "flower_067967",
-      "quality_points": 876.4,
+      "quality_points": 929.5,
       "quality_passed": false,
       "valid_steps": "7/7",
+      "quality_v1_points": 876.4,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 0.8571,
+        "sequence": 0.5786
+      },
+      "failed_start": false,
+      "connected_steps": "7/7",
+      "broken_links": [],
       "score": 0.4463,
       "target_reached": true,
       "alignment": 0.5786,
@@ -129,9 +241,21 @@
     },
     {
       "case_id": "flower_074675",
-      "quality_points": 879.6,
+      "quality_points": 968.8,
       "quality_passed": false,
       "valid_steps": "5/5",
+      "quality_v1_points": 879.6,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 0.75
+      },
+      "failed_start": false,
+      "connected_steps": "5/5",
+      "broken_links": [],
       "score": 0.6225,
       "target_reached": true,
       "alignment": 0.75,
@@ -146,6 +270,18 @@
       "quality_points": 1000.0,
       "quality_passed": true,
       "valid_steps": "4/4",
+      "quality_v1_points": 1000.0,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "4/4",
+      "broken_links": [],
       "score": 0.685,
       "target_reached": true,
       "alignment": 1.0,
@@ -157,9 +293,21 @@
     },
     {
       "case_id": "flower_155662",
-      "quality_points": 871.5,
+      "quality_points": 937.5,
       "quality_passed": false,
       "valid_steps": "3/4",
+      "quality_v1_points": 871.5,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 0.75,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 0.75
+      },
+      "failed_start": false,
+      "connected_steps": "4/4",
+      "broken_links": [],
       "score": 0.6225,
       "target_reached": true,
       "alignment": 0.75,
@@ -171,9 +319,29 @@
     },
     {
       "case_id": "flower_177337",
-      "quality_points": 856.9,
+      "quality_points": 887.5,
       "quality_passed": false,
       "valid_steps": "7/8",
+      "quality_v1_points": 856.9,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 0.875,
+        "balance": 1.0,
+        "notation": 0.875,
+        "electrons": 1.0,
+        "sequence": 0.525
+      },
+      "failed_start": false,
+      "connected_steps": "7/8",
+      "broken_links": [
+        {
+          "step_index": 3,
+          "connected": false,
+          "vanished": [
+            "CCOS(=O)Cl"
+          ]
+        }
+      ],
       "score": 0.3663,
       "target_reached": false,
       "alignment": 0.525,
@@ -185,9 +353,21 @@
     },
     {
       "case_id": "flower_253626",
-      "quality_points": 982.5,
+      "quality_points": 1000.0,
       "quality_passed": true,
       "valid_steps": "5/5",
+      "quality_v1_points": 982.5,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "5/5",
+      "broken_links": [],
       "score": 0.685,
       "target_reached": true,
       "alignment": 1.0,

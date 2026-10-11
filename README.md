@@ -6,31 +6,33 @@ A local-first agent that predicts **arrow-pushing (elementary-step) mechanisms**
 
 ## Leaderboard
 
-We are focusing on one top-tier model — currently **Claude Opus 5.5** — to improve the harness, and will back-fill cheaper models later. Every run is scored with the same 1000-point [`quality_v1` rubric](docs/scoring_quality_v1.md) on 10-case slices of FlowER-derived tiers (easy = 1–2 steps, medium = 3, hard = 4–10). The rubric re-checks every step with the same deterministic code whether a harness or a one-shot answer produced it, and has no speed points. Links: [Claude Opus 5.5 by tier](LEADERBOARD.md#best-model-by-tier) · [harness vs one-shot baseline](LEADERBOARD.md#harness-vs-baseline).
+We are focusing on one top-tier model — currently **Claude Opus 5.5** — to improve the harness, and will back-fill cheaper models later. Every run is scored with the same 1000-point [`quality_v2` rubric](docs/scoring_quality_v2.md) on 10-case slices of FlowER-derived tiers (easy = 1–2 steps, medium = 3, hard = 4–10). The rubric re-checks every step with the same deterministic code whether a harness or a one-shot answer produced it. It scores six axes: product, step connectivity, balance, arrows + SMIRKS, electron conservation and match to the reference. Connectivity means each step starts where the last one ended, so a mechanism that reaches the product through disconnected steps scores lower. There are no speed points. Links: [Claude Opus 5.5 by tier](LEADERBOARD.md#best-model-by-tier) · [harness vs one-shot baseline](LEADERBOARD.md#harness-vs-baseline).
 
 ### Does the harness help? Harness vs one-shot, same model
 
-The question that matters most is whether the model can work out the **product** as well as the mechanism. In the **hidden** rows, the model is given only the starting materials and conditions, so it has to predict the product itself. The **given** rows hand it the product, which is the classic FlowER task. A one-shot answer usually names a plausible product, but it often gets there through steps that do not balance, or through a mechanism that does not close in mass and charge. The harness validates every step before accepting it. With the product hidden, it passes twice as many cases as the one-shot answer, even though it reaches the product slightly less often. Given the product, both pass equally often, but the harness's mechanisms score higher.
+The question that matters most is whether the model can work out the **product** as well as the mechanism. In the **hidden** rows, the model is given only the starting materials and conditions, so it has to predict the product itself. The **given** rows hand it the product, which is the classic FlowER task. A one-shot answer usually names a plausible product. Its steps, though, often lack the atom-mapped SMIRKS and arrows that show how electrons move, or they do not conserve electrons. The harness validates every step before accepting it. For Opus 5.5 and Sonnet 5.5 the harness scores higher in both modes: by 31 and 38 points for Opus, and by 171 and 98 for Sonnet. Haiku 5.5 scores lower with the harness, by 51 and 71 points. In 2 of its 10 cases per mode it stopped before making a step (a *failed start*), and in other cases it paused partway.
 
 <!-- harness-vs-baseline:start -->
-| Cases | Product | Thinking | Model | One-shot baseline | Harness | Mechanism Δ |
-|---|---|---|---|---|---|---|
-| 10 hard (trial_quality_v1_hard10) | given | low | **Claude Opus 5.5** † | **911** (mechanism 911, pass 7/10) | **916** (mechanism 964, pass 7/10) | +53 |
-| 10 hard (trial_quality_v1_hard10) | given | low | **Claude Sonnet 5.5** † | **762** (mechanism 796, pass 1/10) | **848** (mechanism 940, pass 5/10) | +144 |
-| 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Opus 5.5** † | **863** (mechanism 847, product 9/10, pass 2/10) | **895** (mechanism 936, product 8/10, pass 4/10) | +89 |
-| 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Sonnet 5.5** † | **781** (mechanism 773, product 8/10, pass 1/10) | **828** (mechanism 839, product 8/10, pass 4/10) | +66 |
+| Cases | Product | Thinking | Model | Radar | One-shot baseline | Harness | Score Δ |
+|---|---|---|---|---|---|---|---|
+| 10 hard (trial_quality_v1_hard10) | given | low | **Claude Opus 5.5** † | <img src="results/radar/claude-opus-5-5_hard_4d5405b9_given_low.svg" width="260" alt="radar"> | **934**<br>area 0.85<br>failed starts 0%<br>product 10/10, pass 6/10 | **965**<br>area 0.93<br>failed starts 0%<br>product 9/10, pass 7/10 | +31 |
+| 10 hard (trial_quality_v1_hard10) | given | low | **Claude Sonnet 5.5** † | <img src="results/radar/claude-sonnet-5-5_hard_4d5405b9_given_low.svg" width="260" alt="radar"> | **761**<br>area 0.51<br>failed starts 0%<br>product 9/10, pass 1/10 | **932**<br>area 0.86<br>failed starts 0%<br>product 8/10, pass 5/10 | +171 |
+| 10 hard (trial_quality_v1_hard10) | given | low | **Claude Haiku 5.5** † | <img src="results/radar/claude-haiku-5-5_hard_4d5405b9_given_low.svg" width="260" alt="radar"> | **777**<br>area 0.53<br>failed starts 0%<br>product 8/10, pass 1/10 | **726**<br>area 0.51<br>failed starts 20%<br>product 7/10, pass 3/10 | -51 |
+| 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Opus 5.5** † | <img src="results/radar/claude-opus-5-5_hard_4d5405b9_hidden_low.svg" width="260" alt="radar"> | **900**<br>area 0.79<br>failed starts 0%<br>product 9/10, pass 2/10 | **938**<br>area 0.88<br>failed starts 0%<br>product 8/10, pass 4/10 | +38 |
+| 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Sonnet 5.5** † | <img src="results/radar/claude-sonnet-5-5_hard_4d5405b9_hidden_low.svg" width="260" alt="radar"> | **761**<br>area 0.52<br>failed starts 0%<br>product 8/10, pass 1/10 | **859**<br>area 0.73<br>failed starts 10%<br>product 8/10, pass 4/10 | +98 |
+| 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Haiku 5.5** † | <img src="results/radar/claude-haiku-5-5_hard_4d5405b9_hidden_low.svg" width="260" alt="radar"> | **720**<br>area 0.45<br>failed starts 0%<br>product 9/10, pass 0/10 | **649**<br>area 0.41<br>failed starts 20%<br>product 4/10, pass 2/10 | -71 |
 
-Same cases, same model, same thinking level. **Mechanism** is the eight-component `quality_v1` score on 1000 (step validity, sequence, electron conservation, proton sources/sinks, protonation states, reagents, efficiency, intermolecular shuttles) and compares across modes; with the product **hidden** the model must also predict it, worth 300 of the 1000 points. A pass needs the product, every step valid, a mechanism that closes in mass and charge, and ≥ 700.
+Same cases, same model, same thinking level. Radar: one-shot baseline orange, harness blue, on the six `quality_v2` axes. **Score** is on 1000 (0.2 product + 0.3 step connectivity + 0.5 mean step quality); **area** is the radar polygon area (1 = perfect); **failed starts** is the share of cases where the mechanism made no step. With the product **hidden** the model also had to predict it.
 <!-- harness-vs-baseline:end -->
 
 <!-- leaderboard:start -->
 | Tier | Best model | Thinking | Quality | Valid steps | Passed | Harness | Date | Details |
 |---|---|---|---|---|---|---|---|---|
-| easy | **Claude Opus 5.5** † | default | **976**/1000 | 86% | 8/10 | `jev_reaction_type` | 2026-09-30 | [results](LEADERBOARD.md#2026-09-30-bridge-opus55-jev-deferred-easy-final3) |
-| medium | **Claude Opus 5.5** † | default | **965**/1000 | 100% | 10/10 | `jev_reaction_type` | 2026-09-30 | [results](LEADERBOARD.md#2026-09-30-bridge-opus55-jev-deferred-medium-final2-resumed) |
-| hard | **Claude Opus 5.5** † | default | **927**/1000 | 96% | 8/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-hard) |
+| easy | **Claude Opus 5.5** † | default | **983**/1000 | 86% | 8/10 | `jev_reaction_type` | 2026-09-30 | [results](LEADERBOARD.md#2026-09-30-bridge-opus55-jev-deferred-easy-final3) |
+| medium | **Claude Opus 5.5** † | default | **1000**/1000 | 100% | 10/10 | `jev_reaction_type` | 2026-09-30 | [results](LEADERBOARD.md#2026-09-30-bridge-opus55-jev-deferred-medium-final2-resumed) |
+| hard | **Claude Opus 5.5** † | default | **972**/1000 | 96% | 8/10 | `jev_reaction_type` | 2026-09-29 | [results](LEADERBOARD.md#2026-09-29-bridge-opus55-jev-hard) |
 
-Hardest mechanism solved so far: [`flower_020948`, a 9-step mechanism (hard tier, Claude Opus 5.5)](results/mechanisms/trial_q5_harness_low_given_resumed__flower_020948.png). Scored with the `quality_v1` rubric; harness vs baseline and legacy scores: [LEADERBOARD.md](LEADERBOARD.md).
+Hardest mechanism solved so far: [`flower_020948`, a 9-step mechanism (hard tier, Claude Opus 5.5)](results/mechanisms/trial_q5_harness_low_given_resumed__flower_020948.png). Scored with the `quality_v2` rubric; harness vs baseline and legacy scores: [LEADERBOARD.md](LEADERBOARD.md).
 
 † Answered through the [agent bridge](docs/agent_bridge.md): each model call went to the declared model in a fresh session that saw only the prompt (`responder_saw_ground_truth: false`). Cost is opaque, so these rows make no cost claim.
 <!-- leaderboard:end -->
@@ -98,4 +100,4 @@ Harness variants live under `harness_versions/` (`default`, `jev_reaction_type`,
 - Evidence policy: [docs/change_evidence_policy.md](docs/change_evidence_policy.md)
 - Curriculum lanes and checkpoints: [curriculum/STATUS.md](curriculum/STATUS.md)
 
-The older Clawdiators-style 1000-point rubric (with product and speed points) is kept only for records published before `quality_v1`; see **Legacy scores** in [LEADERBOARD.md](LEADERBOARD.md).
+The older Clawdiators-style 1000-point rubric (with product and speed points) is kept only for records published before the step-checked rubrics (`quality_v1`, now `quality_v2`); see **Legacy scores** in [LEADERBOARD.md](LEADERBOARD.md).

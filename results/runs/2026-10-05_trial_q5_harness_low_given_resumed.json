@@ -22,7 +22,7 @@
   "case_ids_hash": null,
   "holdout": false,
   "scoring_version": "v3",
-  "git_commit": "b715781",
+  "git_commit": "c8eb689",
   "sources": [
     {
       "eval_run_id": "7231afb3c73e449e9e8a73ebe9219b69",
@@ -47,8 +47,43 @@
       ]
     }
   ],
-  "scoring": "quality_v1",
+  "scoring": "quality_v2",
   "summary": {
+    "points": 965,
+    "mechanism_points": 964,
+    "product_correct": 9,
+    "products_hidden": false,
+    "outcome": "partial",
+    "components": {
+      "step_validity": 248.3,
+      "sequence": 181.0,
+      "electron_conservation": 100.0,
+      "proton_bookkeeping": 90.0,
+      "protonation_states": 100.0,
+      "reagents_and_solvent": 94.4,
+      "efficiency": 100.0,
+      "intermolecular": 50.0
+    },
+    "cases": 10,
+    "targets_reached": 9,
+    "passed": 7,
+    "valid_step_fraction": 0.9655,
+    "avg_latency_s": 1026.8,
+    "axes": {
+      "product": 0.9,
+      "connectivity": 1.0,
+      "balance": 0.9732,
+      "notation": 1.0,
+      "electrons": 1.0,
+      "sequence": 0.905
+    },
+    "step_quality": 0.9695,
+    "polygon_area": 0.9276,
+    "failed_starts": 0,
+    "failed_start_fraction": 0.0,
+    "fully_connected": 10
+  },
+  "quality_v1": {
     "points": 916,
     "mechanism_points": 964,
     "product_correct": 9,
@@ -93,8 +128,20 @@
       "accepted_steps": 9,
       "target_reached": true,
       "passed": true,
-      "quality_points": 954.4,
+      "quality_points": 971.5,
       "valid_steps": "9/9",
+      "quality_v1_points": 954.4,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 0.7722
+      },
+      "failed_start": false,
+      "connected_steps": "9/9",
+      "broken_links": [],
       "score": 0.9081,
       "latency_s": 6980.1,
       "run_status": "completed"
@@ -105,8 +152,20 @@
       "accepted_steps": 5,
       "target_reached": true,
       "passed": true,
-      "quality_points": 962.0,
+      "quality_points": 976.3,
       "valid_steps": "5/5",
+      "quality_v1_points": 962.0,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 0.81
+      },
+      "failed_start": false,
+      "connected_steps": "5/5",
+      "broken_links": [],
       "score": 0.9133,
       "latency_s": 338.4,
       "run_status": "completed"
@@ -119,6 +178,18 @@
       "passed": true,
       "quality_points": 1000.0,
       "valid_steps": "5/5",
+      "quality_v1_points": 1000.0,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "5/5",
+      "broken_links": [],
       "score": 0.979,
       "latency_s": 340.3,
       "run_status": "completed"
@@ -129,8 +200,20 @@
       "accepted_steps": 8,
       "target_reached": true,
       "passed": false,
-      "quality_points": 914.2,
+      "quality_points": 984.4,
       "valid_steps": "7/8",
+      "quality_v1_points": 914.2,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 0.875,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "8/8",
+      "broken_links": [],
       "score": 0.9825,
       "latency_s": 441.0,
       "run_status": "completed"
@@ -141,8 +224,20 @@
       "accepted_steps": 2,
       "target_reached": false,
       "passed": false,
-      "quality_points": 477.5,
+      "quality_points": 771.9,
       "valid_steps": "2/2",
+      "quality_v1_points": 477.5,
+      "axes": {
+        "product": 0.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 0.775
+      },
+      "failed_start": false,
+      "connected_steps": "2/2",
+      "broken_links": [],
       "score": 0.55,
       "latency_s": 344.0,
       "run_status": "paused"
@@ -155,6 +250,18 @@
       "passed": true,
       "quality_points": 1000.0,
       "valid_steps": "5/5",
+      "quality_v1_points": 1000.0,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "5/5",
+      "broken_links": [],
       "score": 1.0,
       "latency_s": 290.7,
       "run_status": "completed"
@@ -167,6 +274,18 @@
       "passed": true,
       "quality_points": 1000.0,
       "valid_steps": "6/6",
+      "quality_v1_points": 1000.0,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "6/6",
+      "broken_links": [],
       "score": 0.9734,
       "latency_s": 393.3,
       "run_status": "completed"
@@ -179,6 +298,18 @@
       "passed": true,
       "quality_points": 1000.0,
       "valid_steps": "5/5",
+      "quality_v1_points": 1000.0,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "5/5",
+      "broken_links": [],
       "score": 1.0,
       "latency_s": 293.2,
       "run_status": "completed"
@@ -189,8 +320,20 @@
       "accepted_steps": 7,
       "target_reached": true,
       "passed": false,
-      "quality_points": 851.7,
+      "quality_points": 943.8,
       "valid_steps": "6/7",
+      "quality_v1_points": 851.7,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 0.8571,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 0.6929
+      },
+      "failed_start": false,
+      "connected_steps": "7/7",
+      "broken_links": [],
       "score": 0.8882,
       "latency_s": 410.4,
       "run_status": "completed"
@@ -203,6 +346,18 @@
       "passed": true,
       "quality_points": 1000.0,
       "valid_steps": "6/6",
+      "quality_v1_points": 1000.0,
+      "axes": {
+        "product": 1.0,
+        "connectivity": 1.0,
+        "balance": 1.0,
+        "notation": 1.0,
+        "electrons": 1.0,
+        "sequence": 1.0
+      },
+      "failed_start": false,
+      "connected_steps": "6/6",
+      "broken_links": [],
       "score": 0.9708,
       "latency_s": 436.2,
       "run_status": "completed"
@@ -327,7 +482,7 @@
           "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
         ],
         "resulting_state": [
-          "COc1cc(OC)c[c]([Pd+]([I])[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
+          "COc1cc(OC)cc([Pd+](I)[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
           "COc1cccc([B-](O)(O)OC(C)=O)c1",
           "CC(=O)[O-]",
           "[Cs+]",
@@ -369,7 +524,7 @@
       {
         "step_index": 4,
         "current_state": [
-          "COc1cc(OC)c[c]([Pd+]([I])[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
+          "COc1cc(OC)cc([Pd+](I)[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
           "COc1cccc([B-](O)(O)OC(C)=O)c1",
           "CC(=O)[O-]",
           "[Cs+]",
@@ -379,7 +534,7 @@
           "Cc1ccccc1P(c1ccccc1C)c1ccccc1C"
         ],
         "resulting_state": [
-          "COc1ccc[c]([Pd+]([c]2cc(OC)cc(OC)c2)[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
+          "COc1cccc([Pd+](c2cc(OC)cc(OC)c2)[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
           "CC(=O)OB(O)O",
           "[I-]",
           "CC(=O)[O-]",
@@ -419,7 +574,7 @@
       {
         "step_index": 5,
         "current_state": [
-          "COc1ccc[c]([Pd+]([c]2cc(OC)cc(OC)c2)[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
+          "COc1cccc([Pd+](c2cc(OC)cc(OC)c2)[P+](c2ccccc2C)(c2ccccc2C)c2ccccc2C)c1",
           "CC(=O)OB(O)O",
           "[I-]",
           "CC(=O)[O-]",

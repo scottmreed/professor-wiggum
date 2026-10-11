@@ -684,8 +684,9 @@ def score_snapshot_quality(snapshot: Mapping[str, Any], expected: Optional[Mappi
     sequence = graded.get("known_alignment_component") if expected else None
     config = snapshot.get("config") if isinstance(snapshot.get("config"), Mapping) else {}
     hidden = bool(snapshot.get("products_hidden") or config.get("hide_products"))
+    path = steps_from_snapshot(snapshot)
     result = score_mechanism(
-        steps_from_snapshot(snapshot),
+        path,
         starting_materials=starting,
         products=products,
         sequence_score=sequence,
@@ -694,6 +695,9 @@ def score_snapshot_quality(snapshot: Mapping[str, Any], expected: Optional[Mappi
         products_hidden=hidden,
     )
     result["sequence_basis"] = graded.get("alignment_basis")
+    from mechanistic_agent.quality_v2 import score_case
+
+    result["quality_v2"] = score_case(path, result, starting_materials=starting)
     return result
 
 
