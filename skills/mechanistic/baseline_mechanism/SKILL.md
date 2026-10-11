@@ -5,7 +5,7 @@ steps: [baseline_mechanism]
 phase: standalone
 kind: llm
 tool_schema: predict_full_mechanism
-version: 1
+version: 2
 ---
 
 # Baseline Mechanism
@@ -29,49 +29,16 @@ A single `predict_full_mechanism` tool call containing a `steps` array where eac
 - `current_state` (SMILES[]) — species at step start
 - `resulting_state` (SMILES[]) — species after step
 - `predicted_intermediate` (SMILES) — focal species of the step
-- `reaction_smirks` (SMIRKS string)
-- `electron_pushes` ([{start_atom, end_atom, electrons}])
+- `reaction_smirks` (atom-mapped SMIRKS with a `|mech:v1;...|` arrow block)
+- `reaction_smirks` and `electron_pushes` are required on every step (see the prompt); pushes use the shared
+  `{kind, source_atom | source_bond, through_atom, target_atom, electrons}` move format
 - `step_label` (string)
 
 ## Tool Schema
 
-```json
-{
-  "type": "function",
-  "function": {
-    "name": "predict_full_mechanism",
-    "description": "Return the complete stepwise mechanism as a single structured response.",
-    "parameters": {
-      "type": "object",
-      "required": ["steps"],
-      "properties": {
-        "steps": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["current_state", "resulting_state", "predicted_intermediate", "reaction_smirks"],
-            "properties": {
-              "current_state": {"type": "array", "items": {"type": "string"}},
-              "resulting_state": {"type": "array", "items": {"type": "string"}},
-              "predicted_intermediate": {"type": "string"},
-              "reaction_smirks": {"type": "string"},
-              "electron_pushes": {
-                "type": "array",
-                "items": {"type": "object", "properties": {
-                  "start_atom": {"type": "integer"},
-                  "end_atom": {"type": "integer"},
-                  "electrons": {"type": "integer"}
-                }}
-              },
-              "step_label": {"type": "string"}
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
+`PREDICT_FULL_MECHANISM_TOOL` in `mechanistic_agent/tool_schemas.py`: one `steps` array whose items require
+`step_index`, `current_state`, `resulting_state`, `reaction_smirks` and `electron_pushes` (items of the shared
+`_ELECTRON_PUSH_ITEM` move schema).
 
 ## Prompt
 
@@ -80,13 +47,17 @@ You are an expert organic chemist. Given a reaction (starting materials and targ
 
 Each step must represent a single elementary mechanistic transformation (bond formation, bond breaking, proton transfer, electron pair movement, etc.). Do not skip steps or merge multiple elementary events.
 
-For each step, provide:
-- `current_state`: list of SMILES for all species present at the start of this step
-- `resulting_state`: list of SMILES for all species present after this step (including byproducts and spectator ions where relevant)
-- `predicted_intermediate`: SMILES for the key intermediate generated or consumed (the focal species of the step)
-- `reaction_smirks`: SMIRKS/CXSMILES for the elementary transformation; use atom map numbers when meaningful
-- `electron_pushes`: list of `{start_atom, end_atom, electrons}` arrow-push descriptors (electrons: 1 for radical, 2 for pair)
-- `step_label`: brief human-readable label (e.g., "nucleophilic addition", "proton transfer", "ring closure")
+For each step, provide ALL of the following. A step missing `reaction_smirks` or `electron_pushes` is scored as invalid.
+- `current_state`: SMILES of every species present at the start of the step. It must equal the previous step's `resulting_state`: you may drop a spectator or add a reagent from the starting materials, but never add a species that was neither supplied nor made earlier, and never drop an intermediate.
+- `resulting_state`: SMILES of every species after the step, including byproducts and counter-ions.
+- `predicted_intermediate`: SMILES of the key intermediate generated or consumed (the focal species of the step).
+- `reaction_smirks`: an atom-mapped reaction SMIRKS for this one elementary step, `reactants>>products`. Every heavy atom carries the same map number on both sides, and the two sides are exactly the whole species that react and form in this step. Append the arrow block `|mech:v1;lp:a>b;pi:a-b>c;sigma:a-b>c|` using those map numbers.
+- `electron_pushes`: one object per curved arrow, using the SAME map numbers as the SMIRKS:
+  - lone pair: `{"kind": "lone_pair", "source_atom": 4, "target_atom": 2, "electrons": 2}`
+  - pi or sigma bond: `{"kind": "pi_bond", "source_bond": [1, 2], "through_atom": 2, "target_atom": 3, "electrons": 2}` (`through_atom` is required for bond sources and must equal `source_bond[1]`)
+- `step_label`: a short label ("nucleophilic addition", "proton transfer", "ring closure").
+
+Electrons must be conserved in every step: count bonds and lone pairs on both sides before you answer.
 
 The final step's `resulting_state` must contain the target product SMILES.
 
