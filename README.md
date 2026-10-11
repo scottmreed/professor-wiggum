@@ -16,7 +16,9 @@ The question that matters most is whether the model can work out the **product**
 | Cases | Product | Thinking | Model | One-shot baseline | Harness | Mechanism Δ |
 |---|---|---|---|---|---|---|
 | 10 hard (trial_quality_v1_hard10) | given | low | **Claude Opus 5.5** † | **911** (mechanism 911, pass 7/10) | **916** (mechanism 964, pass 7/10) | +53 |
+| 10 hard (trial_quality_v1_hard10) | given | low | **Claude Sonnet 5.5** † | **762** (mechanism 796, pass 1/10) | **848** (mechanism 940, pass 5/10) | +144 |
 | 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Opus 5.5** † | **863** (mechanism 847, product 9/10, pass 2/10) | **895** (mechanism 936, product 8/10, pass 4/10) | +89 |
+| 10 hard (trial_quality_v1_hard10) | hidden | low | **Claude Sonnet 5.5** † | **781** (mechanism 773, product 8/10, pass 1/10) | **828** (mechanism 839, product 8/10, pass 4/10) | +66 |
 
 Same cases, same model, same thinking level. **Mechanism** is the eight-component `quality_v1` score on 1000 (step validity, sequence, electron conservation, proton sources/sinks, protonation states, reagents, efficiency, intermolecular shuttles) and compares across modes; with the product **hidden** the model must also predict it, worth 300 of the 1000 points. A pass needs the product, every step valid, a mechanism that closes in mass and charge, and ≥ 700.
 <!-- harness-vs-baseline:end -->
