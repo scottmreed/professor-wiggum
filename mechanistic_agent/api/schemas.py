@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from mechanistic_agent.core.types import PRIMARY_HARNESS
+
 
 class RalphRunConfig(BaseModel):
     max_iterations: int = 0
@@ -51,7 +53,7 @@ class CreateRunRequest(BaseModel):
     reaction_template_policy: Literal["off", "auto"] = "auto"
     reaction_template_confidence_threshold: float = 0.65
     reaction_template_margin_threshold: float = 0.10
-    harness_name: str = "default"
+    harness_name: str = PRIMARY_HARNESS
     harness_config_path: Optional[str] = None
     coordination_topology: Literal[
         "sas", "centralized_mas", "independent_mas", "decentralized_mas"

@@ -43,7 +43,7 @@ from mechanistic_agent.core import (
 )
 from mechanistic_agent.core.provenance import build_run_provenance, resolve_step_provenance
 from mechanistic_agent.core.observatory import build_observatory
-from mechanistic_agent.core.types import StepResult
+from mechanistic_agent.core.types import PRIMARY_HARNESS, StepResult
 from mechanistic_agent.core.job_executor import ThreadJobExecutor
 from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
 from mechanistic_agent.core.storage_interfaces import (
@@ -1405,7 +1405,7 @@ def create_app(
         reaction_template_confidence_threshold: float,
         reaction_template_margin_threshold: float,
         orchestration_mode: str = "standard",
-        harness_name: str = "default",
+        harness_name: str = PRIMARY_HARNESS,
         harness_config_path: str | None = None,
         coordination_topology: str = "centralized_mas",
         ralph: Dict[str, Any] | None = None,

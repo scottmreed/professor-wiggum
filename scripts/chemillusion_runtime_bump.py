@@ -25,9 +25,11 @@ A bump is proposed only when one of these holds between the current pin and ``--
   the bump then also rewrites ``PRODUCT_HARNESS``.
 
 The frontier model is the new leader when there is one, else the product model. The
-frontier harness is the ``harness`` of the frontier model's best medium and hard
-records (the hard one's when they differ; records without a harness are ignored), and
-only when ``harness_versions/<name>/harness.json`` exists at ``--ref``. A
+frontier harness is ``PRIMARY_HARNESS`` in ``mechanistic_agent/core/types.py`` at
+``--ref`` when that line exists (a maintainer decision that overrides the results);
+otherwise it is the ``harness`` of the frontier model's best medium and hard records
+(the hard one's when they differ; records without a harness are ignored). Either way it
+is adopted only when ``harness_versions/<name>/harness.json`` exists at ``--ref``. A
 ``product_model.py`` without ``PRODUCT_HARNESS`` is left alone and the PR body says so.
 With ``--chemillusion-dir`` and ``--apply`` it rewrites the pin (model, harness);
 ``.github/workflows/chemillusion-runtime-bump.yml`` then opens or refreshes one
@@ -54,6 +56,8 @@ REF_LINE = re.compile(r"^(ARG WIGGUM_RUNTIME_REF=)([0-9a-fA-F]{7,40})[ \t]*$", r
 PRODUCT_MODEL_LINE = re.compile(r'^(PRODUCT_MODEL = ")([^"]+)(")[ \t]*$', re.M)
 LEGACY_MODEL_LINE = re.compile(r'^(\s*MECHANISM_PREDICTOR_MODEL: str = ")([^"]+)(")[ \t]*$', re.M)
 PRODUCT_HARNESS_LINE = re.compile(r'^(PRODUCT_HARNESS = ")([^"]+)(")[ \t]*$', re.M)
+PRIMARY_HARNESS_FILE = "mechanistic_agent/core/types.py"
+PRIMARY_HARNESS_LINE = re.compile(r'^PRIMARY_HARNESS = "([^"]+)"[ \t]*$', re.M)
 
 LANE = re.compile(r"^skills/mechanistic/[^/]+/models/([^/]+)/")
 HARNESS_CODE = (
@@ -225,6 +229,16 @@ def harness_exists(repo: Path, ref: str, harness: str) -> bool:
     return True
 
 
+def declared_primary_harness(repo: Path, ref: str) -> Optional[str]:
+    """``PRIMARY_HARNESS`` in ``mechanistic_agent/core/types.py`` at ``ref``, if declared."""
+    try:
+        text = _git(repo, "show", f"{ref}:{PRIMARY_HARNESS_FILE}")
+    except subprocess.CalledProcessError:
+        return None
+    match = PRIMARY_HARNESS_LINE.search(text)
+    return match.group(1) if match else None
+
+
 def frontier_harness(repo: Path, ref: str, records: Sequence[Dict[str, Any]], model: Optional[str]) -> Optional[Dict[str, Any]]:
     """Harness of ``model``'s best medium/hard records (the hard one's when they differ).
 
@@ -251,7 +265,11 @@ def plan_bump(repo: Path, new_ref: str, dockerfile_text: str, model_text: str) -
     recommendation = model_recommendation(repo, new_sha, new_records, product_model)
     frontier = recommendation["model"] if recommendation else product_model
     frontier_keys = {_model_key(m) for m in (frontier, product_model) if m}
-    harness_info = frontier_harness(repo, new_sha, new_records, frontier)
+    primary = declared_primary_harness(repo, new_sha)
+    if primary:
+        harness_info = {"harness": primary, "exists": harness_exists(repo, new_sha, primary), "leaders": {}, "declared": True}
+    else:
+        harness_info = frontier_harness(repo, new_sha, new_records, frontier)
     harness_change = None
     if harness_info and harness_info["exists"] and product_harness and harness_info["harness"] != product_harness:
         harness_change = {"from": product_harness, "to": harness_info["harness"]}
@@ -332,7 +350,12 @@ def pr_body(plan: Dict[str, Any], repo_slug: str = "scottmreed/professor-wiggum"
         f"- Frontier model: `{plan.get('frontier_model')}`",
     ]
     info = plan.get("frontier_harness")
-    if info:
+    if info and info.get("declared"):
+        lines.append(
+            f"- Frontier harness: `{info['harness']}` (declared `PRIMARY_HARNESS` in `{PRIMARY_HARNESS_FILE}`); "
+            f"product harness: `{plan.get('product_harness') or 'not set'}`"
+        )
+    elif info:
         lines.append(
             f"- Frontier harness: `{info['harness']}` ("
             + ", ".join(f"{tier} {r['points']}/1000" for tier, r in info["leaders"].items())
@@ -371,8 +394,13 @@ def pr_body(plan: Dict[str, Any], repo_slug: str = "scottmreed/professor-wiggum"
             "",
             "### Product harness",
             "",
-            f"The frontier model's leading medium/hard records run harness `{harness_change['to']}`. This PR changes "
-            f"`PRODUCT_HARNESS` from `{harness_change['from']}`; ChemIllusion sends it as `harness_name` on every run.",
+            (
+                f"`{harness_change['to']}` is the declared `PRIMARY_HARNESS` in `{PRIMARY_HARNESS_FILE}`. "
+                if info and info.get("declared")
+                else f"The frontier model's leading medium/hard records run harness `{harness_change['to']}`. "
+            )
+            + f"This PR changes `PRODUCT_HARNESS` from `{harness_change['from']}`; ChemIllusion sends it as "
+            "`harness_name` on every run.",
         ]
     elif info and not plan.get("product_harness"):
         lines += [

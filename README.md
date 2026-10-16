@@ -87,11 +87,11 @@ Full setup: [SETUP.md](SETUP.md). Data layout (sibling `wiggum-data` checkout or
 
 ![Harness flow diagram](docs/diagrams/Harness_Configuration_Flowchart.png)
 
-- **Pre-loop** (runs once): check atom balance → identify functional groups → recommend pH → assess conditions → predict missing reagents → map atoms → map to reaction type (LLM, or a Jev decision in the `jev_reaction_type` harness)
-- **Loop**: propose next mechanism step (LLM) → bond/electron, atom-balance, and state-progress validators → retry, backtrack, or continue → target products reached? Atom balance is strict in the `jev_reaction_type` product harness (`balance_mode: proton_deferred`). Only a residual of whole protons — an acid or base the state did not carry — may be flagged for the end-of-run audit. Spare copies of a reagent left out of the state are carried forward rather than rejected. The `default` harness still flags any balance-only failure (`deferred`).
+- **Pre-loop** (runs once): check atom balance → identify functional groups → recommend pH → assess conditions → predict missing reagents → map atoms → map to reaction type. The primary `threaded_unified` harness makes the last four one LLM call, checked section by section; `jev_reaction_type` uses a Jev decision for the reaction type
+- **Loop**: propose next mechanism step (LLM) → bond/electron, atom-balance, and state-progress validators → retry, backtrack, or continue → target products reached? In `threaded_unified` the proposals continue one chat, rewound to the last accepted step when a proposal is rejected. Atom balance is strict in `threaded_unified` and `jev_reaction_type` (`balance_mode: proton_deferred`). Only a residual of whole protons — an acid or base the state did not carry — may be flagged for the end-of-run audit. Spare copies of a reagent left out of the state are carried forward rather than rejected. The `default` harness still flags any balance-only failure (`deferred`).
 - **Post-loop**: the mechanism audit nets out the chosen path — regenerated catalysts, conjugate acid/base pairs, proton bookkeeping, recorded reagent additions — resolves each balance flag or fails the case, and reports redundant steps (undo steps, repeated states, mergeable proton transfers)
 
-Harness variants live under `harness_versions/` (`default`, `jev_reaction_type`, `permissive_default`, ablations). Regenerate the diagram with `python scripts/capture_harness_mermaid.py`.
+Harness variants live under `harness_versions/` (`threaded_unified`, the primary harness; `default`, `jev_reaction_type`, `permissive_default`, ablations). Regenerate the diagram with `python scripts/capture_harness_mermaid.py`.
 
 ### Docs
 

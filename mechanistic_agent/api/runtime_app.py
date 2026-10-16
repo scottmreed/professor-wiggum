@@ -33,6 +33,7 @@ from mechanistic_agent.core.observatory import OBSERVATORY_SCHEMA
 from mechanistic_agent.core.provenance import EVENT_SCHEMA_VERSION
 from mechanistic_agent.core.reaction_focus import REACTION_FOCUS_SCHEMA
 from mechanistic_agent.core.registries import RegistrySet
+from mechanistic_agent.core.types import PRIMARY_HARNESS
 
 from .app import create_app
 
@@ -92,7 +93,7 @@ def build_runtime_manifest(base: Path) -> Dict[str, Any]:
         hashes = registry.bundle_hashes()
     except Exception:  # pragma: no cover - defensive
         hashes = {}
-    harness_name = os.getenv(RUNTIME_HARNESS_ENV, "default")
+    harness_name = os.getenv(RUNTIME_HARNESS_ENV, PRIMARY_HARNESS)
     return {
         "schema_version": RUNTIME_MANIFEST_SCHEMA,
         "runtime_version": RUNTIME_VERSION,

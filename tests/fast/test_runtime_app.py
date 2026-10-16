@@ -17,6 +17,8 @@ pytest.importorskip("rdkit")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from mechanistic_agent.core.types import PRIMARY_HARNESS  # noqa: E402
+
 from mechanistic_agent.api.runtime_app import (  # noqa: E402
     RUNTIME_ALLOWED_PATHS,
     RUNTIME_TOKEN_ENV,
@@ -98,7 +100,7 @@ def test_version_manifest_identifies_the_runtime(tmp_path: Path, monkeypatch: py
     assert manifest["schema_version"] == "runtime_manifest.v1"
     assert manifest["runtime_version"]
     assert set(manifest["hashes"]) >= {"prompt_bundle_hash", "skill_bundle_hash", "harness_bundle_hash"}
-    assert manifest["harness_name"] == "default"
+    assert manifest["harness_name"] == PRIMARY_HARNESS
     assert manifest["event_schema_version"] == "mechanism_observatory_event.v1"
     assert manifest["observatory_schema_version"] == "mechanism_observatory.v1"
     assert manifest["reaction_focus_version"] == "reaction_focus.v1"

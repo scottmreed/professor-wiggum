@@ -181,6 +181,36 @@ def test_frontier_harness_change_alone_bumps_and_rewrites_product_harness(repo: 
     assert _plan(repo, old, WITH_HARNESS.format(harness=JEV))["changed"] is False
 
 
+def test_declared_primary_harness_overrides_the_results(repo: Path) -> None:
+    old = _git(repo, "rev-parse", "HEAD")
+    _commit(
+        repo,
+        {
+            "harness_versions/threaded/harness.json": '{"name": "threaded"}',
+            "mechanistic_agent/core/types.py": '"""Types."""\n\nPRIMARY_HARNESS = "threaded"\n',
+        },
+        "primary harness",
+    )
+    model_text = WITH_HARNESS.format(harness=JEV)
+    plan = _plan(repo, old, model_text)
+    assert "frontier_harness_change" in plan["reasons"]
+    assert plan["frontier_harness"]["harness"] == "threaded" and plan["frontier_harness"]["declared"] is True
+    assert plan["harness_change"] == {"from": JEV, "to": "threaded"}
+    _, model = bump.apply_plan(plan, DOCKERFILE.format(ref=old), model_text)
+    assert 'PRODUCT_HARNESS = "threaded"\n' in model
+    body = bump.pr_body(plan)
+    assert "declared `PRIMARY_HARNESS`" in body
+    # Already on it: the jev-led results no longer pull the product harness back.
+    assert _plan(repo, old, WITH_HARNESS.format(harness="threaded"))["harness_change"] is None
+
+
+def test_declared_primary_harness_missing_at_ref_is_not_adopted(repo: Path) -> None:
+    old = _git(repo, "rev-parse", "HEAD")
+    _commit(repo, {"mechanistic_agent/core/types.py": 'PRIMARY_HARNESS = "absent"\n'}, "primary harness")
+    plan = _plan(repo, old, WITH_HARNESS.format(harness=JEV))
+    assert plan["frontier_harness"]["exists"] is False and plan["harness_change"] is None
+
+
 def test_hard_leader_harness_wins_and_unlabelled_records_are_ignored(repo: Path) -> None:
     old = _git(repo, "rev-parse", "HEAD")
     _commit(

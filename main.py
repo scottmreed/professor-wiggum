@@ -15,6 +15,7 @@ import typer
 
 from mechanistic_agent import OPTIONAL_LLM_TOOL_NAMES, ReactionInputs
 from mechanistic_agent.core import RegistrySet, RunCoordinator, RunStore, select_step_models
+from mechanistic_agent.core.types import PRIMARY_HARNESS
 from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
 from mechanistic_agent.curriculum import (
     OPUS_MODEL,
@@ -1737,7 +1738,7 @@ def run(
         "--orchestration-mode",
         help="Orchestration mode: standard or ralph",
     ),
-    harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
+    harness: str = typer.Option(PRIMARY_HARNESS, "--harness", help="Harness name from harness_versions/"),
     harness_strategy: str = typer.Option(
         "latest",
         "--harness-strategy",
@@ -3983,7 +3984,7 @@ def eval_cmd(
         help="Run-group prefix for --all-tiers mode; final name is <prefix>_<tier>",
     ),
     case_ids: Optional[List[str]] = typer.Option(None, "--case-id", help="Specific case IDs to run (repeatable)"),
-    harness: str = typer.Option("default", "--harness", help="Harness name from harness_versions/"),
+    harness: str = typer.Option(PRIMARY_HARNESS, "--harness", help="Harness name from harness_versions/"),
     run_group: Optional[str] = typer.Option(None, "--run-group", help="Run group name for leaderboard"),
     max_cases: int = typer.Option(
         25, "--max-cases",

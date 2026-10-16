@@ -5,6 +5,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 
+# Harness for new runs that name none (CLI run/eval, API, runtime). Stored runs without a
+# harness_name ran on "default" and still resolve there. scripts/chemillusion_runtime_bump.py
+# reads this line as ChemIllusion's product harness.
+PRIMARY_HARNESS = "threaded_unified"
+
 RunMode = Literal["verified", "unverified"]
 RunStatus = Literal["pending", "running", "paused", "completed", "failed", "stopped"]
 TemplateGuidanceMode = Literal["active", "weak", "disabled", "no_match"]
