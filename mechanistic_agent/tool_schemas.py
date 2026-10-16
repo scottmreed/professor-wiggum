@@ -627,19 +627,23 @@ _MECHANISM_STEP_ITEM: Dict[str, Any] = {
         },
         "reaction_smirks": {
             "type": "string",
-            "description": "SMIRKS/CXSMILES for the elementary transformation.",
+            "description": (
+                "Atom-mapped SMIRKS for this elementary step (whole reacting species on each side, same map "
+                "numbers on both sides) with a |mech:v1;lp:a>b;pi:a-b>c;sigma:a-b>c| arrow block."
+            ),
         },
         "electron_pushes": {
             "type": "array",
             "items": _ELECTRON_PUSH_ITEM,
-            "description": "Arrow-push descriptors for this step.",
+            "minItems": 1,
+            "description": "One move per curved arrow, using the SMIRKS atom-map numbers.",
         },
         "contains_target_product": {
             "type": "boolean",
             "description": "True when resulting_state contains the final target product.",
         },
     },
-    "required": ["step_index", "current_state", "resulting_state"],
+    "required": ["step_index", "current_state", "resulting_state", "reaction_smirks", "electron_pushes"],
 }
 
 PREDICT_FULL_MECHANISM_TOOL: Dict[str, Any] = {
