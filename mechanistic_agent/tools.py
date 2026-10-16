@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import logging
 import os
@@ -5440,11 +5441,18 @@ def propose_intermediates(
     step_mapping_context: Optional[Dict[str, Any]] = None,
     template_guidance: Optional[Dict[str, Any]] = None,
     functional_groups_enabled: Optional[bool] = None,
+    conversation: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Use LLM to propose intermediates for the next mechanistic step.
     
     Analyzes the overall transformation, considers pH and temperature context,
     and determines if the final product is reached or if more intermediates are needed.
+
+    ``conversation`` (threaded harnesses) carries ``prior_messages`` (the
+    thread so far), ``turn_mode`` (``full`` or ``delta``), ``preamble`` (notes
+    for this step) and ``last_guidance_sha``. The call then continues that
+    thread, and the result carries ``thread_turn`` (the user and assistant
+    text to append).
     """
     
     # Get the model to use
@@ -5855,6 +5863,53 @@ def propose_intermediates(
         compaction_notes.append(
             "Prompt exceeded provider cap; truncated older middle context and preserved tool-call instructions."
         )
+
+    thread_mode: Optional[str] = None
+    prior_messages: List[Dict[str, str]] = []
+    guidance_sha = hashlib.sha256(template_guidance_text.encode("utf-8")).hexdigest()[:16] if template_guidance_text else ""
+    if isinstance(conversation, dict):
+        thread_mode = "delta" if conversation.get("turn_mode") == "delta" else "full"
+        prior_messages = [
+            {"role": str(m.get("role")), "content": str(m.get("content") or "")}
+            for m in conversation.get("prior_messages") or []
+            if isinstance(m, dict) and m.get("role") in {"user", "assistant"}
+        ]
+        if thread_mode == "delta":
+            delta_lines = [
+                f"Next step (step index {step_index if step_index is not None else len(previous_intermediates)}: "
+                "number of mechanistic steps accepted so far).",
+                f"Current state: {current_state}",
+            ]
+            if mapped_current_state:
+                delta_lines.append(f"Atom-mapped current state: {mapped_current_state}")
+            if template_guidance_text and not low_risk_mode and guidance_sha != conversation.get("last_guidance_sha"):
+                delta_lines.append(
+                    "Updated harness guidance (advisory only, do NOT force-fit chemistry):\n" + template_guidance_text
+                )
+            if low_risk_mode:
+                delta_lines.append(
+                    "LOW-RISK MODE: return exactly one conservative forward step with RDKit-parseable SMILES "
+                    "and an explicit resulting_state."
+                )
+            if isinstance(incomplete_payload_reasons, list) and incomplete_payload_reasons:
+                delta_lines.append(
+                    "REPROPOSAL NOTICE: the previous candidates were structurally incomplete ("
+                    + ", ".join(str(r) for r in incomplete_payload_reasons)
+                    + "). Every candidate needs reaction_smirks with a |mech:v1;...| block and electron_pushes."
+                )
+            if smiles_error:
+                delta_lines.append(f"SMILES VALIDATION ERRORS from the prior attempt:\n{smiles_error}")
+            if final_products_present:
+                delta_lines.append("All target products are present in the current state; confirm whether this is the final step.")
+            delta_lines.append(
+                "Answer by calling `mechanism_step_proposal_result` as before: up to 3 ranked candidates, each with "
+                "intermediate_smiles, resulting_state, reaction_smirks with its |mech:v1;...| block, and electron_pushes."
+            )
+            human_prompt = "\n".join(delta_lines)
+        preamble = str(conversation.get("preamble") or "").strip()
+        if preamble:
+            human_prompt = f"{preamble}\n\n{human_prompt}"
+
     if compaction_notes:
         logger.warning(
             "propose_intermediates prompt compaction applied for model %s: %s",
@@ -5892,6 +5947,7 @@ def propose_intermediates(
         )
         messages = [
             {"role": "system", "content": system_prompt},
+            *prior_messages,
             {"role": "user", "content": human_prompt},
         ]
         if _use_forced_tools:
@@ -5931,6 +5987,22 @@ def propose_intermediates(
                 except Exception as fallback_error:
                     error_messages.append(f"{fallback_model}: {fallback_error}")
                     response = None
+
+    def _thread_turn(answer_body: str) -> Dict[str, Any]:
+        return {
+            "mode": thread_mode,
+            "user": human_prompt,
+            "assistant": f"Called `mechanism_step_proposal_result` with:\n{answer_body}",
+            "prompt_chars": sum(len(m["content"]) for m in messages),
+            "message_count": len(messages),
+            "guidance_sha": (
+                guidance_sha
+                if guidance_sha
+                and not low_risk_mode
+                and (thread_mode == "full" or "Updated harness guidance" in human_prompt)
+                else ""
+            ),
+        }
 
     try:
         if response is None:
@@ -6546,6 +6618,13 @@ def propose_intermediates(
                 "Prompt context was compacted to respect model token limits. Older context may be omitted."
             )
             result["compaction_notes"] = compaction_notes[:8]
+        if thread_mode is not None:
+            answer_body = (
+                json.dumps(structured_payload, sort_keys=True)
+                if isinstance(structured_payload, dict)
+                else (raw_response_text or "")
+            )
+            result["thread_turn"] = _thread_turn(answer_body)
 
         return _serialise(result)
         
@@ -6724,6 +6803,13 @@ def propose_intermediates(
             fallback_payload["compaction_notes"] = compaction_notes[:8]
         if error_messages:
             fallback_payload["error_details"] = error_messages
+        if thread_mode is not None and response is not None:
+            tool_calls = getattr(response, "tool_calls", None) or []
+            if tool_calls and isinstance(tool_calls[0], dict):
+                answer_body = str(tool_calls[0].get("arguments") or "")
+            else:
+                answer_body = extract_text_content(response) or ""
+            fallback_payload["thread_turn"] = _thread_turn(answer_body)
         return _serialise(fallback_payload)
 
 

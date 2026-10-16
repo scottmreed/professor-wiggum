@@ -46,6 +46,7 @@ ROLE_BY_STEP: Dict[str, str] = {
     "missing_reagents": "missing_chemistry",
     "atom_mapping": "global_mapping",
     "reaction_type_mapping": "reaction_type",
+    "unified_preanalysis": "unified_preanalysis",
     "mechanism_step_proposal": "mechanism_proposal",
     "candidate_rescue": "candidate_rescue",
     "step_atom_mapping": "step_mapping",
@@ -66,15 +67,17 @@ LLM_PLANNED_STEPS = frozenset({
     "missing_reagents",
     "atom_mapping",
     "reaction_type_mapping",
+    "unified_preanalysis",
     "mechanism_step_proposal",
     "candidate_rescue",
     "step_atom_mapping",
 })
 
-# ``RunConfig.step_models`` keys differ from step names for two steps.
+# ``RunConfig.step_models`` keys differ from step names for these steps.
 _STEP_MODEL_KEY: Dict[str, str] = {
     "mechanism_step_proposal": "intermediates",
     "initial_conditions": "initial_conditions",
+    "unified_preanalysis": "initial_conditions",
 }
 
 

@@ -48,9 +48,11 @@ from .subagents import (
     MissingReagentsAgent,
     ReactionTypeAgent,
     ReflectionAgent,
+    _extract_step_cost,
 )
 from .tool_executor import ToolExecutor
 from .call_recorder import close_call_context, current_call_context, open_call_context
+from .conversation_thread import ConversationThread
 from .bond_electron import build_bond_electron_view
 from .reaction_focus import build_reaction_focus
 from .proton_transfer import (
@@ -532,6 +534,11 @@ class RunCoordinator:
                 str(k): v for k, v in sorted(state.mapped_state_history.items())
             },
             "mapped_id_high_water": state.mapped_id_high_water,
+            "conversation_thread": (
+                state.conversation_thread.to_dict()
+                if isinstance(state.conversation_thread, ConversationThread)
+                else None
+            ),
         }
 
     def _persist_resume_state(self, state: RunState, kind: str) -> None:
@@ -598,6 +605,8 @@ class RunCoordinator:
         state.mapped_state_history = history
         mapped = payload.get("mapped_loop_state")
         state.mapped_loop_state = dict(mapped) if isinstance(mapped, dict) else None
+        if isinstance(payload.get("conversation_thread"), dict):
+            state.conversation_thread = ConversationThread.from_dict(payload["conversation_thread"])
         try:
             stored_mark = int(payload.get("mapped_id_high_water") or 0)
         except (TypeError, ValueError):
@@ -1698,6 +1707,7 @@ class RunCoordinator:
         """Run pre-loop analysis modules. Driven by harness config when provided."""
         if harness is not None:
             self._configure_decision_policy(state, harness)
+            self._ensure_conversation_thread(state, harness)
         existing = self._existing_steps(state.run_id)
         context: Dict[str, Optional[Dict[str, Any]]] = {}
 
@@ -1746,7 +1756,7 @@ class RunCoordinator:
 
         # If reaction_type_mapping is disabled, set template guidance to disabled.
         rtm_enabled = any(
-            m.id == "reaction_type_mapping" and m.enabled
+            m.id in {"reaction_type_mapping", "unified_preanalysis"} and m.enabled
             for m in harness.pre_loop_modules
         )
         if not rtm_enabled:
@@ -1774,6 +1784,19 @@ class RunCoordinator:
             result = self.balance_agent.run(state)
         elif module.id == "functional_groups":
             result = self.functional_groups_agent.run(state)
+        elif module.id == "ph_recommendation" and module.group_key != "conditions_pair":
+            result = StepResult(
+                step_name="ph_recommendation",
+                tool_name="recommend_ph",
+                output=self.conditions_agent.executor.run_ph_recommendation(
+                    state.run_input.starting_materials,
+                    state.run_input.products,
+                    state.run_input.ph,
+                ),
+                source="deterministic",
+            )
+        elif module.id == "unified_preanalysis":
+            result = self._run_unified_preanalysis(state, context, existing)
         elif module.id == "missing_reagents":
             latest_initial = context.get("initial_conditions")
             result = self.missing_reagents_agent.run(state, latest_initial)
@@ -1814,6 +1837,216 @@ class RunCoordinator:
         output = reaction_type_result.output or {}
         self._apply_reaction_type_selection(state, output, emit_event=True)
         return reaction_type_result
+
+    @staticmethod
+    def _threaded_config(harness: Optional[HarnessConfig]) -> Optional[Dict[str, Any]]:
+        loop_module = (harness.loop_module or {}) if harness is not None else {}
+        if str(loop_module.get("conversation_mode") or "").strip().lower() != "threaded":
+            return None
+        cfg = loop_module.get("thread")
+        return dict(cfg) if isinstance(cfg, dict) else {}
+
+    def _ensure_conversation_thread(self, state: RunState, harness: Optional[HarnessConfig]) -> None:
+        cfg = self._threaded_config(harness)
+        if cfg is None or isinstance(state.conversation_thread, ConversationThread):
+            return
+        thread = ConversationThread(
+            max_prompt_chars=int(cfg.get("max_prompt_chars") or 120_000),
+            keep_last_steps=int(cfg.get("keep_last_steps") if cfg.get("keep_last_steps") is not None else 2),
+        )
+        thread.set_root([])
+        state.conversation_thread = thread
+
+    def _derive_preanalysis_sections(
+        self,
+        state: RunState,
+        answer: Dict[str, Any],
+        sections: List[str],
+        context: Dict[str, Optional[Dict[str, Any]]],
+    ) -> Dict[str, StepResult]:
+        """Replay each section through its old tool; no model is called here."""
+        from mechanistic_agent.llm import preset_tool_answers
+        from mechanistic_agent.unified_preanalysis import section_presets
+
+        executor = self.conditions_agent.executor
+        run_input = state.run_input
+        derived: Dict[str, StepResult] = {}
+
+        def _step(step_name: str, tool_name: str, output: Dict[str, Any], validation: Any = None) -> StepResult:
+            output = dict(output or {})
+            output.pop("_llm_usage", None)
+            output["derived_from"] = "unified_preanalysis"
+            return StepResult(
+                step_name=step_name,
+                tool_name=tool_name,
+                output=output,
+                source="deterministic",
+                validation=validation,
+            )
+
+        with preset_tool_answers(section_presets(answer, sections)):
+            conditions = executor.run_conditions(
+                run_input.starting_materials,
+                run_input.products,
+                run_input.ph,
+                functional_groups_enabled=state.run_config.functional_groups_enabled,
+            )
+            derived["conditions"] = _step("initial_conditions", "assess_initial_conditions", conditions)
+            if "missing_reagents" in sections:
+                reagents = self.missing_reagents_agent.run(state, conditions)
+                derived["missing_reagents"] = _step("missing_reagents", "predict_missing_reagents", reagents.output)
+            if "atom_mapping" in sections:
+                mapping = self.mapping_agent.run(state)
+                derived["atom_mapping"] = _step(
+                    "atom_mapping", "attempt_atom_mapping", mapping.output, mapping.validation
+                )
+            reaction_type = executor.run_reaction_type_mapping(
+                starting=run_input.starting_materials,
+                products=run_input.products,
+                balance_analysis=context.get("balance_analysis"),
+                functional_groups=context.get("functional_groups"),
+                ph_recommendation=context.get("ph_recommendation"),
+                initial_conditions=conditions,
+                missing_reagents=derived["missing_reagents"].output if "missing_reagents" in derived else None,
+                atom_mapping=derived["atom_mapping"].output if "atom_mapping" in derived else None,
+            )
+            derived["reaction_type"] = _step("reaction_type_mapping", "select_reaction_type", reaction_type)
+        return derived
+
+    def _run_unified_preanalysis(
+        self,
+        state: RunState,
+        context: Dict[str, Optional[Dict[str, Any]]],
+        existing: set[str],
+    ) -> StepResult:
+        """One LLM call for conditions, reagents, mapping and reaction type (threaded_unified)."""
+        from mechanistic_agent import unified_preanalysis as up
+        from mechanistic_agent.model_registry import update_usage_totals
+
+        from .preanalysis_checks import check_sections, failed_sections, has_hard_failure
+
+        run_input = state.run_input
+        hidden = not run_input.products
+        sections = up.sections_for(hidden)
+        for key in ("balance_analysis", "functional_groups", "ph_recommendation"):
+            if context.get(key) is None:
+                context[key] = self._latest_output_by_step_name(state.run_id, key)
+        user_prompt = up.build_user_prompt(
+            starting_materials=list(run_input.starting_materials),
+            products=list(run_input.products),
+            products_hidden=hidden,
+            context=context,
+            user_ph=run_input.ph,
+            temperature=run_input.temperature_celsius,
+        )
+        system = {"role": "system", "content": up.build_system_prompt()}
+        first_user = {"role": "user", "content": user_prompt}
+
+        usage_total: Dict[str, int] = {}
+        call = up.call_model([system, first_user], products_hidden=hidden)
+        if isinstance(call.get("usage"), dict):
+            update_usage_totals(usage_total, call["usage"])
+        answer: Dict[str, Any] = dict(call.get("answer") or {})
+        derived = self._derive_preanalysis_sections(state, answer, sections, context)
+        checks = check_sections({k: v.output for k, v in derived.items()}, sections, answer)
+        failures = failed_sections(checks)
+        if call.get("answer") is None:
+            failures = {"response": [str(call.get("error") or "no tool call")]}
+        first_checks = checks
+        repaired = False
+        if failures:
+            if call.get("answer") is None:
+                repair_messages = [system, first_user]
+            else:
+                repair_messages = [
+                    system,
+                    first_user,
+                    {"role": "assistant", "content": up.assistant_turn_text(answer)},
+                    {"role": "user", "content": up.repair_prompt(failures)},
+                ]
+            repair = up.call_model(repair_messages, products_hidden=hidden)
+            if isinstance(repair.get("usage"), dict):
+                update_usage_totals(usage_total, repair["usage"])
+            repaired_answer = repair.get("answer")
+            if isinstance(repaired_answer, dict):
+                repaired = True
+                if call.get("answer") is None:
+                    answer = dict(repaired_answer)
+                else:
+                    for section in failures:
+                        if section in repaired_answer:
+                            answer[section] = repaired_answer[section]
+                derived = self._derive_preanalysis_sections(state, answer, sections, context)
+                checks = check_sections({k: v.output for k, v in derived.items()}, sections, answer)
+                failures = failed_sections(checks)
+        all_passed = not failures and bool(answer)
+
+        for section in sections:
+            result = derived.get(section)
+            if result is None or result.step_name in existing:
+                continue
+            self._record_step(state, result)
+            context[result.step_name] = result.output
+        rt_output = derived["reaction_type"].output if "reaction_type" in derived else {}
+        self._apply_reaction_type_selection(state, rt_output or {}, emit_event=True)
+
+        thread = state.conversation_thread
+        if isinstance(thread, ConversationThread):
+            if all_passed:
+                thread.set_root([first_user, {"role": "assistant", "content": up.assistant_turn_text(answer)}])
+            else:
+                thread.set_root([])
+                self.store.append_event(
+                    state.run_id,
+                    "thread_root_reset",
+                    {"reason": "preanalysis_checks_failed", "failed_sections": sorted(failures)},
+                    step_name=up.STEP_NAME,
+                )
+
+        self.store.append_event(
+            state.run_id,
+            "unified_preanalysis_checks",
+            {
+                "sections": sections,
+                "first_checks": first_checks,
+                "final_checks": checks,
+                "repaired": repaired,
+                "passed": all_passed,
+            },
+            step_name=up.STEP_NAME,
+        )
+        output: Dict[str, Any] = {
+            "status": "success" if all_passed else ("failed" if not answer else "partial"),
+            "answer": answer,
+            "sections": sections,
+            "checks": checks,
+            "repaired": repaired,
+            "thread_root": bool(all_passed and isinstance(thread, ConversationThread)),
+            "model_used": call.get("model_used"),
+            "prompt_chars": len(system["content"]) + len(user_prompt),
+        }
+        if call.get("error") and not answer:
+            output["error"] = call["error"]
+        model = state.run_config.step_models.get("initial_conditions", state.run_config.model)
+        usage, cost = _extract_step_cost({"_llm_usage": usage_total} if usage_total else {}, model)
+        result = StepResult(
+            step_name=up.STEP_NAME,
+            tool_name=up.CALL_NAME,
+            output=output,
+            source="llm",
+            token_usage=usage,
+            cost=cost,
+        )
+
+        if has_hard_failure(checks) and "missing_reagents" in derived:
+            self._record_step(state, result)
+            existing.add(up.STEP_NAME)
+            self._handle_module_side_effects(
+                state,
+                ModuleSpec(id="missing_reagents", label="Predict Missing Reagents", kind="llm", phase="pre_loop"),
+                derived["missing_reagents"],
+            )
+        return result
 
     def _select_reaction_type_result(
         self,
@@ -3997,8 +4230,18 @@ class RunCoordinator:
         candidate: BranchCandidate,
         *,
         resume_state_kind: str = "accepted_step",
+        backtrack_note: Optional[str] = None,
     ) -> None:
         """Apply a validated candidate to the run state."""
+        if resume_state_kind == "backtrack" and isinstance(state.conversation_thread, ConversationThread):
+            # The alternative came from the proposal for step bp+1: keep that exchange, drop the dead end.
+            dropped = state.conversation_thread.fork_to_step(state.step_index + 1)
+            self.store.append_event(
+                state.run_id,
+                "thread_forked",
+                {"to_step": state.step_index + 1, "dropped_turns": dropped, "reason": "backtrack"},
+                step_name="mechanism_synthesis",
+            )
         previous_state = list(state.current_state)
         self._record_smirks_state_agreement(state, candidate, previous_state)
         resulting = candidate.resulting_state
@@ -4103,6 +4346,7 @@ class RunCoordinator:
             resulting_state=list(state.current_state),
             candidate_rank=candidate.rank,
         )
+        self._thread_on_accept(state, candidate, backtrack_note=backtrack_note)
         self._persist_resume_state(state, resume_state_kind)
 
     def _collect_failed_path_steps(self, state: RunState, from_step_index: int) -> List[Dict[str, Any]]:
@@ -4187,7 +4431,16 @@ class RunCoordinator:
             bp.chosen_candidate = next_alt
 
             # Apply the alternative candidate
-            self._apply_candidate(state, next_alt, resume_state_kind="backtrack")
+            dead_end_step = max([bp.step_index + 1, *[int(s.get("attempt") or 0) for s in failed_steps]])
+            self._apply_candidate(
+                state,
+                next_alt,
+                resume_state_kind="backtrack",
+                backtrack_note=(
+                    f"Backtracked: the path through your rank {chosen_rank} candidate for step "
+                    f"{bp.step_index + 1} dead-ended at step {dead_end_step} (validation retries exhausted)."
+                ),
+            )
 
             self.store.append_event(
                 state.run_id,
@@ -4382,7 +4635,11 @@ class RunCoordinator:
         *,
         record: bool = True,
     ) -> Tuple[Optional["StepResult"], Dict[str, Any]]:
-        """Execute one IntermediateAgent.run() call and optionally record it."""
+        """Execute one IntermediateAgent.run() call and optionally record it.
+
+        With a conversation thread (threaded harness) and ``record=True`` the
+        call continues the thread; parallel topologies stay stateless.
+        """
         proposal_result = None
         proposal_output: Dict[str, Any] = {}
         if state.run_config.intermediate_prediction_enabled:
@@ -4393,18 +4650,169 @@ class RunCoordinator:
                     tool_name="propose_mechanism_step",
                     attempt=state.step_index + 1,
                 )
+            thread = state.conversation_thread if record else None
+            conversation = self._thread_conversation(state) if isinstance(thread, ConversationThread) else None
             try:
-                proposal_result = self.intermediate_agent.run(
-                    state,
-                    template_guidance=template_guidance,
-                )
+                if conversation is not None:
+                    proposal_result = self.intermediate_agent.run(
+                        state,
+                        template_guidance=template_guidance,
+                        conversation=conversation,
+                    )
+                else:
+                    proposal_result = self.intermediate_agent.run(
+                        state,
+                        template_guidance=template_guidance,
+                    )
             except TypeError:
                 proposal_result = self.intermediate_agent.run(state)  # type: ignore[misc]
+            if conversation is not None:
+                proposal_result = self._thread_absorb_turn(state, proposal_result, template_guidance)
             proposal_result.attempt = state.step_index + 1
             if record:
                 self._record_step(state, proposal_result)
             proposal_output = proposal_result.output if proposal_result else {}
         return proposal_result, proposal_output
+
+    # ------------------------------------------------------------------
+    # Conversation thread (loop_module.conversation_mode = "threaded")
+    # ------------------------------------------------------------------
+
+    def _thread_conversation(self, state: RunState) -> Dict[str, Any]:
+        """Rewind to the last accepted step, compact if needed, build the turn request."""
+        thread: ConversationThread = state.conversation_thread
+        step = state.step_index + 1
+        dropped = thread.fork_to_step(state.step_index)
+        if dropped:
+            self.store.append_event(
+                state.run_id,
+                "thread_forked",
+                {"to_step": state.step_index, "dropped_turns": dropped, "reason": "reproposal"},
+                step_name="mechanism_step_proposal",
+            )
+        if thread.should_compact():
+            before = thread.char_size()
+            if thread.compact():
+                self.store.append_event(
+                    state.run_id,
+                    "thread_compacted",
+                    {
+                        "step": step,
+                        "chars_before": before,
+                        "chars_after": thread.char_size(),
+                        "compacted_through": thread.compacted_through,
+                    },
+                    step_name="mechanism_step_proposal",
+                )
+        return {
+            "prior_messages": thread.messages(),
+            "turn_mode": "full" if thread.needs_full_prompt() else "delta",
+            "preamble": thread.preamble(step),
+            "last_guidance_sha": thread.last_guidance_sha(),
+        }
+
+    def _thread_absorb_turn(
+        self,
+        state: RunState,
+        proposal_result: StepResult,
+        template_guidance: Optional[Dict[str, Any]],
+    ) -> StepResult:
+        """Append the turn to the thread, or retry the step stateless when there is none."""
+        thread: ConversationThread = state.conversation_thread
+        step = state.step_index + 1
+        output = proposal_result.output if isinstance(proposal_result.output, dict) else {}
+        turn = output.pop("thread_turn", None)
+        if isinstance(turn, dict) and turn.get("user") and turn.get("assistant"):
+            thread.append_exchange(
+                step,
+                str(turn["user"]),
+                str(turn["assistant"]),
+                full=turn.get("mode") == "full",
+                guidance_sha=str(turn.get("guidance_sha") or ""),
+            )
+            meta = {
+                "step": step,
+                "mode": turn.get("mode"),
+                "prompt_chars": turn.get("prompt_chars"),
+                "message_count": turn.get("message_count"),
+                "thread_chars": thread.char_size(),
+            }
+            output["thread"] = meta
+            self.store.append_event(state.run_id, "thread_turn_appended", meta, step_name="mechanism_step_proposal")
+            return proposal_result
+        self.store.append_event(
+            state.run_id,
+            "thread_fallback",
+            {
+                "step": step,
+                "status": output.get("status"),
+                "error": str(output.get("error") or "")[:500],
+            },
+            step_name="mechanism_step_proposal",
+        )
+        return self.intermediate_agent.run(state, template_guidance=template_guidance)
+
+    @staticmethod
+    def _short_list_text(values: List[str], limit: int = 600) -> str:
+        text = json.dumps([str(v) for v in values])
+        return text if len(text) <= limit else text[: limit - 1] + "…"
+
+    def _thread_on_accept(
+        self,
+        state: RunState,
+        candidate: BranchCandidate,
+        *,
+        backtrack_note: Optional[str] = None,
+    ) -> None:
+        thread = state.conversation_thread
+        if not isinstance(thread, ConversationThread):
+            return
+        step = state.step_index
+        smirks = str((candidate.mechanism_output or {}).get("reaction_smirks") or "")
+        if len(smirks) > 300:
+            smirks = smirks[:299] + "…"
+        state_text = self._short_list_text(list(state.current_state))
+        summary = (
+            f"Step {step} (your rank {candidate.rank}): intermediate {candidate.intermediate_smiles or 'n/a'}; "
+            f"SMIRKS {smirks or 'n/a'}; state after: {state_text}"
+        )
+        applied = (
+            f"Your rank {candidate.rank} candidate for step {step} passed validation and was applied "
+            f"(intermediate {candidate.intermediate_smiles or 'n/a'}). The current state is now {state_text}."
+        )
+        thread.on_accept(
+            step,
+            rank=candidate.rank,
+            summary=summary,
+            next_note=f"{backtrack_note} {applied}".strip() if backtrack_note else applied,
+        )
+
+    def _thread_record_failed_round(
+        self,
+        state: RunState,
+        candidate_attempts: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+        proposal_quality_summary: Dict[str, Any],
+    ) -> None:
+        """Turn a rejected proposal round into avoid notes for the step's next turn."""
+        thread = state.conversation_thread
+        if not isinstance(thread, ConversationThread):
+            return
+        step = state.step_index + 1
+        notes: List[str] = []
+        for candidate, attempt in candidate_attempts:
+            failed = list(attempt.get("failed_checks") or [])
+            reason = ", ".join(str(c) for c in failed) or str(attempt.get("reason") or attempt.get("status") or "rejected")
+            smirks = str(candidate.get("reaction_smirks") or "")
+            label = candidate.get("intermediate_smiles") or "?"
+            notes.append(f"{label}" + (f" via {smirks[:140]}" if smirks else "") + f" — failed: {reason}")
+        if not candidate_attempts:
+            rejected = int(proposal_quality_summary.get("rejected_candidate_count") or 0)
+            notes.append(
+                "previous proposal had no executable candidates"
+                + (f" ({rejected} rejected before validation)" if rejected else " (empty or unparseable)")
+            )
+        for note in notes:
+            thread.add_avoid(step, note)
 
     @staticmethod
     def _aggregate_usage_cost_from_results(
@@ -5146,6 +5554,8 @@ class RunCoordinator:
                     proposal_quality_summary,
                     step_name="mechanism_step_proposal",
                 )
+                if not validated:
+                    self._thread_record_failed_round(state, candidate_attempts, proposal_quality_summary)
 
                 step_number = state.step_index + 1
                 proposal_hint_payload = reproposal_hints.get(step_number, {}) or {}

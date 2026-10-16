@@ -1091,6 +1091,9 @@ class RunState:
     # (PRD §17). Defaults reproduce today's behaviour.
     decision_policy: DecisionPolicy = field(default_factory=DecisionPolicy)
     jev_config: JevConfig = field(default_factory=JevConfig)
+    # ConversationThread when the harness loop_module sets
+    # conversation_mode="threaded"; None means stateless proposals.
+    conversation_thread: Any = None
 
     def initialise(self) -> None:
         if not self.current_state:

@@ -1,0 +1,439 @@
+{
+  "name": "threaded_unified",
+  "schema_version": "2.1",
+  "description": "Threaded unified variant of jev_reaction_type. Pre-loop: balance -> functional groups -> pH -> one unified_preanalysis LLM call that returns conditions, missing reagents, atom mapping and the reaction-type label together (no Jev; the answer is replayed through the old tools and checked deterministically, with one repair turn). Loop: mechanism-step proposals continue one chat thread that starts from the pre-analysis exchange (loop_module.conversation_mode = 'threaded'); a failed proposal is dropped by forking back to the last accepted step and kept only as a short avoid note; backtracking forks to the branch step; the thread is compacted to a path summary plus the last two steps past max_prompt_chars. step_atom_mapping is off; candidate rescue stays a separate stateless call. Behaviour-changing: needs eval-tier evidence against jev_reaction_type.",
+  "decision_policy": {
+    "example_reaction_type_bypass": false
+  },
+  "tool_calling_mode": "forced",
+  "few_shot_defaults": {
+    "enabled": true,
+    "max_examples": 4,
+    "selection_strategy": "top_score"
+  },
+  "execution_note": "Modules execute in listed order within each phase. pre_loop_modules runs once before the loop; loop_module runs each iteration before post_step_modules; post_step_modules runs after each accepted mechanism step. Array position (step field) is the authoritative execution sequence.",
+  "pre_loop_modules": [
+    {
+      "step": 1,
+      "id": "balance_analysis",
+      "label": "Check Atom Balance",
+      "kind": "deterministic",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "BalanceAgent",
+      "tool_function": "analyse_balance",
+      "step_name": "balance_analysis",
+      "tool_name": "analyse_balance",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": [
+        "balance_analysis"
+      ],
+      "movable": false,
+      "removable": false,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "RDKit counts atoms on each side of the reaction. Reports whether starting materials and products are stoichiometrically balanced, and lists any deficit or surplus atoms. Runs once at the start.",
+      "io_schema": {
+        "inputs": [
+          "starting_materials (SMILES[])",
+          "products (SMILES[])"
+        ],
+        "outputs": [
+          "balanced (bool)",
+          "deficit (object)",
+          "surplus (object)"
+        ]
+      }
+    },
+    {
+      "step": 2,
+      "id": "functional_groups",
+      "label": "Identify Functional Groups",
+      "kind": "deterministic",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "FunctionalGroupsAgent",
+      "tool_function": "fingerprint_functional_groups",
+      "step_name": "functional_groups",
+      "tool_name": "fingerprint_functional_groups",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": [
+        "functional_groups"
+      ],
+      "movable": true,
+      "removable": true,
+      "config_gate": "functional_groups_enabled",
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "SMARTS pattern matching identifies reactive functional groups (alcohols, ketones, amines, etc.) and leaving groups across all starting materials and products. Runs once; output informs atom-mapping context.",
+      "io_schema": {
+        "inputs": [
+          "starting_materials (SMILES[])",
+          "products (SMILES[])"
+        ],
+        "outputs": [
+          "functional_groups (object: group -> count)"
+        ]
+      }
+    },
+    {
+      "step": 3,
+      "id": "ph_recommendation",
+      "label": "Recommend pH",
+      "kind": "deterministic",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "ConditionsAgent",
+      "tool_function": "recommend_ph",
+      "step_name": "ph_recommendation",
+      "tool_name": "recommend_ph",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": [
+        "ph_recommendation"
+      ],
+      "movable": false,
+      "removable": false,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "Rule-based pH suggestion (user pH, Dimorphite-DL profile or acid/base heuristic). Feeds the unified pre-analysis prompt.",
+      "io_schema": {
+        "inputs": [
+          "starting_materials (SMILES[])",
+          "products (SMILES[])",
+          "user_ph (optional)"
+        ],
+        "outputs": [
+          "recommended_ph (float)",
+          "source (user/heuristic/dimorphite)"
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "id": "unified_preanalysis",
+      "label": "Unified Pre-Analysis (conditions, reagents, mapping, reaction type)",
+      "kind": "llm",
+      "phase": "pre_loop",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "unified_preanalysis",
+      "step_name": "unified_preanalysis",
+      "tool_name": "unified_preanalysis",
+      "validator_skill": null,
+      "inputs": [
+        "balance_analysis",
+        "functional_groups",
+        "ph_recommendation"
+      ],
+      "outputs": [
+        "unified_preanalysis",
+        "initial_conditions",
+        "missing_reagents",
+        "atom_mapping",
+        "reaction_type_mapping"
+      ],
+      "movable": false,
+      "removable": false,
+      "config_gate": null,
+      "prompt_call_name": "unified_preanalysis",
+      "group_key": null,
+      "description": "One forced tool call (unified_preanalysis_result) with four sections, each holding the arguments of the old tool: conditions, missing_reagents, atom_mapping, reaction_type. With hidden products only conditions and reaction_type are asked for. Each section is replayed through its old tool so the old step names and output shapes are recorded (source deterministic, derived_from unified_preanalysis). Checks (core/preanalysis_checks.py): conditions parse and pH 0-14; reagents leave no deficit (hard failure pauses the run); rdkit-agent atom-map check; exact taxonomy label or no_match. One repair turn for failed sections. When all sections pass, the exchange becomes the root of the mechanism-loop chat thread.",
+      "io_schema": {
+        "inputs": [
+          "starting_materials (SMILES[])",
+          "products (SMILES[], may be hidden)",
+          "balance_analysis",
+          "functional_groups",
+          "ph_recommendation",
+          "reaction-type taxonomy"
+        ],
+        "outputs": [
+          "conditions",
+          "missing_reagents",
+          "atom_mapping",
+          "reaction_type",
+          "checks",
+          "repaired",
+          "thread_root"
+        ]
+      }
+    }
+  ],
+  "loop_module": {
+    "id": "mechanism_step_proposal",
+    "label": "Propose Mechanism Step",
+    "kind": "llm",
+    "phase": "loop",
+    "agent_class": "IntermediateAgent",
+    "tool_function": "propose_intermediates",
+    "step_name": "mechanism_step_proposal",
+    "prompt_call_name": "propose_mechanism_step",
+    "max_candidates": 3,
+    "max_retries_per_candidate": 3,
+    "description": "Core LLM call executed each iteration of the mechanism loop, as a turn of one chat thread. The first turn (and the first after a compaction) carries the full proposal prompt; later turns send the step index, current state, changed guidance and reproposal notices. Each turn opens with what was applied last turn and, on a reproposal, a short list of the candidates already rejected for this step and why.",
+    "io_schema": {
+      "inputs": [
+        "current_state (SMILES[])",
+        "previous_intermediates",
+        "conditions_guidance",
+        "proposal_constraints",
+        "reaction_type",
+        "atom_mapping_context"
+      ],
+      "outputs": [
+        "candidates (ranked list of intermediate_smiles, resulting_state, reaction_smirks, electron_pushes, step_label)"
+      ]
+    },
+    "conversation_mode": "threaded",
+    "thread": {
+      "max_prompt_chars": 120000,
+      "keep_last_steps": 2
+    }
+  },
+  "post_step_modules": [
+    {
+      "step": 1,
+      "id": "bond_electron_validation",
+      "label": "Check Bond/Electron Conservation",
+      "kind": "deterministic",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "",
+      "step_name": "bond_electron_validation",
+      "tool_name": "",
+      "validator_skill": "bond_electron_validation",
+      "inputs": [],
+      "outputs": [
+        "bond_electron_validation"
+      ],
+      "movable": false,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": "validators",
+      "description": "Parses the DBE metadata tags from the reaction SMIRKS and verifies that bond-order and electron-count changes sum to zero. Part of the mechanism step validation; re-runs on each retry attempt. Ground truth in skills/mechanistic/bond_electron_validation/validator.py.",
+      "io_schema": {
+        "inputs": [
+          "reaction_smirks (with DBE metadata)"
+        ],
+        "outputs": [
+          "valid (bool)",
+          "total_delta",
+          "message"
+        ]
+      }
+    },
+    {
+      "step": 2,
+      "id": "atom_balance_validation",
+      "label": "Check Step Atom Balance",
+      "kind": "deterministic",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "",
+      "step_name": "atom_balance_validation",
+      "tool_name": "",
+      "validator_skill": "atom_balance_validation",
+      "inputs": [],
+      "outputs": [
+        "atom_balance_validation"
+      ],
+      "movable": false,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": "validators",
+      "description": "RDKit verifies that every atom in the current state appears in the resulting state — no atoms created or destroyed. Part of the mechanism step validation; re-runs on each retry attempt. Ground truth in skills/mechanistic/atom_balance_validation/validator.py.",
+      "io_schema": {
+        "inputs": [
+          "current_state (SMILES[])",
+          "resulting_state (SMILES[])"
+        ],
+        "outputs": [
+          "balanced (bool)",
+          "deficit",
+          "surplus"
+        ]
+      }
+    },
+    {
+      "step": 3,
+      "id": "state_progress_validation",
+      "label": "Check State Changed",
+      "kind": "deterministic",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "",
+      "step_name": "state_progress_validation",
+      "tool_name": "",
+      "validator_skill": "state_progress_validation",
+      "inputs": [],
+      "outputs": [
+        "state_progress_validation"
+      ],
+      "movable": false,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": "validators",
+      "description": "Checks that the resulting state differs from the current state and that starting materials are not simply returned unchanged. Part of the mechanism step validation; re-runs on each retry attempt. Ground truth in skills/mechanistic/state_progress_validation/validator.py.",
+      "io_schema": {
+        "inputs": [
+          "current_state (SMILES[])",
+          "resulting_state (SMILES[])"
+        ],
+        "outputs": [
+          "resulting_state_changed (bool)",
+          "unchanged_starting_materials_detected (bool)"
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "id": "reflection",
+      "label": "Collect Validation Warnings",
+      "kind": "deterministic",
+      "phase": "post_step",
+      "enabled": true,
+      "agent_class": "ReflectionAgent",
+      "tool_function": "",
+      "step_name": "reflection",
+      "tool_name": "reflection_agent",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": [
+        "reflection"
+      ],
+      "movable": false,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "Deterministic aggregation of validation warnings from the accepted mechanism step. Runs once per loop iteration after a step passes validation checks. Does not feed back into the current step — it records critique for observability.",
+      "io_schema": {
+        "inputs": [
+          "mechanism_step_output",
+          "validation_result"
+        ],
+        "outputs": [
+          "warnings (string[])",
+          "critique_signals"
+        ]
+      }
+    },
+    {
+      "step": 5,
+      "id": "step_atom_mapping",
+      "label": "Map Atoms for Step",
+      "kind": "llm",
+      "phase": "post_step",
+      "enabled": false,
+      "agent_class": "MappingAgent",
+      "tool_function": "attempt_atom_mapping_for_step",
+      "step_name": "step_atom_mapping",
+      "tool_name": "attempt_atom_mapping_for_step",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": [
+        "step_atom_mapping"
+      ],
+      "movable": true,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": "attempt_atom_mapping",
+      "group_key": null,
+      "description": "Disabled in threaded_unified (about 30% of calls in jev_reaction_type runs).",
+      "io_schema": {
+        "inputs": [
+          "current_state (SMILES[])",
+          "resulting_state (SMILES[])"
+        ],
+        "outputs": [
+          "compact_mapped_atoms",
+          "unmapped_atoms"
+        ]
+      }
+    }
+  ],
+  "post_loop_modules": [
+    {
+      "step": 1,
+      "id": "past_failure_reevaluation",
+      "label": "Re-evaluate Soft-Advanced Steps",
+      "kind": "deterministic",
+      "phase": "post_loop",
+      "enabled": true,
+      "agent_class": "",
+      "tool_function": "",
+      "step_name": "past_failure_reevaluation",
+      "tool_name": "past_failure_reevaluation",
+      "validator_skill": null,
+      "inputs": [],
+      "outputs": [
+        "past_failure_reevaluation"
+      ],
+      "movable": true,
+      "removable": true,
+      "config_gate": null,
+      "prompt_call_name": null,
+      "group_key": null,
+      "description": "After the mechanism loop ends, re-evaluates any steps that were soft-accepted (proceed_on_validation_failure) by attempting deterministic validation fixes in light of later successful steps. Corrected steps are recorded as 'reevaluated' in step_outputs. Has no effect when no soft-accepted steps exist."
+    }
+  ],
+  "run_config_defaults": {
+    "proceed_on_validation_failure": false,
+    "proceed_only_on_arrow_push_failure": false,
+    "balance_mode": "proton_deferred"
+  },
+  "topology_profiles": {
+    "sas": {
+      "agent_count": 1,
+      "max_candidates_per_agent": 1,
+      "peer_rounds": 0,
+      "aggregation_mode": "none",
+      "description": "Single sequential proposer, top-1 candidate only."
+    },
+    "centralized_mas": {
+      "agent_count": 1,
+      "max_candidates_per_agent": 3,
+      "peer_rounds": 0,
+      "aggregation_mode": "orchestrator_select",
+      "description": "Current default. Orchestrator proposes multi-candidate, validates, selects."
+    },
+    "independent_mas": {
+      "agent_count": 3,
+      "max_candidates_per_agent": 2,
+      "peer_rounds": 0,
+      "aggregation_mode": "synthesis_only",
+      "description": "N independent parallel calls; candidate pools concatenated; no peer sharing."
+    },
+    "decentralized_mas": {
+      "agent_count": 3,
+      "max_candidates_per_agent": 2,
+      "peer_rounds": 2,
+      "aggregation_mode": "consensus",
+      "consensus_key": "reaction_smirks",
+      "consensus_fallback_key": "intermediate_smiles",
+      "description": "N agents x D debate rounds with peer summaries; consensus merge."
+    }
+  },
+  "metadata": {
+    "description": "Threaded unified harness: one pre-analysis call plus a threaded mechanism loop.",
+    "created_from": "jev_reaction_type",
+    "changelog": [
+      {
+        "version": 1,
+        "date": "2026-10-16",
+        "description": "Created from jev_reaction_type: four pre-loop decisions merged into unified_preanalysis (Jev dropped), mechanism proposals threaded with rewind to the last accepted step, branch forks on backtrack and compaction; step_atom_mapping disabled; example reaction-type bypass off."
+      }
+    ]
+  }
+}

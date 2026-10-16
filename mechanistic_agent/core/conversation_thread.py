@@ -60,11 +60,33 @@ class ConversationThread:
         self.checkpoints = {"accepted:0": self.root_len}
         self.compacted_through = 0
 
-    def append_exchange(self, step: int, user: str, assistant: str, *, full: bool) -> None:
+    def append_exchange(
+        self,
+        step: int,
+        user: str,
+        assistant: str,
+        *,
+        full: bool,
+        guidance_sha: Optional[str] = None,
+    ) -> None:
         self.turns.append(
-            {"role": "user", "content": user, "kind": "proposal", "step": int(step), "full": bool(full)}
+            {
+                "role": "user",
+                "content": user,
+                "kind": "proposal",
+                "step": int(step),
+                "full": bool(full),
+                "guidance_sha": guidance_sha or "",
+            }
         )
         self.turns.append({"role": "assistant", "content": assistant, "kind": "proposal", "step": int(step)})
+
+    def last_guidance_sha(self) -> str:
+        """Hash of the harness guidance in the latest retained turn that sent it."""
+        for turn in reversed(self.turns):
+            if turn.get("role") == "user" and turn.get("guidance_sha"):
+                return str(turn["guidance_sha"])
+        return ""
 
     def on_accept(self, step: int, *, rank: Optional[int], summary: str, next_note: str) -> None:
         step = int(step)

@@ -374,6 +374,7 @@ class IntermediateAgent:
         state: RunState,
         *,
         template_guidance: Optional[Dict[str, Any]] = None,
+        conversation: Optional[Dict[str, Any]] = None,
     ) -> StepResult:
         mapped_context: Dict[str, Any] = {}
         if isinstance(template_guidance, dict) and MAPPED_SPECIES_CONTEXT_KEY in template_guidance:
@@ -396,6 +397,7 @@ class IntermediateAgent:
             mapped_products=list(mapped_context.get("mapped_products") or []),
             mapped_current_state=list(mapped_context.get("mapped_current_state") or []),
             functional_groups_enabled=state.run_config.functional_groups_enabled,
+            conversation=conversation,
         )
         model = state.run_config.step_models.get("intermediates", state.run_config.model)
         usage, cost = _extract_step_cost(output, model)

@@ -152,6 +152,18 @@ Other models' lanes and results, docs, and leaderboard or CLI code never trigger
 - The rendered SMIRKS is then checked with `rdkit-agent atom-map check --json '{"smirks": ...}'` (`atom_map_check`: `valid` and `balanced` must both be true).
 - Any failed check clamps the mapping `confidence` to 0.3 before it reaches prompts and scoring. A CLI that runs but rejects the invocation (exit 2/3, non-JSON, unexpected shape) is a **failed** check with an `error_code`; only a CLI that cannot execute at all (missing, timeout) skips validation, and the step output records `atom_map_validation.skipped = true`.
 
+## Threaded Unified Harness (`threaded_unified`)
+
+Design: `docs/superpowers/specs/2026-10-16-threaded-unified-harness-design.md`. Experimental; it needs eval-tier evidence against `jev_reaction_type` before it can become a product harness.
+
+- **One pre-analysis call.** The `unified_preanalysis` module (`mechanistic_agent/unified_preanalysis.py`, skill `skills/mechanistic/unified_preanalysis/`) makes one forced call to `unified_preanalysis_result`. Its sections are `conditions`, `missing_reagents`, `atom_mapping` and `reaction_type`; with hidden products only `conditions` and `reaction_type` are asked for. Each section holds the arguments of the old tool. It replaces `initial_conditions`, `missing_reagents`, `atom_mapping` and the Jev reaction-type decision.
+- **Replay through the old tools.** Inside `llm.preset_tool_answers`, `get_chat_model` returns single-use stored answers, so the old tools parse and validate each section unchanged. The old step names are recorded with `source = deterministic` and `derived_from = unified_preanalysis`; the model, usage and cost sit on the `unified_preanalysis` step.
+- **Checks.** `core/preanalysis_checks.py` checks each section: conditions parse with pH 0–14; reagents leave no deficit (a hard failure pauses the run as `missing_reagents` does); the atom-map check passes; the reaction-type label is an exact taxonomy label or `no_match` (an invented label fails). Failed sections get one repair turn. The `unified_preanalysis_checks` event carries the first and final results.
+- **Threaded proposals.** With `loop_module.conversation_mode = "threaded"`, recorded single-call proposals (`sas`, `centralized_mas`) continue one chat (`core/conversation_thread.py`, `conversation_thread.v1`, persisted in the resume state). When all pre-analysis checks pass, the pre-analysis exchange is the root; otherwise the root is empty (`thread_root_reset`). The first turn carries the full proposal prompt; later turns send the step index, the state, changed guidance and the reproposal notices.
+- **Rewind.** A reproposal forks the thread back to the last accepted step (`thread_forked`, reason `reproposal`). The rejected exchange is dropped and kept only as an avoid note ("Already rejected for this step…", at most 6 notes of 300 characters). A backtrack forks to the branch step (reason `backtrack`) and the next turn opens with a backtrack note. An answer that fails parsing still enters the thread so that it can be forked away.
+- **Compaction.** Past `thread.max_prompt_chars` (120000), the thread keeps the root, a summary of the accepted path and the last `keep_last_steps` (2) steps (`thread_compacted`). A proposal that returns no response is rerun stateless (`thread_fallback`).
+- **Off in this harness:** `step_atom_mapping` and the example reaction-type bypass. Candidate rescue stays a separate stateless call. Parallel topologies stay stateless.
+
 ## Skill and Prompt Architecture
 
 All mechanistic prediction assets live under `skills/mechanistic/`, split from project-level skills in `skills/project/`.

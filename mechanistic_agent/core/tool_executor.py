@@ -120,6 +120,7 @@ class ToolExecutor:
         mapped_products: Optional[List[str]] = None,
         mapped_current_state: Optional[List[str]] = None,
         functional_groups_enabled: Optional[bool] = None,
+        conversation: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         # loop_state_mapping="mapped" (opt-in): the loop's mapped copy replaces
         # the stripped current_state; pre-loop inputs stay stripped.
@@ -145,6 +146,7 @@ class ToolExecutor:
                 step_mapping_context=step_mapping_context,
                 template_guidance=template_guidance,
                 functional_groups_enabled=functional_groups_enabled,
+                conversation=conversation,
             )
         )
 
