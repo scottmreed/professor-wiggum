@@ -761,3 +761,77 @@ HARNESS_MUTATION_TOOL: Dict[str, Any] = {
 }
 
 __all__.append("HARNESS_MUTATION_TOOL")
+
+
+# ---------------------------------------------------------------------------
+# 8. unified_preanalysis  (conditions + reagents + mapping + reaction type)
+# ---------------------------------------------------------------------------
+
+UNIFIED_PREANALYSIS_TOOL_NAME = "unified_preanalysis_result"
+
+# Section name -> (source tool, wording). The section arguments are the source
+# tool's arguments, so each section can be replayed through that tool.
+UNIFIED_PREANALYSIS_SECTIONS: Dict[str, Dict[str, Any]] = {
+    "conditions": {
+        "tool": ASSESS_CONDITIONS_TOOL,
+        "description": "Reaction environment, representative pH and acid or base candidates.",
+    },
+    "missing_reagents": {
+        "tool": MISSING_REAGENTS_TOOL,
+        "description": "Species to add to either side so the overall reaction is atom balanced.",
+    },
+    "atom_mapping": {
+        "tool": ATOM_MAPPING_TOOL,
+        "description": "Atom-to-atom mapping from starting materials to products.",
+    },
+    "reaction_type": {
+        "tool": REACTION_TYPE_SELECTION_TOOL,
+        "description": "One exact taxonomy label (with its type id) or 'no_match'.",
+    },
+}
+
+
+def _section_schema(source_tool: Dict[str, Any], description: str) -> Dict[str, Any]:
+    import copy
+
+    params = copy.deepcopy(source_tool["function"]["parameters"])
+    params.get("properties", {}).pop("text", None)
+    params["description"] = description
+    return params
+
+
+def build_unified_preanalysis_tool(*, products_hidden: bool = False) -> Dict[str, Any]:
+    """Tool for the single pre-analysis call.
+
+    With hidden products there is no reaction to balance or map, so only the
+    conditions and reaction-type sections are asked for.
+    """
+    sections = ["conditions", "reaction_type"] if products_hidden else list(UNIFIED_PREANALYSIS_SECTIONS)
+    properties: Dict[str, Any] = {
+        "text": {
+            "type": "string",
+            "description": "Optional free-form reasoning shared across the sections.",
+        }
+    }
+    for name in sections:
+        spec = UNIFIED_PREANALYSIS_SECTIONS[name]
+        properties[name] = _section_schema(spec["tool"], spec["description"])
+    return {
+        "type": "function",
+        "function": {
+            "name": UNIFIED_PREANALYSIS_TOOL_NAME,
+            "description": (
+                "Return the whole pre-mechanism analysis in one result: "
+                + ", ".join(sections)
+                + "."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": sections,
+            },
+        },
+    }
+
+
+__all__ += ["UNIFIED_PREANALYSIS_TOOL_NAME", "UNIFIED_PREANALYSIS_SECTIONS", "build_unified_preanalysis_tool"]

@@ -1,8 +1,11 @@
 """Provider-aware LLM helpers for OpenAI, Gemini, and OpenRouter models."""
 from __future__ import annotations
 
+import contextvars
+import json
 import os
-from typing import Any, Dict, Optional
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, Optional
 
 try:  # pragma: no cover - optional import
     from openai import OpenAI
@@ -115,6 +118,8 @@ def _resolve_anthropic_api_key(user_key: Optional[str] = None) -> Optional[str]:
 
 def get_model_api_key(model_name: Optional[str], user_key: Optional[str] = None) -> Optional[str]:
     """Return the provider API key for the given model name."""
+    if _PRESET_TOOL_ANSWERS.get() is not None:
+        return user_key or "preset-answer"
     if is_agent_bridge_model(model_name):
         # The bridge is answered by a local agent/subagent, not a hosted API, so
         # there is no credential to resolve. Return a non-empty sentinel so the
@@ -779,6 +784,60 @@ class _GeminiChatAdapter:
         return _SimpleMessage(text, usage=usage_data)
 
 
+_PRESET_TOOL_ANSWERS: contextvars.ContextVar[Optional[Dict[str, Dict[str, Any]]]] = contextvars.ContextVar(
+    "mechanistic_preset_tool_answers", default=None
+)
+
+
+class PresetAnswerConsumedError(RuntimeError):
+    """A preset answer was requested twice, or for a tool that has none."""
+
+
+class _PresetChatAdapter:
+    """Answers forced tool calls from ``preset_tool_answers`` without a model.
+
+    Each answer is single-use, so a tool's own retry gets an error instead of
+    re-reading the answer that just failed its checks.
+    """
+
+    def __init__(self, answers: Dict[str, Dict[str, Any]], model_name: str) -> None:
+        self._answers = answers
+        self._model = model_name
+
+    def invoke(self, messages: Any, config: Any = None, *, tools: Any = None, tool_choice: Any = None) -> Any:
+        name = ""
+        if isinstance(tool_choice, dict):
+            name = str((tool_choice.get("function") or {}).get("name") or "")
+        if not name and isinstance(tools, list) and len(tools) == 1:
+            name = str(((tools[0] or {}).get("function") or {}).get("name") or "")
+        if not name and len(self._answers) == 1:
+            name = next(iter(self._answers))
+        if name not in self._answers:
+            raise PresetAnswerConsumedError(f"no preset answer left for tool '{name or '?'}'")
+        args = self._answers.pop(name)
+        arguments = json.dumps(args)
+        return _SimpleMessage(
+            arguments,
+            tool_calls=[{"id": f"preset_{name}", "name": name, "arguments": arguments}],
+            usage=None,
+        )
+
+
+@contextmanager
+def preset_tool_answers(answers: Dict[str, Dict[str, Any]]) -> Iterator[Dict[str, Dict[str, Any]]]:
+    """Make ``get_chat_model`` answer the named tools with stored arguments.
+
+    Used to replay one combined model answer through the per-step tools so
+    their parsing, normalisation and validation run unchanged.
+    """
+    remaining = {str(k): dict(v) for k, v in answers.items() if isinstance(v, dict)}
+    token = _PRESET_TOOL_ANSWERS.set(remaining)
+    try:
+        yield remaining
+    finally:
+        _PRESET_TOOL_ANSWERS.reset(token)
+
+
 def get_chat_model(
     model_name: str,
     *,
@@ -792,8 +851,14 @@ def get_chat_model(
     Inside a run step (``core.call_recorder.call_context`` open) the adapter is
     wrapped in a ``RecordingChatAdapter`` that emits live ``inference_call_*``
     events (Observatory PRD §13). Outside a step the bare adapter is returned.
+    Inside ``preset_tool_answers`` no model is built or recorded: the stored
+    answers are returned instead.
     """
     from .core.call_recorder import maybe_record
+
+    preset = _PRESET_TOOL_ANSWERS.get()
+    if preset is not None:
+        return _PresetChatAdapter(preset, model_name)
 
     return maybe_record(
         _build_chat_model(

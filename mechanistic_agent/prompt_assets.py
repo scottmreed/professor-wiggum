@@ -42,9 +42,11 @@ STEP_TO_CALL_NAME: Dict[str, str] = {
     "mechanism_synthesis": "propose_mechanism_step",
     "intermediates": "propose_mechanism_step",
     "evaluation_judge": "evaluate_run_judge",
+    "unified_preanalysis": "unified_preanalysis",
 }
 
 CALL_TO_STEPS: Dict[str, List[str]] = {
+    "unified_preanalysis": ["unified_preanalysis"],
     "assess_initial_conditions": ["initial_conditions"],
     "predict_missing_reagents": ["missing_reagents"],
     "attempt_atom_mapping": ["atom_mapping"],
@@ -571,9 +573,11 @@ def _tool_schema_for_call_name(call_name: str) -> Dict[str, Any] | None:
         MECHANISM_STEP_PROPOSAL_TOOL,
         MISSING_REAGENTS_TOOL,
         REACTION_TYPE_SELECTION_TOOL,
+        build_unified_preanalysis_tool,
     )
 
     return {
+        "unified_preanalysis": build_unified_preanalysis_tool(),
         "assess_initial_conditions": ASSESS_CONDITIONS_TOOL,
         "predict_missing_reagents": MISSING_REAGENTS_TOOL,
         "attempt_atom_mapping": ATOM_MAPPING_TOOL,
