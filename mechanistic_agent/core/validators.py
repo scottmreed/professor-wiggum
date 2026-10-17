@@ -196,6 +196,13 @@ def _override_atom_balance_check(
     replaced = False
     for check in result.checks:
         if check.name == "atom_balance":
+            # Both backends count heavy atoms only; keep the replaced verdict
+            # visible so a parity drift shows up in the step details.
+            if check is not atom_check:
+                atom_check.details = {
+                    **dict(atom_check.details or {}),
+                    "backend_atom_balance_passed": bool(check.passed),
+                }
             updated.append(atom_check)
             replaced = True
         else:

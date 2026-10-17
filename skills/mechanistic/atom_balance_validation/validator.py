@@ -1,19 +1,28 @@
 """Atom balance validator.
 
 Ground truth implementation for the atom_balance_validation mechanistic skill.
-Uses RDKit (via analyse_balance) to verify that every atom in current_state
-appears in resulting_state — no atoms created or destroyed.
+Uses RDKit (via assess_balance_diagnostics) to verify that every heavy atom in
+current_state appears in resulting_state — no atoms created or destroyed.
+
+Hydrogen policy: heavy atoms only, on both sides. A bare ``[H+]`` is an explicit
+H atom but becomes implicit once bonded, so counting explicit hydrogens made a
+correct protonation (``ketone + [H+] -> oxocarbenium``) fail as ``H: 1->0``.
+The rdkit-agent mechanism-step check counts heavy atoms only as well, and the
+candidate rescue uses the same policy (``HYDROGEN_POLICY``).
 
 Harness-specific overrides go in:
   harness_versions/<harness>/patches/atom_balance_validation.py
 """
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List
 
 from mechanistic_agent.balance import assess_balance_diagnostics
 from mechanistic_agent.core.types import StepValidationCheck
+
+#: Hydrogen accounting shared by the validator and the candidate rescue.
+HYDROGEN_POLICY = "heavy_atoms_only"
+INCLUDE_HYDROGENS = False
 
 
 def validate_atom_balance(
@@ -32,7 +41,7 @@ def validate_atom_balance(
     diagnostics = assess_balance_diagnostics(
         current_state,
         resulting_state,
-        include_hydrogens=False,
+        include_hydrogens=INCLUDE_HYDROGENS,
         left_label="current_state",
         right_label="resulting_state",
     )
@@ -45,6 +54,7 @@ def validate_atom_balance(
         "repaired_species": diagnostics.get("repaired_species", []),
         "sanitized_current": diagnostics.get("sanitized_left", []),
         "sanitized_resulting": diagnostics.get("sanitized_right", []),
+        "hydrogen_policy": HYDROGEN_POLICY,
     }
     if diagnostics.get("left_counts"):
         details["current_counts"] = diagnostics.get("left_counts", {})
@@ -56,23 +66,6 @@ def validate_atom_balance(
     if diagnostics.get("classification") == "invalid_species":
         return StepValidationCheck(name="atom_balance", passed=False, details=details)
 
-    try:
-        from mechanistic_agent.tools import analyse_balance
-
-        raw = analyse_balance(
-            list(diagnostics.get("sanitized_left", [])),
-            list(diagnostics.get("sanitized_right", [])),
-        )
-        parsed = json.loads(raw)
-        rdkit = parsed.get("rdkit", {}) if isinstance(parsed, dict) else {}
-        balanced = bool(rdkit.get("balanced", diagnostics.get("balanced")))
-        details["balanced"] = balanced
-        details["deficit"] = rdkit.get("deficit", diagnostics.get("deficit", {}))
-        details["surplus"] = rdkit.get("surplus", diagnostics.get("surplus", {}))
-        return StepValidationCheck(name="atom_balance", passed=balanced, details=details)
-    except Exception as exc:  # pragma: no cover - defensive
-        return StepValidationCheck(
-            name="atom_balance",
-            passed=False,
-            details={**details, "error": f"balance_check_failed: {exc}"},
-        )
+    # The diagnostics already counted both sides the same way (heavy atoms only);
+    # no second count with a different hydrogen policy may overrule them.
+    return StepValidationCheck(name="atom_balance", passed=bool(details["balanced"]), details=details)

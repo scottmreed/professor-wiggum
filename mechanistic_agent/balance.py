@@ -22,12 +22,19 @@ def _normalise_counter(counter: Mapping[str, Any] | None) -> Dict[str, int]:
 
 
 def _count_atoms(smiles_list: Iterable[str], *, include_hydrogens: bool) -> Counter[str]:
-    from mechanistic_agent.tools import _atom_counter, _atom_counter_with_hydrogens
+    """Element counts for a species list.
+
+    ``include_hydrogens=True`` counts every hydrogen (explicit and implicit);
+    ``include_hydrogens=False`` counts heavy atoms only and excludes every
+    hydrogen, including a bare ``[H+]`` written as an explicit atom. Either way
+    both sides of a comparison are counted the same way.
+    """
+    from mechanistic_agent.tools import _atom_counter_with_hydrogens, _heavy_atom_counter
 
     values = list(smiles_list)
     if include_hydrogens:
         return _atom_counter_with_hydrogens(values)
-    return _atom_counter(values)
+    return _heavy_atom_counter(values)
 
 
 def _repair_species(

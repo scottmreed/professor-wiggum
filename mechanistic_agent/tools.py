@@ -839,6 +839,25 @@ def _atom_counter(smiles_list: Iterable[str]) -> Counter:
     return counts
 
 
+def _heavy_atom_counter(smiles_list: Iterable[str]) -> Counter:
+    """Count heavy atoms only (atomic number > 1).
+
+    Every hydrogen is excluded, explicit or implicit, bare or bonded: a lone
+    ``[H+]`` (or ``[H-]``, ``[H][H]``) is an explicit H atom while the same proton
+    once bonded becomes implicit, so counting explicit H atoms only makes a
+    correct protonation look like a lost hydrogen. This matches the
+    ``rdkit-agent check`` mechanism-step atom balance, which also counts heavy
+    atoms only. Hydrogen bookkeeping is the mechanism audit's job.
+    """
+    counts: Counter = Counter()
+    for smiles in smiles_list:
+        mol = _mol_from_smiles(smiles)
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() > 1:
+                counts[atom.GetSymbol()] += 1
+    return counts
+
+
 def _atom_counter_with_hydrogens(smiles_list: Iterable[str]) -> Counter:
     """Count all atoms including hydrogens for proper stoichiometry."""
     counts: Counter = Counter()
@@ -1800,6 +1819,22 @@ def _canonicalise_candidate_smiles(smiles: str, *, backend_config: Any = None) -
         return (bool(output.get("overall_pass")), failed)
 
     def _cli_to_result(output: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any]]:
+        cli_mode = str(output.get("mode") or "smiles")
+        if cli_mode != "smiles":
+            # rdkit-agent <= 0.1.1 declares its progress flags as minimist
+            # booleans, so they default to false and `check {"smiles": ...}` is
+            # routed to state-progress mode. Its verdict then answers a different
+            # question (it fails every SMILES with
+            # state_progress_unchanged_starting_materials), so it must not mark a
+            # species invalid: validate with RDKit in-process instead.
+            canonical_py, details_py = _canonicalise_candidate_smiles_python(smiles, backend_config=backend_config)
+            details_py = dict(details_py or {})
+            details_py["rdkit_cli_mode_mismatch"] = {
+                "expected": "smiles",
+                "got": cli_mode,
+                "failed_checks": list(output.get("failed_check_names") or []),
+            }
+            return canonical_py, details_py
         details: Dict[str, Any] = {
             "raw": smiles,
             "backend": "rdkit_cli",
@@ -4062,11 +4097,18 @@ def predict_missing_reagents_for_candidate(
     ``current_state -> resulting_state`` transition as the balancing problem.
     """
     from mechanistic_agent.balance import assess_balance_diagnostics
+    from skills.mechanistic.atom_balance_validation.validator import (
+        HYDROGEN_POLICY,
+        INCLUDE_HYDROGENS,
+    )
 
+    # Same hydrogen policy as the atom-balance validator: a rescue that counts
+    # implicit H while the validator counts heavy atoms reports "balanced" for a
+    # step the validator rejects (and vice versa), so nothing ever changes.
     balance_diagnostics = assess_balance_diagnostics(
         current_state,
         resulting_state,
-        include_hydrogens=True,
+        include_hydrogens=INCLUDE_HYDROGENS,
         left_label="current_state",
         right_label="resulting_state",
     )
@@ -4210,9 +4252,31 @@ def predict_missing_reagents_for_candidate(
     if "mechanism_moves" in checks:
         hint = "Adjust the explicit mechanism moves so they match the bond changes in reaction_smirks."
 
+    # The status describes the additions that survive the caps and filters
+    # above, counted the way the validator counts them, not the model's own
+    # claim: a "success" whose kept additions still leave a deficit is "partial".
+    post_additions_balance = assess_balance_diagnostics(
+        sanitized_current + add_reactants,
+        sanitized_resulting + add_products,
+        include_hydrogens=INCLUDE_HYDROGENS,
+        left_label="current_state+add_reactants",
+        right_label="resulting_state+add_products",
+    )
+    if add_reactants or add_products:
+        status = "success" if post_additions_balance.get("balanced") else "partial"
+    else:
+        status = "balanced" if balance_diagnostics.get("balanced") else "no_additions"
+
     return _serialise(
         {
-            "status": str(parsed.get("status") or "success"),
+            "status": status,
+            "model_status": str(parsed.get("status") or ""),
+            "hydrogen_policy": HYDROGEN_POLICY,
+            "post_additions_balance": {
+                key: post_additions_balance.get(key)
+                for key in ("balanced", "classification", "deficit", "surplus", "error")
+                if post_additions_balance.get(key) not in (None, {}, "")
+            },
             "add_reactants": add_reactants,
             "add_products": add_products,
             "dropped_additions": dropped_additions,
