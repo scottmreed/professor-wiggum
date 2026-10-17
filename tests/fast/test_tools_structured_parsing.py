@@ -610,7 +610,10 @@ def test_candidate_rescue_dedupes_drops_existing_and_caps(monkeypatch: pytest.Mo
         validation_details={"passed": False},
     )
     payload = json.loads(raw)
-    assert payload["status"] == "success"
+    # The kept additions (after dedupe/caps) do not balance the step, so the
+    # status is "partial" even though the model claimed "success".
+    assert payload["status"] == "partial"
+    assert payload["model_status"] == "success"
     assert payload["add_reactants"] == ["N", "Cl"]
     assert payload["add_products"] == ["Cl", "Br"]
     dropped = payload.get("dropped_additions", [])

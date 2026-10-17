@@ -822,7 +822,11 @@ def _mol_from_smiles(smiles: str):
     candidate = str(smiles or "").strip()
     if not candidate:
         raise ToolRuntimeError("Invalid SMILES string: empty input")
-    if not _looks_like_smiles(candidate):
+    # repair-smiles (and RDKit's own writer) emits CXSMILES for radicals and dative/coordinate
+    # bonds, e.g. "[CH3] |^1:0|" or "[OH-][Zn+2] |C:0.0|". Judge the SMILES part only; RDKit
+    # parses the "|...|" extension itself (radical counts, coordinate bonds).
+    core = candidate.split(" |", 1)[0].strip() if candidate.endswith("|") and " |" in candidate else candidate
+    if not _looks_like_smiles(core):
         raise ToolRuntimeError(f"Invalid SMILES string: {candidate}")
     mol = Chem.MolFromSmiles(candidate)
     if mol is None:
@@ -836,6 +840,25 @@ def _atom_counter(smiles_list: Iterable[str]) -> Counter:
         mol = _mol_from_smiles(smiles)
         for atom in mol.GetAtoms():
             counts[atom.GetSymbol()] += 1
+    return counts
+
+
+def _heavy_atom_counter(smiles_list: Iterable[str]) -> Counter:
+    """Count heavy atoms only (atomic number > 1).
+
+    Every hydrogen is excluded, explicit or implicit, bare or bonded: a lone
+    ``[H+]`` (or ``[H-]``, ``[H][H]``) is an explicit H atom while the same proton
+    once bonded becomes implicit, so counting explicit H atoms only makes a
+    correct protonation look like a lost hydrogen. This matches the
+    ``rdkit-agent check`` mechanism-step atom balance, which also counts heavy
+    atoms only. Hydrogen bookkeeping is the mechanism audit's job.
+    """
+    counts: Counter = Counter()
+    for smiles in smiles_list:
+        mol = _mol_from_smiles(smiles)
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() > 1:
+                counts[atom.GetSymbol()] += 1
     return counts
 
 
@@ -1800,6 +1823,42 @@ def _canonicalise_candidate_smiles(smiles: str, *, backend_config: Any = None) -
         return (bool(output.get("overall_pass")), failed)
 
     def _cli_to_result(output: Dict[str, Any]) -> Tuple[Optional[str], Dict[str, Any]]:
+        cli_mode = str(output.get("mode") or "smiles")
+        if cli_mode != "smiles":
+            # rdkit-agent <= 0.1.1 declares its progress flags as minimist
+            # booleans, so they default to false and `check {"smiles": ...}` is
+            # routed to state-progress mode. Its verdict then answers a different
+            # question (it fails every SMILES with
+            # state_progress_unchanged_starting_materials), so it must not mark a
+            # species invalid: validate with RDKit in-process instead.
+            mismatch = {
+                "expected": "smiles",
+                "got": cli_mode,
+                "failed_checks": list(output.get("failed_check_names") or []),
+            }
+            canonical_py, details_py = _canonicalise_candidate_smiles_python(smiles, backend_config=backend_config)
+            details_py = dict(details_py or {})
+            details_py["rdkit_cli_mode_mismatch"] = mismatch
+            if canonical_py:
+                return canonical_py, details_py
+            # RDKit could not parse it either (e.g. dative-bond metal complexes the
+            # Python cleaner mangles): fall back to repair-smiles on the raw input,
+            # as before, but never report the misrouted check's error code.
+            repaired, repair_meta = _attempt_repair_smiles_via_rdkit_cli(smiles, backend_config=backend_config)
+            details_py["repair_smiles"] = repair_meta
+            if repaired:
+                details_py.pop("error", None)
+                details_py.update(
+                    {
+                        "canonical": repaired,
+                        "validated": True,
+                        "validated_from": "rdkit_cli:repair-smiles",
+                        "repair_smiles_applied": True,
+                    }
+                )
+                return repaired, details_py
+            details_py.setdefault("error", "Unable to validate SMILES string")
+            return None, details_py
         details: Dict[str, Any] = {
             "raw": smiles,
             "backend": "rdkit_cli",
@@ -4062,11 +4121,22 @@ def predict_missing_reagents_for_candidate(
     ``current_state -> resulting_state`` transition as the balancing problem.
     """
     from mechanistic_agent.balance import assess_balance_diagnostics
+    from mechanistic_agent.balance import merge_unique_species
+    from skills.mechanistic.atom_balance_validation.validator import (
+        BALANCE_POLICY,
+        HYDROGEN_POLICY,
+        INCLUDE_CHARGE,
+        INCLUDE_HYDROGENS,
+    )
 
+    # Same counting policy as the atom-balance validator (all H + net charge): a
+    # rescue that counts differently reports "balanced" for a step the validator
+    # rejects (and vice versa), so nothing ever changes.
     balance_diagnostics = assess_balance_diagnostics(
         current_state,
         resulting_state,
-        include_hydrogens=True,
+        include_hydrogens=INCLUDE_HYDROGENS,
+        include_charge=INCLUDE_CHARGE,
         left_label="current_state",
         right_label="resulting_state",
     )
@@ -4210,9 +4280,34 @@ def predict_missing_reagents_for_candidate(
     if "mechanism_moves" in checks:
         hint = "Adjust the explicit mechanism moves so they match the bond changes in reaction_smirks."
 
+    # The status describes the additions that survive the caps and filters
+    # above, applied exactly as the coordinator applies them (merge_unique_species
+    # onto the step's own states) and counted the way the validator counts them,
+    # not the model's own claim: kept additions that still leave a residual are "partial".
+    post_additions_balance = assess_balance_diagnostics(
+        merge_unique_species([str(x) for x in current_state], add_reactants),
+        merge_unique_species([str(x) for x in resulting_state], add_products),
+        include_hydrogens=INCLUDE_HYDROGENS,
+        include_charge=INCLUDE_CHARGE,
+        left_label="current_state+add_reactants",
+        right_label="resulting_state+add_products",
+    )
+    if add_reactants or add_products:
+        status = "success" if post_additions_balance.get("balanced") else "partial"
+    else:
+        status = "balanced" if balance_diagnostics.get("balanced") else "no_additions"
+
     return _serialise(
         {
-            "status": str(parsed.get("status") or "success"),
+            "status": status,
+            "model_status": str(parsed.get("status") or ""),
+            "hydrogen_policy": HYDROGEN_POLICY,
+            "balance_policy": BALANCE_POLICY,
+            "post_additions_balance": {
+                key: post_additions_balance.get(key)
+                for key in ("balanced", "classification", "deficit", "surplus", "charge_delta", "error")
+                if post_additions_balance.get(key) not in (None, {}, "")
+            },
             "add_reactants": add_reactants,
             "add_products": add_products,
             "dropped_additions": dropped_additions,
@@ -5686,6 +5781,22 @@ def propose_intermediates(
     guidance_payload: Dict[str, Any] = dict(template_guidance or {})
     # Pop scratchpad_summary before JSON-rendering so it gets its own section.
     scratchpad_summary = str(guidance_payload.pop("scratchpad_summary", "") or "").strip()
+    # Per-candidate validator feedback from the coordinator's retry_exhausted /
+    # repeat-signature reproposal; rendered as its own section, not as JSON.
+    raw_rejection_notes = guidance_payload.pop("rejection_notes", None)
+    rejection_notes = [
+        str(note).strip() for note in (raw_rejection_notes or []) if isinstance(note, str) and str(note).strip()
+    ][:6] if isinstance(raw_rejection_notes, list) else []
+    rejection_notes_text = ""
+    if rejection_notes:
+        rejection_notes_text = (
+            "VALIDATION FEEDBACK — every candidate you proposed for this step was rejected by the "
+            "deterministic checks. The chemistry may be right; fix what is listed. resulting_state must "
+            "be the whole current_state after the step: every species the reaction_smirks does not touch, "
+            "with every duplicate copy, plus the SMIRKS products, so every element (hydrogens included) and the "
+            "net charge balance exactly.\n"
+            + "\n".join(f"- {note}" for note in rejection_notes)
+        )
     if scratchpad_summary:
         human_prompt += (
             "Run history (avoid repeating failed approaches):\n"
@@ -5747,6 +5858,9 @@ def propose_intermediates(
             "kind, source_bond ([bondStart, bondEnd]), through_atom (must equal source_bond[1]), "
             "target_atom, electrons=2.\n\n"
         )
+
+    if rejection_notes_text:
+        human_prompt += rejection_notes_text + "\n\n"
 
     # SMILES validation errors from prior attempt (set by coordinator on reproposal)
     smiles_error = guidance_payload.get("smiles_error_context")
@@ -5899,6 +6013,8 @@ def propose_intermediates(
                 )
             if smiles_error:
                 delta_lines.append(f"SMILES VALIDATION ERRORS from the prior attempt:\n{smiles_error}")
+            if rejection_notes_text:
+                delta_lines.append(rejection_notes_text)
             if final_products_present:
                 delta_lines.append("All target products are present in the current state; confirm whether this is the final step.")
             delta_lines.append(

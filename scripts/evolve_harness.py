@@ -101,7 +101,7 @@ class EvolutionConfig:
     mining_score_threshold: float = 0.5
     max_few_shots_per_step: int = 3
     dry_run: bool = False
-    max_steps: int = 10
+    max_steps: int = 14
     max_runtime: float = 600.0
     retry_same_candidate_max: int = 1
     repeat_failure_signature_limit: int = 2

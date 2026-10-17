@@ -15,7 +15,7 @@ import typer
 
 from mechanistic_agent import OPTIONAL_LLM_TOOL_NAMES, ReactionInputs
 from mechanistic_agent.core import RegistrySet, RunCoordinator, RunStore, select_step_models
-from mechanistic_agent.core.types import PRIMARY_HARNESS
+from mechanistic_agent.core.types import DEFAULT_MAX_RUNTIME_SECONDS, DEFAULT_MAX_STEPS, PRIMARY_HARNESS
 from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
 from mechanistic_agent.curriculum import (
     OPUS_MODEL,
@@ -1731,8 +1731,14 @@ def run(
         "--model",
         help="Exact model identifier used for all LLM-backed subagents",
     ),
-    max_steps: int = typer.Option(10, "--max-steps", help="Maximum mechanism loop steps"),
-    max_runtime: float = typer.Option(1200.0, "--max-runtime", help="Maximum runtime in seconds"),
+    max_steps: int = typer.Option(DEFAULT_MAX_STEPS, "--max-steps", help="Maximum mechanism loop steps"),
+    max_runtime: float = typer.Option(DEFAULT_MAX_RUNTIME_SECONDS, "--max-runtime", help="Maximum runtime in seconds"),
+    retry_same_candidate_max: Optional[int] = typer.Option(
+        None,
+        "--retry-same-candidate-max",
+        min=1,
+        help="Retries per rejected candidate (default: the harness decides — run_config_defaults, then loop_module.max_retries_per_candidate)",
+    ),
     orchestration_mode: str = typer.Option(
         "standard",
         "--orchestration-mode",
@@ -1908,6 +1914,11 @@ def run(
             "model_plan_notes": model_plan.notes,
             "max_steps": max_steps,
             "max_runtime_seconds": max_runtime,
+            **(
+                {"retry_same_candidate_max": int(retry_same_candidate_max)}
+                if isinstance(retry_same_candidate_max, int)
+                else {}
+            ),
             "orchestration_mode": orchestration_mode,
             "harness_name": harness,
             "harness_strategy": harness_strategy,
@@ -3572,6 +3583,23 @@ def curriculum_build_lookup_cmd() -> None:
     typer.echo("Done.")
 
 
+def _run_hit_step_cap(store: Any, run_id: str) -> bool:
+    """True when the run emitted ``step_cap_reached`` (it ended by using every allowed step)."""
+    try:
+        return any(str(ev.get("event_type") or "") == "step_cap_reached" for ev in store.list_events(run_id))
+    except Exception:
+        return False
+
+
+def _format_step_cap_summary(case_ids: Sequence[str], *, total: int, cap: int) -> str:
+    line = f"Step cap ({cap}) reached: {len(case_ids)}/{total} cases"
+    if case_ids:
+        shown = ", ".join(list(case_ids)[:20])
+        more = f" (+{len(case_ids) - 20} more)" if len(case_ids) > 20 else ""
+        line += f" — {shown}{more}"
+    return line
+
+
 def _execute_harness_eval_run(
     *,
     store: RunStore,
@@ -3592,6 +3620,7 @@ def _execute_harness_eval_run(
     selected_case_ids: Optional[Sequence[str]] = None,
     planner_metadata: Optional[Dict[str, Any]] = None,
     hide_products: bool = False,
+    retry_same_candidate_max: Optional[int] = None,
 ) -> Dict[str, Any]:
     from mechanistic_agent.scoring import (
         DEFAULT_SCORING_VERSION,
@@ -3648,6 +3677,7 @@ def _execute_harness_eval_run(
     backend_usage_counts: Dict[str, int] = {}
     backend_fallback_cases = 0
     backend_error_counts: Dict[str, int] = {}
+    step_cap_case_ids: List[str] = []
 
     for case in selected:
         case_id = str(case.get("case_id") or "")
@@ -3699,6 +3729,11 @@ def _execute_harness_eval_run(
                     "runtime_trace_enabled": trace_runtime,
                     "runtime_trace_label": case_id,
                     "hide_products": hide_products,
+                    **(
+                        {"retry_same_candidate_max": int(retry_same_candidate_max)}
+                        if retry_same_candidate_max is not None
+                        else {}
+                    ),
                 },
                 **hashes,
             )
@@ -3754,6 +3789,9 @@ def _execute_harness_eval_run(
             if expected:
                 summary["quality"] = quality_or_error(snapshot, expected)
                 all_quality.append(summary["quality"])
+            if _run_hit_step_cap(store, run_id):
+                summary["step_cap_reached"] = True
+                step_cap_case_ids.append(case_id)
             chemistry = summary.get("chemistry_backend") if isinstance(summary.get("chemistry_backend"), dict) else {}
             if chemistry:
                 used_counts = chemistry.get("backend_used_counts")
@@ -3827,6 +3865,8 @@ def _execute_harness_eval_run(
 
     if all_quality and not json_output:
         _echo_quality_summary(f"Quality rubric (harness eval) — {model_name}, thinking={thinking_level or 'default'}", all_quality)
+    if not json_output:
+        typer.echo(_format_step_cap_summary(step_cap_case_ids, total=completed + failed, cap=max_steps))
 
     result_obj = {
         "eval_run_id": eval_run_id,
@@ -3846,6 +3886,7 @@ def _execute_harness_eval_run(
         "backend_error_counts": backend_error_counts,
         "planner_metadata": planner_metadata or {},
         "quality": summarize_quality(all_quality) if all_quality else None,
+        "step_cap_reached": {"cap": max_steps, "count": len(step_cap_case_ids), "case_ids": list(step_cap_case_ids)},
     }
     if json_output:
         typer.echo(json.dumps(result_obj, indent=2))
@@ -3995,8 +4036,14 @@ def eval_cmd(
         help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
     ),
     # 14 leaves slack above the 10-step hard band (training_data/eval_tiers.json).
-    max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
-    max_runtime: float = typer.Option(1200.0, "--max-runtime", help="Per-case timeout in seconds"),
+    max_steps: int = typer.Option(DEFAULT_MAX_STEPS, "--max-steps", help="Max mechanism steps per case"),
+    max_runtime: float = typer.Option(DEFAULT_MAX_RUNTIME_SECONDS, "--max-runtime", help="Per-case timeout in seconds"),
+    retry_same_candidate_max: Optional[int] = typer.Option(
+        None,
+        "--retry-same-candidate-max",
+        min=1,
+        help="Retries per rejected candidate (default: the harness decides — run_config_defaults, then loop_module.max_retries_per_candidate)",
+    ),
     chemistry_backend: str = typer.Option(
         "auto",
         "--chemistry-backend",
@@ -4090,8 +4137,11 @@ def eval_cmd(
     run_group = _unwrap_option(run_group)
     max_cases = int(_unwrap_option(max_cases, 25))
     max_per_tier = _unwrap_option(max_per_tier)
-    max_steps = int(_unwrap_option(max_steps, 10))
-    max_runtime = float(_unwrap_option(max_runtime, 1200.0))
+    max_steps = int(_unwrap_option(max_steps, DEFAULT_MAX_STEPS))
+    max_runtime = float(_unwrap_option(max_runtime, DEFAULT_MAX_RUNTIME_SECONDS))
+    retry_same_candidate_max = _unwrap_option(retry_same_candidate_max)
+    if retry_same_candidate_max is not None:
+        retry_same_candidate_max = max(1, int(retry_same_candidate_max))
     chemistry_backend = str(_unwrap_option(chemistry_backend, "auto") or "auto").strip().lower()
     rdkit_cli_command = _unwrap_option(rdkit_cli_command)
     chemistry_backend_parity = bool(_unwrap_option(chemistry_backend_parity, False))
@@ -4272,6 +4322,7 @@ def eval_cmd(
                 max_cases=max_cases,
                 max_steps=max_steps,
                 max_runtime=max_runtime,
+                retry_same_candidate_max=retry_same_candidate_max,
                 chemistry_backend=chemistry_backend,
                 rdkit_cli_command=rdkit_cli_command,
                 chemistry_backend_parity=chemistry_backend_parity,
@@ -4327,6 +4378,7 @@ def eval_cmd(
                 max_cases=tier_limit,
                 max_steps=max_steps,
                 max_runtime=max_runtime,
+                retry_same_candidate_max=retry_same_candidate_max,
                 chemistry_backend=chemistry_backend,
                 rdkit_cli_command=rdkit_cli_command,
                 chemistry_backend_parity=chemistry_backend_parity,
@@ -4455,6 +4507,7 @@ def eval_cmd(
         max_cases=max_cases,
         max_steps=max_steps,
         max_runtime=max_runtime,
+        retry_same_candidate_max=retry_same_candidate_max,
         chemistry_backend=chemistry_backend,
         rdkit_cli_command=rdkit_cli_command,
         chemistry_backend_parity=chemistry_backend_parity,
@@ -4608,7 +4661,7 @@ def eval_runset_official_cmd(
         "--num-examples",
         help="Max cases/examples to run (default: 20).",
     ),
-    max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
+    max_steps: int = typer.Option(DEFAULT_MAX_STEPS, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",

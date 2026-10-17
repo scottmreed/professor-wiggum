@@ -10,6 +10,14 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 # reads this line as ChemIllusion's product harness.
 PRIMARY_HARNESS = "threaded_unified"
 
+# Mechanism step cap for runs that set none (CLI run/eval/baseline, API, embedded runtime).
+# ChemIllusion clamps product runs to the same 14 (MAX_STEPS_LIMIT in its
+# backend/app/schemas/mechanism_submission.py).
+DEFAULT_MAX_STEPS = 14
+# Wall-clock limit per run for runs that set none (raised from 1200 s with the 14-step cap so a
+# full-length run is not cut off by time first; ChemIllusion sends no runtime and inherits it).
+DEFAULT_MAX_RUNTIME_SECONDS = 1800.0
+
 RunMode = Literal["verified", "unverified"]
 RunStatus = Literal["pending", "running", "paused", "completed", "failed", "stopped"]
 TemplateGuidanceMode = Literal["active", "weak", "disabled", "no_match"]
@@ -817,15 +825,24 @@ class RunConfig:
     optional_llm_tools: List[str] = field(default_factory=list)
     functional_groups_enabled: bool = True
     intermediate_prediction_enabled: bool = True
-    max_steps: int = 10
+    # Step cap (DEFAULT_MAX_STEPS); a run that uses every step emits step_cap_reached.
+    max_steps: int = DEFAULT_MAX_STEPS
     # No-product mode: target products are withheld from every LLM call and the run ends when
     # the model declares the mechanism complete (products stay in input_payload for scoring).
     hide_products: bool = False
-    max_runtime_seconds: float = 1200.0
+    max_runtime_seconds: float = DEFAULT_MAX_RUNTIME_SECONDS
     api_keys: Dict[str, str] = field(default_factory=dict)
     retry_same_candidate_max: int = 1
     max_reproposals_per_step: int = 4
     reproposal_on_repeat_failure: bool = True
+    # When every candidate of a proposal fails, ask for a fresh proposal for the
+    # same step (thread forked to the last accepted step) with one error note per
+    # rejected candidate, up to max_reproposals_per_step, before pausing.
+    reproposal_on_retry_exhausted: bool = True
+    # Before validation, carry current-state species that the SMIRKS does not
+    # touch and the model dropped from resulting_state, when that alone makes
+    # the step heavy-atom balanced (core/spectators.py).
+    spectator_carry_enabled: bool = True
     candidate_rescue_enabled: bool = True
     step_mapping_enabled: bool = True
     arrow_push_annotation_enabled: bool = True

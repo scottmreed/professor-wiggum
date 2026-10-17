@@ -293,7 +293,10 @@ def test_candidate_rescue_repairs_invalid_species_before_delegating(monkeypatch:
         validation_details={"passed": False},
     )
     payload = json.loads(raw)
-    assert payload["status"] == "success"
+    # No additions survived and the step is still unbalanced: the status reports
+    # that, whatever the model claimed.
+    assert payload["status"] == "no_additions"
+    assert payload["model_status"] == "success"
     assert captured["starting_materials"] == ["ClCCl"]
     assert captured["products"] == ["ClCCl", "O"]
     assert payload["balance_diagnostics"]["repaired_species"][0]["before"] == "broken-solvent"

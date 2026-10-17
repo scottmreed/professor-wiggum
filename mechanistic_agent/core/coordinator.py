@@ -5,6 +5,7 @@ import copy
 import hashlib
 import json
 import re
+import sys
 import threading
 import time
 from dataclasses import asdict
@@ -67,6 +68,8 @@ from .provenance import (
     resolve_step_provenance,
 )
 from .types import (
+    DEFAULT_MAX_RUNTIME_SECONDS,
+    DEFAULT_MAX_STEPS,
     BranchCandidate,
     BranchPoint,
     FailedPath,
@@ -226,9 +229,9 @@ class RunCoordinator:
                 config.get("intermediate_prediction_enabled", True),
                 True,
             ),
-            max_steps=self._coerce_int(config.get("max_steps", 10), 10),
+            max_steps=self._coerce_int(config.get("max_steps", DEFAULT_MAX_STEPS), DEFAULT_MAX_STEPS),
             hide_products=hide_products,
-            max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", 1200.0), 1200.0),
+            max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", DEFAULT_MAX_RUNTIME_SECONDS), DEFAULT_MAX_RUNTIME_SECONDS),
             api_keys=dict(config.get("api_keys") or {}),
             retry_same_candidate_max=self._coerce_int(config.get("retry_same_candidate_max", 1), 1),
             max_reproposals_per_step=self._coerce_int(config.get("max_reproposals_per_step", 4), 4),
@@ -236,6 +239,11 @@ class RunCoordinator:
                 config.get("reproposal_on_repeat_failure", True),
                 True,
             ),
+            reproposal_on_retry_exhausted=self._coerce_bool(
+                config.get("reproposal_on_retry_exhausted", True),
+                True,
+            ),
+            spectator_carry_enabled=self._coerce_bool(config.get("spectator_carry_enabled", True), True),
             candidate_rescue_enabled=self._coerce_bool(config.get("candidate_rescue_enabled", True), True),
             step_mapping_enabled=self._coerce_bool(config.get("step_mapping_enabled", True), True),
             arrow_push_annotation_enabled=self._coerce_bool(
@@ -1352,14 +1360,10 @@ class RunCoordinator:
 
     @staticmethod
     def _merge_unique_species(base: List[str], additions: List[str]) -> List[str]:
-        merged = list(base)
-        seen = set(base)
-        for item in additions:
-            if item in seen:
-                continue
-            merged.append(item)
-            seen.add(item)
-        return merged
+        # Shared with the candidate rescue so its status describes what is applied here.
+        from mechanistic_agent.balance import merge_unique_species
+
+        return merge_unique_species(base, additions)
 
     @staticmethod
     def _constraint_replacements_for_species(
@@ -1659,6 +1663,8 @@ class RunCoordinator:
             "retry_same_candidate_max",
             "max_reproposals_per_step",
             "repeat_failure_signature_limit",
+            "reproposal_on_retry_exhausted",
+            "spectator_carry_enabled",
         }
     )
 
@@ -1674,12 +1680,22 @@ class RunCoordinator:
         Explicit per-run values (present in the stored run config) always win;
         the harness only fills gaps. Returns the applied overrides so callers
         and tests can inspect them.
+
+        Per-candidate retry budget (``retry_same_candidate_max``), highest
+        precedence first:
+
+        1. an explicit run value (run config key, ``--retry-same-candidate-max``
+           on the CLI, ``retry_same_candidate_max`` in the API request);
+        2. ``run_config_defaults.retry_same_candidate_max`` in harness.json;
+        3. ``loop_module.max_retries_per_candidate`` in harness.json;
+        4. the ``RunConfig`` dataclass default (1).
         """
-        if harness is None or not getattr(harness, "run_config_defaults", None):
+        if harness is None:
             return {}
         explicit = raw_config if isinstance(raw_config, dict) else {}
         applied: Dict[str, Any] = {}
-        for key, value in dict(harness.run_config_defaults).items():
+        sources: Dict[str, str] = {}
+        for key, value in dict(getattr(harness, "run_config_defaults", None) or {}).items():
             if key not in self._HARNESS_RUN_CONFIG_DEFAULT_KEYS:
                 continue
             if key in explicit and explicit.get(key) is not None:
@@ -1695,11 +1711,25 @@ class RunCoordinator:
                 coerced = value
             setattr(state.run_config, key, coerced)
             applied[key] = coerced
+            sources[key] = "run_config_defaults"
+
+        retry_key = "retry_same_candidate_max"
+        loop_module = getattr(harness, "loop_module", None)
+        loop_retries = loop_module.get("max_retries_per_candidate") if isinstance(loop_module, dict) else None
+        if (
+            retry_key not in applied
+            and explicit.get(retry_key) is None
+            and loop_retries is not None
+        ):
+            coerced_retries = max(1, self._coerce_int(loop_retries, state.run_config.retry_same_candidate_max))
+            state.run_config.retry_same_candidate_max = coerced_retries
+            applied[retry_key] = coerced_retries
+            sources[retry_key] = "loop_module.max_retries_per_candidate"
         if applied:
             self.store.append_event(
                 state.run_id,
                 "harness_run_config_defaults_applied",
-                {"harness": getattr(harness, "name", None), "applied": applied},
+                {"harness": getattr(harness, "name", None), "applied": applied, "sources": sources},
             )
         return applied
 
@@ -3706,7 +3736,10 @@ class RunCoordinator:
         repeated_signatures: Dict[str, int] = {}
         rescue_attempted = False
         rescue_outcome = "none"
+        rescue_validation_summary: Dict[str, Any] = {}
         last_mechanism_output: Dict[str, Any] = {}
+        previous_signature = ""
+        previous_output_fingerprint = ""
 
         max_retries = max(1, int(state.run_config.retry_same_candidate_max or 1))
         for retry_index in range(max_retries):
@@ -3763,6 +3796,7 @@ class RunCoordinator:
                 }
             mechanism_result.attempt = state.step_index + 1
             mechanism_result.retry_index = retry_index
+            self._carry_dropped_spectators(state, candidate, mechanism_result, retry_index=retry_index)
             last_mechanism_output = dict(mechanism_result.output or {})
             try:
                 mechanism_result.validation = validate_mechanism_step_output(
@@ -3996,6 +4030,45 @@ class RunCoordinator:
                             "rescue_outcome": rescue_outcome,
                             "mechanism_output": maybe_output,
                         }
+                    # The additions WERE applied (maybe_output above) and the step
+                    # still fails: record the post-rescue verdict so the residual is
+                    # visible (the retry-failed event below carries the pre-rescue one).
+                    rescue_outcome = "applied_still_failing"
+                    rescue_atom = next(
+                        (
+                            c
+                            for c in rescued_validation.get("checks") or []
+                            if isinstance(c, dict) and c.get("name") == "atom_balance"
+                        ),
+                        {},
+                    )
+                    rescue_atom_details = rescue_atom.get("details") if isinstance(rescue_atom.get("details"), dict) else {}
+                    rescue_validation_summary = {
+                        "added": list(add_reactants) + list(add_products),
+                        "add_reactants": list(add_reactants),
+                        "add_products": list(add_products),
+                        "failed_checks": [
+                            str(c.get("name"))
+                            for c in rescued_validation.get("checks") or []
+                            if isinstance(c, dict) and not c.get("passed")
+                        ],
+                        "deficit": dict(rescue_atom_details.get("deficit") or {}),
+                        "surplus": dict(rescue_atom_details.get("surplus") or {}),
+                        "rescue_status": rescue_output.get("status"),
+                    }
+                    self.store.append_event(
+                        state.run_id,
+                        "candidate_rescue_revalidation_failed",
+                        {
+                            "attempt": state.step_index + 1,
+                            "retry_index": retry_index,
+                            "candidate_rank": candidate.get("rank"),
+                            "candidate_id": candidate.get("candidate_id"),
+                            **rescue_validation_summary,
+                            "resulting_state": list(maybe_output.get("resulting_state") or []),
+                        },
+                        step_name="candidate_rescue",
+                    )
                 else:
                     rescue_outcome = rescue_outcome if rescue_outcome == "invalid_species" else "no_changes"
 
@@ -4013,6 +4086,7 @@ class RunCoordinator:
                     "validation_signature": last_signature,
                     "rescue_attempted": rescue_attempted,
                     "rescue_outcome": rescue_outcome,
+                    **({"rescue_validation": rescue_validation_summary} if rescue_validation_summary else {}),
                     "chemistry_error_codes": self._extract_chemistry_error_codes(
                         self._validation_error_strings(validation_payload)
                     ),
@@ -4041,6 +4115,57 @@ class RunCoordinator:
                 failed_checks=last_failed_checks,
             )
 
+            # Deterministic repeat: the step tool and validators are deterministic
+            # and the rescue is cached, so a retry that reproduces the previous
+            # attempt's output and validation signature carries no information.
+            # Stop retrying THIS candidate (no forced reproposal): the loop moves
+            # on to the next candidate and then the normal soft-advance ->
+            # retry_exhausted reproposal -> last-chance/pause sequence.
+            output_fingerprint = json.dumps(
+                {
+                    "current": sorted(str(x) for x in last_mechanism_output.get("current_state") or []),
+                    "resulting": sorted(str(x) for x in last_mechanism_output.get("resulting_state") or []),
+                    "smirks": str(last_mechanism_output.get("reaction_smirks") or ""),
+                },
+                sort_keys=True,
+            )
+            if (
+                retry_index > 0
+                and last_signature
+                and last_signature == previous_signature
+                and output_fingerprint == previous_output_fingerprint
+            ):
+                self.store.append_event(
+                    state.run_id,
+                    "mechanism_retry_stopped_deterministic",
+                    {
+                        "attempt": state.step_index + 1,
+                        "retry_index": retry_index,
+                        "candidate_rank": candidate.get("rank"),
+                        "candidate_id": candidate.get("candidate_id"),
+                        "validation_signature": last_signature,
+                        "failed_checks": list(last_failed_checks),
+                        "rescue_outcome": rescue_outcome,
+                        "max_retries": max_retries,
+                    },
+                    step_name="mechanism_synthesis",
+                )
+                return {
+                    "status": "failed",
+                    "branch_candidate": None,
+                    "last_validation": last_validation,
+                    "reason": "deterministic_repeat",
+                    "failed_checks": last_failed_checks,
+                    "validation_signature": last_signature,
+                    "candidate_rank": int(candidate.get("rank") or 0),
+                    "rescue_attempted": rescue_attempted,
+                    "rescue_outcome": rescue_outcome,
+                    "rescue_validation": rescue_validation_summary,
+                    "mechanism_output": last_mechanism_output,
+                }
+            previous_signature = last_signature
+            previous_output_fingerprint = output_fingerprint
+
             repeat_failure_signature_limit = max(
                 2,
                 int(state.run_config.repeat_failure_signature_limit or 2),
@@ -4063,6 +4188,7 @@ class RunCoordinator:
                     "candidate_rank": int(candidate.get("rank") or 0),
                     "rescue_attempted": rescue_attempted,
                     "rescue_outcome": rescue_outcome,
+                    "rescue_validation": rescue_validation_summary,
                     "mechanism_output": last_mechanism_output,
                 }
 
@@ -4103,8 +4229,84 @@ class RunCoordinator:
             "candidate_rank": int(candidate.get("rank") or 0),
             "rescue_attempted": rescue_attempted,
             "rescue_outcome": rescue_outcome,
+            "rescue_validation": rescue_validation_summary,
             "mechanism_output": last_mechanism_output,
         }
+
+    @staticmethod
+    def _rejection_notes(
+        candidate_attempts: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+        *,
+        limit: int = 6,
+    ) -> List[str]:
+        """One concise error note per rejected candidate, for the reproposal turn."""
+        from .spectators import rejection_note
+
+        notes: List[str] = []
+        for candidate, attempt in candidate_attempts:
+            if not isinstance(candidate, dict) or not isinstance(attempt, dict):
+                continue
+            if str(attempt.get("status") or "") == "validated":
+                continue
+            try:
+                note = rejection_note(candidate, attempt)
+            except Exception:  # noqa: BLE001
+                note = f"rank {candidate.get('rank')}: failed {', '.join(attempt.get('failed_checks') or []) or 'validation'}"
+            if note and note not in notes:
+                notes.append(note)
+        return notes[:limit]
+
+    def _carry_dropped_spectators(
+        self,
+        state: RunState,
+        candidate: Dict[str, Any],
+        mechanism_result: StepResult,
+        *,
+        retry_index: int = 0,
+    ) -> Optional[List[str]]:
+        """Re-add current-state species the SMIRKS does not touch and the model dropped.
+
+        Applied to the step output (after the step tool, which collapses duplicate
+        species) and only when the repair alone makes the step fully
+        balanced (``core/spectators.carry_spectators``). Unverified runs only.
+        """
+        if state.mode != "unverified" or not state.run_config.spectator_carry_enabled:
+            return None
+        output = mechanism_result.output if isinstance(mechanism_result.output, dict) else None
+        if not output:
+            return None
+        smirks = str(output.get("reaction_smirks") or candidate.get("reaction_smirks") or "")
+        current = [str(x) for x in output.get("current_state") or []]
+        resulting = [str(x) for x in output.get("resulting_state") or []]
+        if not smirks or not current or not resulting:
+            return None
+        from .spectators import carry_spectators
+
+        try:
+            repair = carry_spectators(current, resulting, smirks)
+        except Exception:  # noqa: BLE001 - a bookkeeping repair must never break a step
+            return None
+        if not repair:
+            return None
+        carried = list(repair["carried"])
+        output["resulting_state"] = list(repair["resulting_state"])
+        output["spectators_carried"] = carried
+        output["resulting_state_as_proposed"] = resulting
+        self.store.append_event(
+            state.run_id,
+            "spectators_carried",
+            {
+                "attempt": state.step_index + 1,
+                "retry_index": retry_index,
+                "candidate_rank": candidate.get("rank"),
+                "candidate_id": candidate.get("candidate_id"),
+                "carried": carried,
+                "resulting_state_as_proposed": resulting,
+                "resulting_state": list(repair["resulting_state"]),
+            },
+            step_name="mechanism_synthesis",
+        )
+        return carried
 
     @staticmethod
     def _configure_decision_policy(state: RunState, harness: Optional[HarnessConfig]) -> None:
@@ -5712,63 +5914,10 @@ class RunCoordinator:
                             reason="All proposed candidates were structurally off-template before acceptance.",
                             proposal_quality_summary=proposal_quality_summary,
                         )
-                    if had_repeat_signature_failure:
-                        step_key = state.step_index + 1
-                        reproposals_by_step[step_key] = reproposals_by_step.get(step_key, 0) + 1
-                        current_reproposals = reproposals_by_step[step_key]
-                        reproposal_hints[step_key] = {
-                            "avoid_signatures": [last_validation_signature] if last_validation_signature else [],
-                            "avoid_failed_checks": list(last_failed_checks),
-                            "smiles_error_context": smiles_error_context,
-                        }
-                        self.store.append_event(
-                            state.run_id,
-                            "mechanism_reproposal_requested",
-                            {
-                                "attempt": state.step_index + 1,
-                                "reason": "repeat_failure_signature",
-                                "reproposal_count": current_reproposals,
-                                "validation_signature": last_validation_signature,
-                                "repeat_failure_signature_limit": last_repeat_failure_signature_limit,
-                                "avoid_signatures": [last_validation_signature] if last_validation_signature else [],
-                                "avoid_failed_checks": list(last_failed_checks),
-                                "candidate_rank": last_candidate_rank,
-                            },
-                            step_name="mechanism_step_proposal",
-                        )
-                        if current_reproposals >= max(1, int(state.run_config.max_reproposals_per_step or 4)):
-                            self.store.append_event(
-                                state.run_id,
-                                "mechanism_reproposal_limit_reached",
-                                {
-                                    "step_index": state.step_index + 1,
-                                    "reproposal_count": current_reproposals,
-                                    "max_reproposals_per_step": max(
-                                        1, int(state.run_config.max_reproposals_per_step or 4)
-                                    ),
-                                    "reason": "repeat_failure_signature",
-                                    "validation_signature": last_validation_signature,
-                                    "repeat_failure_signature_limit": last_repeat_failure_signature_limit,
-                                    "candidate_rank": last_candidate_rank,
-                                },
-                                step_name="mechanism_step_proposal",
-                            )
-                            self.store.set_run_status(state.run_id, "failed")
-                            self.store.append_event(
-                                state.run_id,
-                                "run_failed",
-                                {
-                                    "reason": "proposal_repeat_failure_loop",
-                                    "step_index": state.step_index + 1,
-                                    "reproposal_count": current_reproposals,
-                                    "last_reproposal_reason": "repeat_failure_signature",
-                                    "validation_signature": last_validation_signature,
-                                    "repeat_failure_signature_limit": last_repeat_failure_signature_limit,
-                                    "candidate_rank": last_candidate_rank,
-                                },
-                            )
-                            return
-                        continue
+                    # A repeat-signature failure no longer short-circuits here: it is
+                    # handled after the soft-advance options, by the same reproposal
+                    # (with avoid_signatures + rejection notes) -> last-chance/pause
+                    # sequence as retry_exhausted, and never ends the run as failed.
                     if proposal_quality_summary.get("candidate_count", 0) == 0 and not all_candidates_rejected:
                         step_key = state.step_index + 1
                         reproposals_by_step[step_key] = reproposals_by_step.get(step_key, 0) + 1
@@ -6155,6 +6304,83 @@ class RunCoordinator:
                                 # Fall through to Steps D-G with soft candidate.
                                 # The post-loop re-evaluation phase will attempt to
                                 # fix these steps after the run completes.
+                    # ── Re-propose the step before pausing (unverified only) ─────
+                    # Every candidate of this proposal failed after its retries and
+                    # rescue. In an eval or bridge run a pause is terminal (no one
+                    # resumes it), so first ask for a fresh proposal for the same
+                    # step: the thread forks back to the last accepted step and the
+                    # next turn carries one concise error note per rejected
+                    # candidate. Pause only once max_reproposals_per_step is spent.
+                    if (
+                        not validated
+                        and state.mode == "unverified"
+                        and candidate_attempts
+                        and (
+                            state.run_config.reproposal_on_retry_exhausted
+                            or had_repeat_signature_failure
+                        )
+                    ):
+                        step_key = state.step_index + 1
+                        max_reproposals = max(1, int(state.run_config.max_reproposals_per_step or 4))
+                        used_reproposals = int(reproposals_by_step.get(step_key, 0))
+                        rejection_notes = self._rejection_notes(candidate_attempts)
+                        reproposal_reason = (
+                            "repeat_failure_signature" if had_repeat_signature_failure else "retry_exhausted"
+                        )
+                        if used_reproposals < max_reproposals:
+                            reproposals_by_step[step_key] = used_reproposals + 1
+                            reproposal_hints[step_key] = {
+                                "rejection_notes": rejection_notes,
+                                "avoid_failed_checks": list(last_failed_checks),
+                                "smiles_error_context": smiles_error_context,
+                            }
+                            if had_repeat_signature_failure and last_validation_signature:
+                                reproposal_hints[step_key]["avoid_signatures"] = [last_validation_signature]
+                            self.store.append_event(
+                                state.run_id,
+                                "mechanism_reproposal_requested",
+                                {
+                                    "attempt": step_key,
+                                    "reason": reproposal_reason,
+                                    "validation_signature": last_validation_signature,
+                                    "repeat_failure_signature_limit": last_repeat_failure_signature_limit,
+                                    "candidate_rank": last_candidate_rank,
+                                    "reproposal_count": used_reproposals + 1,
+                                    "max_reproposals_per_step": max_reproposals,
+                                    "failed_checks": list(last_failed_checks),
+                                    "candidate_ids": [
+                                        c.get("candidate_id") for c, _a in candidate_attempts if isinstance(c, dict)
+                                    ],
+                                    "rejection_notes": rejection_notes,
+                                    "rescue_outcome": last_rescue_outcome,
+                                },
+                                step_name="mechanism_step_proposal",
+                            )
+                            self._trace(
+                                state,
+                                (
+                                    f"REPROPOSE step={step_key} reason={reproposal_reason} "
+                                    f"round={used_reproposals + 1}/{max_reproposals}"
+                                ),
+                                step_name="mechanism_step_proposal",
+                                attempt=step_key,
+                            )
+                            continue
+                        self.store.append_event(
+                            state.run_id,
+                            "mechanism_reproposal_limit_reached",
+                            {
+                                "step_index": step_key,
+                                "reproposal_count": used_reproposals,
+                                "max_reproposals_per_step": max_reproposals,
+                                "reason": reproposal_reason,
+                                "failed_checks": list(last_failed_checks),
+                                "rejection_notes": rejection_notes,
+                                "next": "pause",
+                            },
+                            step_name="mechanism_step_proposal",
+                        )
+
                     if not validated:
                         # No candidate passed — pause for user decision.
                         # If a branch point with an alternative exists, offer it as last chance.
@@ -6750,6 +6976,31 @@ class RunCoordinator:
         finally:
             close_call_context()
 
+    def _emit_step_cap_reached(self, state: RunState) -> bool:
+        """Record and loudly log a run that ended because it used every allowed step."""
+        cap = max(1, int(state.run_config.max_steps or DEFAULT_MAX_STEPS))
+        steps = int(state.step_index or 0)
+        if steps < cap:
+            return False
+        case_id = (
+            str(getattr(state.run_config, "runtime_trace_label", "") or "").strip()
+            or str(getattr(state.run_input, "example_id", "") or "").strip()
+            or None
+        )
+        self.store.append_event(
+            state.run_id,
+            "step_cap_reached",
+            {"cap": cap, "steps": steps, "run_id": state.run_id, "case_id": case_id},
+        )
+        line = f"WARNING step cap reached: run={state.run_id} case={case_id or '-'} cap={cap} steps={steps}"
+        # Printed (not logged) so it shows in eval/bridge logs whatever the
+        # logging configuration; exactly one line per capped run.
+        try:
+            print(line, file=sys.stderr, flush=True)
+        except Exception:  # pragma: no cover - stderr closed
+            pass
+        return True
+
     def _execute_run_inner(self, run_id: str, stop_event: threading.Event) -> None:
         run_row = self.store.get_run_row(run_id)
         if run_row is None:
@@ -7014,6 +7265,7 @@ class RunCoordinator:
                 )
                 return
 
+            cap_reached = (not reached_runtime_limit) and self._emit_step_cap_reached(state)
             self.store.set_run_status(run_id, "failed")
             self.store.append_event(
                 run_id,
@@ -7025,6 +7277,7 @@ class RunCoordinator:
                         else "completion_not_reached_within_limits"
                     ),
                     "validated_mechanism_steps": len(mechanism_steps),
+                    "step_cap_reached": bool(cap_reached),
                 },
             )
         except _RunPaused:
