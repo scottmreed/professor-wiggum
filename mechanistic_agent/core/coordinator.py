@@ -5,6 +5,7 @@ import copy
 import hashlib
 import json
 import re
+import sys
 import threading
 import time
 from dataclasses import asdict
@@ -67,6 +68,7 @@ from .provenance import (
     resolve_step_provenance,
 )
 from .types import (
+    DEFAULT_MAX_STEPS,
     BranchCandidate,
     BranchPoint,
     FailedPath,
@@ -226,7 +228,7 @@ class RunCoordinator:
                 config.get("intermediate_prediction_enabled", True),
                 True,
             ),
-            max_steps=self._coerce_int(config.get("max_steps", 10), 10),
+            max_steps=self._coerce_int(config.get("max_steps", DEFAULT_MAX_STEPS), DEFAULT_MAX_STEPS),
             hide_products=hide_products,
             max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", 1200.0), 1200.0),
             api_keys=dict(config.get("api_keys") or {}),
@@ -6966,6 +6968,31 @@ class RunCoordinator:
         finally:
             close_call_context()
 
+    def _emit_step_cap_reached(self, state: RunState) -> bool:
+        """Record and loudly log a run that ended because it used every allowed step."""
+        cap = max(1, int(state.run_config.max_steps or DEFAULT_MAX_STEPS))
+        steps = int(state.step_index or 0)
+        if steps < cap:
+            return False
+        case_id = (
+            str(getattr(state.run_config, "runtime_trace_label", "") or "").strip()
+            or str(getattr(state.run_input, "example_id", "") or "").strip()
+            or None
+        )
+        self.store.append_event(
+            state.run_id,
+            "step_cap_reached",
+            {"cap": cap, "steps": steps, "run_id": state.run_id, "case_id": case_id},
+        )
+        line = f"WARNING step cap reached: run={state.run_id} case={case_id or '-'} cap={cap} steps={steps}"
+        # Printed (not logged) so it shows in eval/bridge logs whatever the
+        # logging configuration; exactly one line per capped run.
+        try:
+            print(line, file=sys.stderr, flush=True)
+        except Exception:  # pragma: no cover - stderr closed
+            pass
+        return True
+
     def _execute_run_inner(self, run_id: str, stop_event: threading.Event) -> None:
         run_row = self.store.get_run_row(run_id)
         if run_row is None:
@@ -7230,6 +7257,7 @@ class RunCoordinator:
                 )
                 return
 
+            cap_reached = (not reached_runtime_limit) and self._emit_step_cap_reached(state)
             self.store.set_run_status(run_id, "failed")
             self.store.append_event(
                 run_id,
@@ -7241,6 +7269,7 @@ class RunCoordinator:
                         else "completion_not_reached_within_limits"
                     ),
                     "validated_mechanism_steps": len(mechanism_steps),
+                    "step_cap_reached": bool(cap_reached),
                 },
             )
         except _RunPaused:

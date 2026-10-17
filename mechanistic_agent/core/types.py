@@ -10,6 +10,11 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 # reads this line as ChemIllusion's product harness.
 PRIMARY_HARNESS = "threaded_unified"
 
+# Mechanism step cap for runs that set none (CLI run/eval/baseline, API, embedded runtime).
+# ChemIllusion clamps product runs to the same 14 (MAX_STEPS_LIMIT in its
+# backend/app/schemas/mechanism_submission.py).
+DEFAULT_MAX_STEPS = 14
+
 RunMode = Literal["verified", "unverified"]
 RunStatus = Literal["pending", "running", "paused", "completed", "failed", "stopped"]
 TemplateGuidanceMode = Literal["active", "weak", "disabled", "no_match"]
@@ -817,7 +822,8 @@ class RunConfig:
     optional_llm_tools: List[str] = field(default_factory=list)
     functional_groups_enabled: bool = True
     intermediate_prediction_enabled: bool = True
-    max_steps: int = 10
+    # Step cap (DEFAULT_MAX_STEPS); a run that uses every step emits step_cap_reached.
+    max_steps: int = DEFAULT_MAX_STEPS
     # No-product mode: target products are withheld from every LLM call and the run ends when
     # the model declares the mechanism complete (products stay in input_payload for scoring).
     hide_products: bool = False

@@ -3583,6 +3583,23 @@ def curriculum_build_lookup_cmd() -> None:
     typer.echo("Done.")
 
 
+def _run_hit_step_cap(store: Any, run_id: str) -> bool:
+    """True when the run emitted ``step_cap_reached`` (it ended by using every allowed step)."""
+    try:
+        return any(str(ev.get("event_type") or "") == "step_cap_reached" for ev in store.list_events(run_id))
+    except Exception:
+        return False
+
+
+def _format_step_cap_summary(case_ids: Sequence[str], *, total: int, cap: int) -> str:
+    line = f"Step cap ({cap}) reached: {len(case_ids)}/{total} cases"
+    if case_ids:
+        shown = ", ".join(list(case_ids)[:20])
+        more = f" (+{len(case_ids) - 20} more)" if len(case_ids) > 20 else ""
+        line += f" — {shown}{more}"
+    return line
+
+
 def _execute_harness_eval_run(
     *,
     store: RunStore,
@@ -3660,6 +3677,7 @@ def _execute_harness_eval_run(
     backend_usage_counts: Dict[str, int] = {}
     backend_fallback_cases = 0
     backend_error_counts: Dict[str, int] = {}
+    step_cap_case_ids: List[str] = []
 
     for case in selected:
         case_id = str(case.get("case_id") or "")
@@ -3771,6 +3789,9 @@ def _execute_harness_eval_run(
             if expected:
                 summary["quality"] = quality_or_error(snapshot, expected)
                 all_quality.append(summary["quality"])
+            if _run_hit_step_cap(store, run_id):
+                summary["step_cap_reached"] = True
+                step_cap_case_ids.append(case_id)
             chemistry = summary.get("chemistry_backend") if isinstance(summary.get("chemistry_backend"), dict) else {}
             if chemistry:
                 used_counts = chemistry.get("backend_used_counts")
@@ -3844,6 +3865,8 @@ def _execute_harness_eval_run(
 
     if all_quality and not json_output:
         _echo_quality_summary(f"Quality rubric (harness eval) — {model_name}, thinking={thinking_level or 'default'}", all_quality)
+    if not json_output:
+        typer.echo(_format_step_cap_summary(step_cap_case_ids, total=completed + failed, cap=max_steps))
 
     result_obj = {
         "eval_run_id": eval_run_id,
@@ -3863,6 +3886,7 @@ def _execute_harness_eval_run(
         "backend_error_counts": backend_error_counts,
         "planner_metadata": planner_metadata or {},
         "quality": summarize_quality(all_quality) if all_quality else None,
+        "step_cap_reached": {"cap": max_steps, "count": len(step_cap_case_ids), "case_ids": list(step_cap_case_ids)},
     }
     if json_output:
         typer.echo(json.dumps(result_obj, indent=2))

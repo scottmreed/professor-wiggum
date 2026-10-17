@@ -130,6 +130,11 @@ Other models' lanes and results, docs, and leaderboard or CLI code never trigger
 - `scripts/evolve_harness.py` explicitly rejects holdout eval sets to prevent tuning on leaderboard data.
 - The reaction novelty index (`scripts/build_reaction_novelty_index.py` → `reaction_novelty_index.npz`, a GitHub Release asset named in `novelty_index/manifest.json`) holds test-split rows only as split labels, 64-bit InChIKey-based keys and 256-bit fingerprints: no structures, no mechanisms, no FlowER ids. Its loader (`mechanistic_agent/novelty_index.py`) answers only `{split, kind}` and similarities. The reference mechanism library (`flower_train_mechanisms.v2.sqlite`, format `train_mechanisms.v2`, from `--with-mechanisms` or `scripts/compact_reference_mechanisms.py` from a v1 `.sqlite[.gz]`) is **train only**: the builder refuses non-train rows, the converter refuses a non-train v1 input, and the loader refuses a library whose `meta.split` is not `train`. Neither is ever written under `training_data/`, and tuning tools never load either. The shared recipe is `mechanistic_agent/reaction_signatures.py` (see `training_data/REGENERATE.md`, "Reaction novelty index").
 
+## Step Cap
+
+- `DEFAULT_MAX_STEPS = 14` (`core/types.py`) is the mechanism step cap for every run that sets none: `RunConfig`, stored configs without `max_steps`, `main.py run`/`eval` (`--max-steps`), `POST /api/runs` and the embedded runtime (`CreateRunRequest.max_steps`). ChemIllusion clamps product runs to the same 14 (`MAX_STEPS_LIMIT`).
+- A run that uses every allowed step without completing still fails with `completion_not_reached_within_limits`, but first emits `step_cap_reached` `{cap, steps, run_id, case_id}` (case id = `runtime_trace_label`, else `example_id`), sets `run_failed.step_cap_reached = true`, and prints `WARNING step cap reached: run=<id> case=<case> cap=<n> steps=<n>` to stderr. `main.py eval` prints `Step cap (<n>) reached: <k>/<total> cases — <ids>` at the end and returns `step_cap_reached` in its JSON result.
+
 ## Chemistry Backend Soft Passes
 
 - `eval-runset-official` now defaults to `--max-runtime 600` seconds per case.

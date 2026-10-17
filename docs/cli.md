@@ -17,7 +17,7 @@ Use `run` when you want the full prediction workflow: the system will propose me
 | `--mode` | Run mode: `verified` or `unverified` | `unverified` |
 | `--model-name` / `--model` | Exact model ID for all LLM-backed subagents | from config |
 | `--thinking-level` | Thinking/reasoning depth: `low`, `high`, or `max` (model-dependent) | (none) |
-| `--max-steps` | Maximum mechanism loop steps | `10` |
+| `--max-steps` | Maximum mechanism loop steps | `14` |
 | `--max-runtime` | Maximum runtime in seconds | `600` |
 | `--orchestration-mode` | `standard` or `ralph` | `standard` |
 | `--harness` | Harness name from `harness_versions/` | `default` |
@@ -110,7 +110,7 @@ Tier planner behavior:
 | `--harness` | Harness name from `harness_versions/` | `default` |
 | `--max-cases` | Max cases per run | `25` |
 | `--max-per-tier` | Max cases per tier in `--all-tiers` mode | — |
-| `--max-steps` | Max mechanism steps per case | `10` |
+| `--max-steps` | Max mechanism steps per case | `14` |
 | `--max-runtime` | Per-case timeout in seconds | `600` |
 | `--allow-repeats` | Allow rerunning already-attempted cases in non-planner custom flows | `false` |
 | `--json` | Emit JSON output | `false` |

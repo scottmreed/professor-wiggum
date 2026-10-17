@@ -265,5 +265,6 @@ existing sets in place (`RunStore.append_eval_set_cases`): same `eval_set_id`
 `v1 -> v2`, `sha256` = content hash of the set's cases. Medium
 `003aae89…` now holds 40 cases, hard `5e2bb46a…` 112.
 
-Note for 10-step cases: `eval --max-steps` defaults to 10, which leaves no slack for a
-10-step ground truth; raise it when running that band.
+Note for 10-step cases: `eval --max-steps` defaults to 14 (the runtime step cap), which
+leaves slack above a 10-step ground truth. A run that uses every step emits
+`step_cap_reached` and a `WARNING step cap reached` line on stderr.
