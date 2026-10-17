@@ -826,6 +826,14 @@ class RunConfig:
     retry_same_candidate_max: int = 1
     max_reproposals_per_step: int = 4
     reproposal_on_repeat_failure: bool = True
+    # When every candidate of a proposal fails, ask for a fresh proposal for the
+    # same step (thread forked to the last accepted step) with one error note per
+    # rejected candidate, up to max_reproposals_per_step, before pausing.
+    reproposal_on_retry_exhausted: bool = True
+    # Before validation, carry current-state species that the SMIRKS does not
+    # touch and the model dropped from resulting_state, when that alone makes
+    # the step heavy-atom balanced (core/spectators.py).
+    spectator_carry_enabled: bool = True
     candidate_rescue_enabled: bool = True
     step_mapping_enabled: bool = True
     arrow_push_annotation_enabled: bool = True

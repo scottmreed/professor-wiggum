@@ -270,3 +270,21 @@ def test_tetrahedral_adduct_with_real_cli(monkeypatch: pytest.MonkeyPatch) -> No
     assert canonical, details
     check = validate_atom_balance(CASE_016681_CURRENT, CASE_016681_RESULTING)
     assert check.passed, check.details
+
+
+def test_misrouted_cli_check_still_uses_repair_smiles_when_rdkit_cannot_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dative-bond metal complexes the Python cleaner cannot parse keep the old repair-smiles path."""
+    _force_fake_cli(monkeypatch)
+    complex_smiles = "CCCC(=O)[O-]->[Zn+2](<-[OH2])(<-[O]=C(N)CCC)(<-[n]1c[nH]cc1CC)<-[n]1c[nH]cc1CC"
+    monkeypatch.setattr(
+        "mechanistic_agent.tools._canonicalise_candidate_smiles_python",
+        lambda smiles, *, backend_config=None: (None, {"raw": smiles, "error": "Invalid SMILES string"}),
+    )
+    monkeypatch.setattr(
+        "mechanistic_agent.tools._attempt_repair_smiles_via_rdkit_cli",
+        lambda smiles, *, backend_config=None: (smiles, {"used": True}),
+    )
+    canonical, details = _canonicalise_candidate_smiles(complex_smiles, backend_config={"chemistry_backend": "rdkit_cli"})
+    assert canonical == complex_smiles
+    assert details["validated_from"] == "rdkit_cli:repair-smiles"
+    assert "error" not in details and "error_code" not in details
