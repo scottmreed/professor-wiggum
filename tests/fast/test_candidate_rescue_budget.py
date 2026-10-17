@@ -147,3 +147,18 @@ def test_alternate_candidates_skip_rescue_once_a_candidate_validated() -> None:
     result2 = coordinator._try_candidate_with_retries(state, candidate, {"candidates": [candidate]}, allow_rescue=True)
     assert result2["status"] == "failed"
     assert agent.calls == 1
+
+
+def test_rescue_without_model_call_is_recorded_deterministic() -> None:
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    recorded: List[StepResult] = []
+    coordinator._record_step = lambda _s, result: recorded.append(result)  # type: ignore[method-assign]
+    coordinator.missing_reagents_agent = _CountingRescueAgent()  # type: ignore[assignment]
+    state = _state()
+
+    coordinator._attempt_candidate_rescue(
+        state, mechanism_result=_mechanism_result(["X", "O=S(Cl)Cl"]), failed_checks=["atom_balance"], candidate_rank=1
+    )
+
+    assert [r.source for r in recorded] == ["deterministic"]

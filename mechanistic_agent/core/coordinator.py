@@ -2555,6 +2555,17 @@ class RunCoordinator:
             failed_checks=failed_checks,
             validation_details=mechanism_result.validation.as_dict() if mechanism_result.validation else {},
         )
+        # The rescue often settles deterministically (e.g. ``no_additions``) without a
+        # chat-model request; such a step must not carry the run's configured model.
+        rescue_ctx = current_call_context()
+        if (
+            rescue_ctx is not None
+            and rescue_ctx.step_name == "candidate_rescue"
+            and rescue_ctx.run_id == state.run_id
+            and not rescue_ctx.calls
+            and not (rescue_result.output or {}).get("model_used")
+        ):
+            rescue_result.source = "deterministic"
         self._record_step(state, rescue_result)
         rescue_output = rescue_result.output or {}
         if str(rescue_output.get("error") or "") == "candidate_rescue_invalid_species":
