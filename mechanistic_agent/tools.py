@@ -822,7 +822,11 @@ def _mol_from_smiles(smiles: str):
     candidate = str(smiles or "").strip()
     if not candidate:
         raise ToolRuntimeError("Invalid SMILES string: empty input")
-    if not _looks_like_smiles(candidate):
+    # repair-smiles (and RDKit's own writer) emits CXSMILES for radicals and dative/coordinate
+    # bonds, e.g. "[CH3] |^1:0|" or "[OH-][Zn+2] |C:0.0|". Judge the SMILES part only; RDKit
+    # parses the "|...|" extension itself (radical counts, coordinate bonds).
+    core = candidate.split(" |", 1)[0].strip() if candidate.endswith("|") and " |" in candidate else candidate
+    if not _looks_like_smiles(core):
         raise ToolRuntimeError(f"Invalid SMILES string: {candidate}")
     mol = Chem.MolFromSmiles(candidate)
     if mol is None:
