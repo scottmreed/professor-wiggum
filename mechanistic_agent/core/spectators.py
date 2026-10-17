@@ -11,7 +11,8 @@ fails atom balance although its chemistry is right.
 map-free, explicit H removed). ``carry_spectators`` repairs a candidate only
 when that is unambiguous: every SMIRKS reactant is in the current state, every
 SMIRKS product is in the stated resulting state, and adding back exactly the
-dropped spectators makes the step heavy-atom balanced. It only ever adds
+dropped spectators makes the step balanced under the atom-balance validator's
+policy (every element including hydrogens, plus net charge). It only ever adds
 species that are already in the current state.
 """
 from __future__ import annotations
@@ -49,19 +50,12 @@ def canonical_species(smiles: str) -> Optional[str]:
         return None
 
 
-def heavy_atom_counts(species: Iterable[str]) -> Optional[Counter]:
-    """Heavy-atom element counts (the atom-balance validator's policy); None if unparseable."""
-    if Chem is None:
-        return None
-    counts: Counter = Counter()
-    for item in species:
-        mol = Chem.MolFromSmiles(str(item or "").strip())
-        if mol is None:
-            return None
-        for atom in mol.GetAtoms():
-            if atom.GetAtomicNum() > 1:
-                counts[atom.GetSymbol()] += 1
-    return counts
+def step_composition(species: Iterable[str]) -> Optional[Counter]:
+    """Element counts incl. all hydrogens plus net charge: the atom-balance validator's policy."""
+    from mechanistic_agent.balance import species_composition
+    from skills.mechanistic.atom_balance_validation.validator import INCLUDE_CHARGE, INCLUDE_HYDROGENS
+
+    return species_composition(species, include_hydrogens=INCLUDE_HYDROGENS, include_charge=INCLUDE_CHARGE)
 
 
 def _canonical_multiset(species: Iterable[str]) -> Optional[Counter]:
@@ -142,8 +136,8 @@ def carry_spectators(
     dropped = Counter(analysis["dropped_spectators"])
     if not dropped:
         return None
-    current_counts = heavy_atom_counts(current_state)
-    before = heavy_atom_counts(resulting_state)
+    current_counts = step_composition(current_state)
+    before = step_composition(resulting_state)
     if current_counts is None or before is None or before == current_counts:
         return None
 
@@ -156,7 +150,7 @@ def carry_spectators(
     if any(count > 0 for count in dropped.values()):
         return None
     repaired = list(resulting_state) + carried
-    if heavy_atom_counts(repaired) != current_counts:
+    if step_composition(repaired) != current_counts:
         return None
     return {"resulting_state": repaired, "carried": carried, "analysis": analysis}
 
@@ -206,6 +200,12 @@ def rejection_note(candidate: Dict[str, Any], attempt: Dict[str, Any], *, max_ch
                 parts.append(f"resulting_state is short {deficit} vs current_state")
             if surplus:
                 parts.append(f"resulting_state has extra {surplus}")
+            charge_delta = details.get("charge_delta")
+            if isinstance(charge_delta, int) and charge_delta:
+                parts.append(
+                    f"net charge changes {int(details.get('current_charge') or 0):+d} -> "
+                    f"{int(details.get('resulting_charge') or 0):+d}"
+                )
         else:
             text = str(details.get("error") or details.get("message") or details.get("error_code") or "").strip()
             if text:

@@ -275,7 +275,9 @@ class AgentLimits:
     """Bounds to keep runtime execution constrained."""
 
     max_turns: int = 30
-    max_runtime_seconds: float = 1800.0  # = core.types.DEFAULT_MAX_RUNTIME_SECONDS
+    # Literal on purpose: config.py may not import core/ (tests/fast/test_architecture.py).
+    # tests/fast/test_step_cap.py keeps it equal to core.types.DEFAULT_MAX_RUNTIME_SECONDS.
+    max_runtime_seconds: float = 1800.0
     max_retries: int = 1
 
 

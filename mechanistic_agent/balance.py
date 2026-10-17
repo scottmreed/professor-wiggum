@@ -37,6 +37,49 @@ def _count_atoms(smiles_list: Iterable[str], *, include_hydrogens: bool) -> Coun
     return _heavy_atom_counter(values)
 
 
+def _net_charge(smiles_list: Iterable[str]) -> int:
+    from mechanistic_agent.tools import _mol_from_smiles
+
+    total = 0
+    for smiles in smiles_list:
+        mol = _mol_from_smiles(smiles)
+        total += sum(int(atom.GetFormalCharge()) for atom in mol.GetAtoms())
+    return total
+
+
+def species_composition(
+    smiles_list: Iterable[str],
+    *,
+    include_hydrogens: bool = True,
+    include_charge: bool = True,
+) -> Optional[Counter[str]]:
+    """Element counts (plus net formal charge under the key ``"charge"``) of a species list.
+
+    Uses the same counters as :func:`assess_balance_diagnostics`, without the
+    SMILES repair pass. Returns None when any species does not parse.
+    """
+    values = [str(item) for item in smiles_list]
+    try:
+        counts = Counter(_count_atoms(values, include_hydrogens=include_hydrogens))
+        if include_charge:
+            counts["charge"] = _net_charge(values)
+    except Exception:
+        return None
+    return counts
+
+
+def merge_unique_species(base: List[str], additions: List[str]) -> List[str]:
+    """Append additions not already present (exact string), as the coordinator applies rescue additions."""
+    merged = list(base)
+    seen = set(base)
+    for item in additions:
+        if item in seen:
+            continue
+        merged.append(item)
+        seen.add(item)
+    return merged
+
+
 def _repair_species(
     smiles_list: Iterable[str],
     *,
@@ -89,11 +132,17 @@ def assess_balance_diagnostics(
     right: Iterable[str],
     *,
     include_hydrogens: bool = False,
+    include_charge: bool = False,
     backend_config: Any = None,
     left_label: str = "left",
     right_label: str = "right",
 ) -> Dict[str, Any]:
-    """Return repaired species lists plus balance diagnostics."""
+    """Return repaired species lists plus balance diagnostics.
+
+    ``include_charge=True`` also requires the net formal charge to be conserved
+    (``left_charge``/``right_charge``/``charge_delta``); a charge change makes the
+    sides unbalanced even when every element balances.
+    """
 
     repaired_left = _repair_species(left, side=left_label, backend_config=backend_config)
     repaired_right = _repair_species(right, side=right_label, backend_config=backend_config)
@@ -115,6 +164,7 @@ def assess_balance_diagnostics(
         "left_label": left_label,
         "right_label": right_label,
         "include_hydrogens": include_hydrogens,
+        "include_charge": include_charge,
     }
 
     if invalid_species:
@@ -147,7 +197,15 @@ def assess_balance_diagnostics(
     payload["surplus"] = _normalise_counter(surplus)
     payload["left_counts"] = _normalise_counter(left_counts)
     payload["right_counts"] = _normalise_counter(right_counts)
-    payload["balanced"] = not payload["deficit"] and not payload["surplus"]
+    charge_ok = True
+    if include_charge:
+        left_charge = _net_charge(sanitized_left)
+        right_charge = _net_charge(sanitized_right)
+        payload["left_charge"] = left_charge
+        payload["right_charge"] = right_charge
+        payload["charge_delta"] = right_charge - left_charge
+        charge_ok = left_charge == right_charge
+    payload["balanced"] = not payload["deficit"] and not payload["surplus"] and charge_ok
     payload["classification"] = "exact" if payload["balanced"] else "imbalanced"
 
     if not payload["balanced"]:
@@ -156,6 +214,11 @@ def assess_balance_diagnostics(
             deltas.append(f"{element}: {left_counts.get(element, 0)}->{right_counts.get(element, 0)} (Δ-{amount})")
         for element, amount in payload["surplus"].items():
             deltas.append(f"{element}: {left_counts.get(element, 0)}->{right_counts.get(element, 0)} (Δ+{amount})")
+        if not charge_ok:
+            delta = int(payload["charge_delta"])
+            deltas.append(
+                f"net charge: {payload['left_charge']:+d}->{payload['right_charge']:+d} (Δ{delta:+d})"
+            )
         payload["error"] = "Atom imbalance detected: " + ", ".join(deltas)
 
     return payload

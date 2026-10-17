@@ -413,3 +413,130 @@ def test_rejection_notes_are_rendered_in_full_and_delta_turns(monkeypatch: pytes
     assert "VALIDATION FEEDBACK" in text
     assert "dropped spectators [CCN]" in text
     assert '"rejection_notes"' not in text  # rendered as a section, not as guidance JSON
+
+
+# ── Retry budget 3 (harness loop_module) through the real retry loop ─────
+
+from pathlib import Path  # noqa: E402
+
+from mechanistic_agent.core.registries import HarnessRegistry  # noqa: E402
+
+_ROOT = Path(__file__).resolve().parents[2]
+ACID = "CC(=O)O"
+# Acetic acid loses its proton with no acceptor drawn: a proton-only residual (H and charge).
+PROTON_LOSS = {
+    "current_state": [ACID, "CCN"],
+    "resulting_state": ["CC(=O)[O-]", "CCN"],
+    "reaction_smirks": "[CH3:1][C:2](=[O:3])[OH:4]>>[CH3:1][C:2](=[O:3])[O-:4] |mech:v1;sigma:4-5>4|",
+}
+# The ethylamine vanishes: a heavy-atom residual, never deferrable as a proton.
+HEAVY_LOSS = {
+    "current_state": [ACID, "CCN"],
+    "resulting_state": ["CC(=O)[O-]", "[NH4+]"],
+    "reaction_smirks": "[CH3:1][C:2](=[O:3])[OH:4]>>[CH3:1][C:2](=[O:3])[O-:4] |mech:v1;sigma:4-5>4|",
+}
+
+
+class _CountingMechanismAgent:
+    def __init__(self, output: Dict[str, Any]) -> None:
+        self.output = output
+        self.calls = 0
+
+    def run(self, _state: RunState, _scoped: Dict[str, Any], *, retry_feedback: Optional[Dict[str, Any]] = None) -> StepResult:
+        self.calls += 1
+        return StepResult(
+            step_name="mechanism_synthesis",
+            tool_name="predict_mechanistic_step",
+            output={
+                **json.loads(json.dumps(self.output)),
+                "unchanged_starting_materials_detected": False,
+                "resulting_state_changed": True,
+                "contains_target_product": True,
+                "bond_electron_validation": {"valid": True, "total_delta": 0},
+            },
+            source="deterministic",
+        )
+
+
+def _harness_loop(harness_name: str, output: Dict[str, Any], *, mode: str = "unverified"):  # type: ignore[no-untyped-def]
+    store = _EventStore()
+    coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
+    _quiet(coordinator)
+    state = _state(mode=mode, max_reproposals=2)
+    state.current_state = list(output["current_state"])
+    harness = HarnessRegistry(_ROOT / "harness_versions").load(harness_name)
+    coordinator._apply_harness_run_config_defaults(state, harness, raw_config={})
+    assert state.run_config.retry_same_candidate_max == 3
+    coordinator._attempt_candidate_rescue = lambda *_a, **_k: None  # type: ignore[method-assign]
+    agent = _CountingMechanismAgent(output)
+    coordinator.mechanism_agent = agent  # type: ignore[assignment]
+    candidate = {
+        "rank": 1,
+        "intermediate_smiles": "CC(=O)[O-]",
+        "reaction_smirks": output["reaction_smirks"],
+        "electron_pushes": [{"kind": "lone_pair", "source_atom": "4", "target_atom": "1", "electrons": 2}],
+        "resulting_state": list(output["resulting_state"]),
+    }
+    proposals = _ScriptedProposals([[candidate]])
+    coordinator.intermediate_agent = proposals  # type: ignore[assignment]
+    coordinator._apply_candidate = lambda st, chosen, **_k: setattr(st, "step_index", st.step_index + 1)  # type: ignore[method-assign]
+    coordinator._run_post_step_modules = lambda *_a, **_k: None  # type: ignore[method-assign]
+    return store, coordinator, state, agent, proposals
+
+
+def _run(coordinator: RunCoordinator, state: RunState) -> bool:
+    """Run the loop; True when it paused."""
+    try:
+        coordinator._run_mechanism_loop(state, threading.Event())
+    except _RunPaused:
+        return True
+    return False
+
+
+@pytest.mark.parametrize(
+    "harness_name,balance_mode,proceed",
+    [("default", "deferred", False), ("permissive_default", "strict", True), ("threaded_unified", "proton_deferred", False)],
+)
+def test_retry_budget_3_proton_residual_soft_advances(harness_name: str, balance_mode: str, proceed: bool) -> None:
+    store, coordinator, state, agent, proposals = _harness_loop(harness_name, PROTON_LOSS)
+    assert state.run_config.balance_mode == balance_mode
+    assert state.run_config.proceed_on_validation_failure is proceed
+    paused = _run(coordinator, state)
+    assert not paused
+    # The deterministic repeat stopped the retries after 2 of 3 without forcing a reproposal.
+    assert agent.calls == 2
+    assert store.types("mechanism_retry_stopped_deterministic")
+    assert not store.types("mechanism_reproposal_requested")
+    soft = store.types("mechanism_step_soft_advance")
+    assert soft and soft[0]["reason"] == "balance_pending"
+    assert not store.types("run_failed")
+
+
+def test_retry_budget_3_heavy_residual_under_proton_deferred_reproposes_then_pauses() -> None:
+    store, coordinator, state, agent, proposals = _harness_loop("threaded_unified", HEAVY_LOSS)
+    paused = _run(coordinator, state)
+    assert paused
+    reasons = [p["reason"] for p in store.types("mechanism_reproposal_requested")]
+    assert reasons == ["retry_exhausted", "retry_exhausted"]
+    assert len(proposals.guidance) == 3 and proposals.guidance[1]["rejection_notes"]
+    assert agent.calls == 6  # 2 per proposal: the third retry is skipped as a deterministic repeat
+    assert store.types("mechanism_reproposal_limit_reached")[-1]["next"] == "pause"
+    assert store.types("mechanism_retry_exhausted")
+    assert not store.types("run_failed")
+
+
+def test_retry_budget_3_default_harness_heavy_residual_soft_advances_under_deferred() -> None:
+    # "deferred" accepts any atom-balance-only failure as a flagged step.
+    store, coordinator, state, agent, _proposals = _harness_loop("default", HEAVY_LOSS)
+    assert not _run(coordinator, state)
+    assert store.types("mechanism_step_soft_advance")
+    assert not store.types("mechanism_reproposal_requested")
+
+
+def test_verified_mode_still_pauses_without_reproposal_or_soft_advance() -> None:
+    store, coordinator, state, agent, proposals = _harness_loop("threaded_unified", PROTON_LOSS, mode="verified")
+    assert _run(coordinator, state)
+    assert not store.types("mechanism_reproposal_requested")
+    assert not store.types("mechanism_step_soft_advance")
+    assert not store.types("run_failed")
+    assert store.types("mechanism_retry_exhausted")

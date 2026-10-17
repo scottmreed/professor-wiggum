@@ -4117,18 +4117,22 @@ def predict_missing_reagents_for_candidate(
     ``current_state -> resulting_state`` transition as the balancing problem.
     """
     from mechanistic_agent.balance import assess_balance_diagnostics
+    from mechanistic_agent.balance import merge_unique_species
     from skills.mechanistic.atom_balance_validation.validator import (
+        BALANCE_POLICY,
         HYDROGEN_POLICY,
+        INCLUDE_CHARGE,
         INCLUDE_HYDROGENS,
     )
 
-    # Same hydrogen policy as the atom-balance validator: a rescue that counts
-    # implicit H while the validator counts heavy atoms reports "balanced" for a
-    # step the validator rejects (and vice versa), so nothing ever changes.
+    # Same counting policy as the atom-balance validator (all H + net charge): a
+    # rescue that counts differently reports "balanced" for a step the validator
+    # rejects (and vice versa), so nothing ever changes.
     balance_diagnostics = assess_balance_diagnostics(
         current_state,
         resulting_state,
         include_hydrogens=INCLUDE_HYDROGENS,
+        include_charge=INCLUDE_CHARGE,
         left_label="current_state",
         right_label="resulting_state",
     )
@@ -4273,12 +4277,14 @@ def predict_missing_reagents_for_candidate(
         hint = "Adjust the explicit mechanism moves so they match the bond changes in reaction_smirks."
 
     # The status describes the additions that survive the caps and filters
-    # above, counted the way the validator counts them, not the model's own
-    # claim: a "success" whose kept additions still leave a deficit is "partial".
+    # above, applied exactly as the coordinator applies them (merge_unique_species
+    # onto the step's own states) and counted the way the validator counts them,
+    # not the model's own claim: kept additions that still leave a residual are "partial".
     post_additions_balance = assess_balance_diagnostics(
-        sanitized_current + add_reactants,
-        sanitized_resulting + add_products,
+        merge_unique_species([str(x) for x in current_state], add_reactants),
+        merge_unique_species([str(x) for x in resulting_state], add_products),
         include_hydrogens=INCLUDE_HYDROGENS,
+        include_charge=INCLUDE_CHARGE,
         left_label="current_state+add_reactants",
         right_label="resulting_state+add_products",
     )
@@ -4292,9 +4298,10 @@ def predict_missing_reagents_for_candidate(
             "status": status,
             "model_status": str(parsed.get("status") or ""),
             "hydrogen_policy": HYDROGEN_POLICY,
+            "balance_policy": BALANCE_POLICY,
             "post_additions_balance": {
                 key: post_additions_balance.get(key)
-                for key in ("balanced", "classification", "deficit", "surplus", "error")
+                for key in ("balanced", "classification", "deficit", "surplus", "charge_delta", "error")
                 if post_additions_balance.get(key) not in (None, {}, "")
             },
             "add_reactants": add_reactants,
@@ -5782,7 +5789,8 @@ def propose_intermediates(
             "VALIDATION FEEDBACK — every candidate you proposed for this step was rejected by the "
             "deterministic checks. The chemistry may be right; fix what is listed. resulting_state must "
             "be the whole current_state after the step: every species the reaction_smirks does not touch, "
-            "with every duplicate copy, plus the SMIRKS products, so heavy atoms balance exactly.\n"
+            "with every duplicate copy, plus the SMIRKS products, so every element (hydrogens included) and the "
+            "net charge balance exactly.\n"
             + "\n".join(f"- {note}" for note in rejection_notes)
         )
     if scratchpad_summary:

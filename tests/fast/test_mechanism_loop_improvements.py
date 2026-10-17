@@ -6,7 +6,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from mechanistic_agent.core.coordinator import RunCoordinator
+import pytest
+
+from mechanistic_agent.core.coordinator import RunCoordinator, _RunPaused
 from mechanistic_agent.core.baseline_runner import BaselineRunner
 from mechanistic_agent.core.types import (
     BranchCandidate,
@@ -271,9 +273,15 @@ def test_repeat_failure_requests_reproposal() -> None:
         }
 
     coordinator._try_candidate_with_retries = _fake_try  # type: ignore[method-assign]
-    coordinator._run_mechanism_loop(state, threading.Event())
+    # Reproposals up to max_reproposals_per_step, then a pause (no longer run_failed
+    # proposal_repeat_failure_loop: a paused run keeps the path for a resume).
+    with pytest.raises(_RunPaused):
+        coordinator._run_mechanism_loop(state, threading.Event())
 
-    assert any(ev["event_type"] == "mechanism_reproposal_requested" for ev in store.events)
+    reasons = [ev["payload"]["reason"] for ev in store.events if ev["event_type"] == "mechanism_reproposal_requested"]
+    assert reasons and set(reasons) == {"repeat_failure_signature"}
+    assert not any(ev["event_type"] == "run_failed" for ev in store.events)
+    assert any(ev["event_type"] == "run_paused" for ev in store.events)
 
 
 def test_repeat_signature_not_forced_on_single_retry_budget() -> None:
@@ -318,7 +326,10 @@ def test_repeat_signature_not_forced_on_single_retry_budget() -> None:
     assert not bool(result.get("force_reproposal"))
 
 
-def test_repeat_signature_forced_when_limit_reached() -> None:
+def test_deterministic_repeat_stops_retrying_without_forced_reproposal() -> None:
+    """A retry that reproduces the same output and signature carries no information:
+    the candidate is dropped (reason deterministic_repeat) without forcing a reproposal,
+    so the loop can still soft-advance, repropose with notes, or pause."""
     store = _EventStore()
     coordinator = RunCoordinator(store=store)  # type: ignore[arg-type]
     state = _state(max_steps=1, max_runtime_seconds=0.02)
@@ -363,8 +374,9 @@ def test_repeat_signature_forced_when_limit_reached() -> None:
     )
     assert failing.calls == 2
     assert result["status"] == "failed"
-    assert bool(result.get("force_reproposal")) is True
-    assert result.get("repeat_failure_signature_limit") == 2
+    assert not result.get("force_reproposal")
+    assert result["reason"] == "deterministic_repeat"
+    assert any(ev["event_type"] == "mechanism_retry_stopped_deterministic" for ev in store.events)
 
 
 def test_rescue_validation_records_superseding_validation_checks() -> None:

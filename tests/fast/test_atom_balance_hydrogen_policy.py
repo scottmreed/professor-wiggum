@@ -128,15 +128,46 @@ def python_backend(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_bare_hydrogen_species_do_not_unbalance_a_step(python_backend: None, current: List[str], resulting: List[str]) -> None:
     check = validate_atom_balance(current, resulting)
     assert check.passed, check.details
-    assert check.details["hydrogen_policy"] == "heavy_atoms_only"
-    assert "H" not in check.details.get("current_counts", {})
+    assert check.details["hydrogen_policy"] == "all_hydrogens"
+    # Every hydrogen is counted, explicit and implicit, and the net charge is conserved.
+    assert check.details["current_counts"]["H"] == check.details["resulting_counts"]["H"]
+    assert check.details["charge_delta"] == 0
+
+
+@pytest.mark.parametrize(
+    "current,resulting,expected_error",
+    [
+        (["CC(C)=O", "[H+]"], ["CC(C)=O"], "H: 7->6"),  # a proton vanishes
+        (["CC(C)=O", "[H-]"], ["CC(C)=O"], "H: 7->6"),  # a hydride vanishes
+        (["C=C"], ["C=C", "[H][H]"], "H: 4->6"),  # H2 appears from nowhere
+        (["CC(=O)O"], ["CC(=O)[O-]"], "H: 4->3"),  # deprotonation with no base to take the proton
+        (["[Zn]", "CC(=O)[O-]"], ["[Zn+2]", "CC(=O)[O-]"], "net charge: -1->+1"),  # charge changes, atoms do not
+    ],
+)
+def test_lost_hydrogen_or_changed_charge_fails(
+    python_backend: None, current: List[str], resulting: List[str], expected_error: str
+) -> None:
+    check = validate_atom_balance(current, resulting)
+    assert not check.passed
+    assert expected_error in check.details["error"]
+
+
+def test_proton_residual_is_flagged_as_a_proton_for_proton_deferred(python_backend: None) -> None:
+    """The residual of a lost proton is H and charge together, which proton_deferred defers."""
+    from mechanistic_agent.core.coordinator import RunCoordinator
+
+    check = validate_atom_balance(["CC(C)=O", "[H+]"], ["CC(C)=O"])
+    assert check.details["deficit"] == {"H": 1} and check.details["charge_delta"] == -1
+    assert RunCoordinator._proton_only_residual({"current_state": ["CC(C)=O", "[H+]"], "resulting_state": ["CC(C)=O"]})
+    # A heavy-atom residual is never a proton residual.
+    assert not RunCoordinator._proton_only_residual({"current_state": ["CCO", "O"], "resulting_state": ["CCO"]})
 
 
 def test_heavy_atom_loss_still_fails(python_backend: None) -> None:
     check = validate_atom_balance(CASE_17799_CURRENT, CASE_17799_RESULTING[:1])
     assert not check.passed
-    assert check.details["deficit"] == {"C": 8, "Cl": 1, "O": 2}
-    assert "H" not in check.details["deficit"]
+    assert check.details["deficit"] == {"C": 8, "Cl": 1, "H": 8, "O": 2}
+    assert check.details["charge_delta"] == -1
 
 
 def test_step_validation_python_backend_passes_bare_proton_step(python_backend: None) -> None:
@@ -186,7 +217,8 @@ def test_rescue_counts_hydrogen_like_the_validator(python_backend: None, monkeyp
     validator = validate_atom_balance(CASE_17799_CURRENT, CASE_17799_RESULTING)
     assert payload["hydrogen_policy"] == validator.details["hydrogen_policy"]
     assert payload["balance_diagnostics"]["balanced"] == validator.passed is True
-    assert payload["balance_diagnostics"]["include_hydrogens"] is False
+    assert payload["balance_diagnostics"]["include_hydrogens"] is True
+    assert payload["balance_diagnostics"]["include_charge"] is True
 
 
 def test_rescue_status_reflects_the_additions_it_kept(python_backend: None, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -98,3 +98,10 @@ def test_eval_summary_line_counts_cap_hits() -> None:
     assert main._format_step_cap_summary([], total=5, cap=14) == "Step cap (14) reached: 0/5 cases"
     line = main._format_step_cap_summary(["mcsa-613-1", "flower-test-002482"], total=92, cap=14)
     assert line == "Step cap (14) reached: 2/92 cases — mcsa-613-1, flower-test-002482"
+
+
+def test_agent_limits_runtime_matches_the_runtime_default() -> None:
+    from mechanistic_agent.config import AgentLimits
+    from mechanistic_agent.core.types import DEFAULT_MAX_RUNTIME_SECONDS
+
+    assert AgentLimits().max_runtime_seconds == DEFAULT_MAX_RUNTIME_SECONDS

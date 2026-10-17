@@ -15,7 +15,7 @@ import typer
 
 from mechanistic_agent import OPTIONAL_LLM_TOOL_NAMES, ReactionInputs
 from mechanistic_agent.core import RegistrySet, RunCoordinator, RunStore, select_step_models
-from mechanistic_agent.core.types import DEFAULT_MAX_RUNTIME_SECONDS, PRIMARY_HARNESS
+from mechanistic_agent.core.types import DEFAULT_MAX_RUNTIME_SECONDS, DEFAULT_MAX_STEPS, PRIMARY_HARNESS
 from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
 from mechanistic_agent.curriculum import (
     OPUS_MODEL,
@@ -1731,7 +1731,7 @@ def run(
         "--model",
         help="Exact model identifier used for all LLM-backed subagents",
     ),
-    max_steps: int = typer.Option(14, "--max-steps", help="Maximum mechanism loop steps"),
+    max_steps: int = typer.Option(DEFAULT_MAX_STEPS, "--max-steps", help="Maximum mechanism loop steps"),
     max_runtime: float = typer.Option(DEFAULT_MAX_RUNTIME_SECONDS, "--max-runtime", help="Maximum runtime in seconds"),
     retry_same_candidate_max: Optional[int] = typer.Option(
         None,
@@ -4036,7 +4036,7 @@ def eval_cmd(
         help="Max cases per tier (only with --tier/--all-tiers). Overrides --max-cases for each tier when set.",
     ),
     # 14 leaves slack above the 10-step hard band (training_data/eval_tiers.json).
-    max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
+    max_steps: int = typer.Option(DEFAULT_MAX_STEPS, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(DEFAULT_MAX_RUNTIME_SECONDS, "--max-runtime", help="Per-case timeout in seconds"),
     retry_same_candidate_max: Optional[int] = typer.Option(
         None,
@@ -4137,7 +4137,7 @@ def eval_cmd(
     run_group = _unwrap_option(run_group)
     max_cases = int(_unwrap_option(max_cases, 25))
     max_per_tier = _unwrap_option(max_per_tier)
-    max_steps = int(_unwrap_option(max_steps, 14))
+    max_steps = int(_unwrap_option(max_steps, DEFAULT_MAX_STEPS))
     max_runtime = float(_unwrap_option(max_runtime, DEFAULT_MAX_RUNTIME_SECONDS))
     retry_same_candidate_max = _unwrap_option(retry_same_candidate_max)
     if retry_same_candidate_max is not None:
@@ -4661,7 +4661,7 @@ def eval_runset_official_cmd(
         "--num-examples",
         help="Max cases/examples to run (default: 20).",
     ),
-    max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
+    max_steps: int = typer.Option(DEFAULT_MAX_STEPS, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(600.0, "--max-runtime", help="Per-case timeout in seconds"),
     chemistry_backend: str = typer.Option(
         "auto",
