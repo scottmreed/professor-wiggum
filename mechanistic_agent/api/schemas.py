@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from mechanistic_agent.core.types import PRIMARY_HARNESS
+from mechanistic_agent.core.types import DEFAULT_MAX_RUNTIME_SECONDS, PRIMARY_HARNESS
 
 
 class RalphRunConfig(BaseModel):
@@ -37,7 +37,7 @@ class CreateRunRequest(BaseModel):
     functional_groups_enabled: bool = True
     intermediate_prediction_enabled: bool = True
     max_steps: int = 14
-    max_runtime_seconds: float = 1200.0
+    max_runtime_seconds: float = DEFAULT_MAX_RUNTIME_SECONDS
     # None = the harness decides (run_config_defaults, then
     # loop_module.max_retries_per_candidate); a value here always wins.
     retry_same_candidate_max: Optional[int] = Field(default=None, ge=1)

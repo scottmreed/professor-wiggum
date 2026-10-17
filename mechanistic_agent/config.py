@@ -275,7 +275,7 @@ class AgentLimits:
     """Bounds to keep runtime execution constrained."""
 
     max_turns: int = 30
-    max_runtime_seconds: float = 1200.0
+    max_runtime_seconds: float = 1800.0  # = core.types.DEFAULT_MAX_RUNTIME_SECONDS
     max_retries: int = 1
 
 

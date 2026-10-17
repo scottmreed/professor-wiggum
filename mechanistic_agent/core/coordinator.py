@@ -68,6 +68,7 @@ from .provenance import (
     resolve_step_provenance,
 )
 from .types import (
+    DEFAULT_MAX_RUNTIME_SECONDS,
     DEFAULT_MAX_STEPS,
     BranchCandidate,
     BranchPoint,
@@ -230,7 +231,7 @@ class RunCoordinator:
             ),
             max_steps=self._coerce_int(config.get("max_steps", DEFAULT_MAX_STEPS), DEFAULT_MAX_STEPS),
             hide_products=hide_products,
-            max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", 1200.0), 1200.0),
+            max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", DEFAULT_MAX_RUNTIME_SECONDS), DEFAULT_MAX_RUNTIME_SECONDS),
             api_keys=dict(config.get("api_keys") or {}),
             retry_same_candidate_max=self._coerce_int(config.get("retry_same_candidate_max", 1), 1),
             max_reproposals_per_step=self._coerce_int(config.get("max_reproposals_per_step", 4), 4),
