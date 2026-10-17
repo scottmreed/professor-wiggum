@@ -1389,7 +1389,7 @@ def create_app(
         intermediate_prediction_enabled: bool,
         max_steps: int,
         max_runtime_seconds: float,
-        retry_same_candidate_max: int,
+        retry_same_candidate_max: Optional[int],
         max_reproposals_per_step: int,
         reproposal_on_repeat_failure: bool,
         candidate_rescue_enabled: bool,
@@ -1457,7 +1457,13 @@ def create_app(
                 "model_plan_notes": model_plan.notes,
                 "max_steps": max_steps,
                 "max_runtime_seconds": max_runtime_seconds,
-                "retry_same_candidate_max": retry_same_candidate_max,
+                # Omitted when None so the harness's retry budget applies
+                # (see RunCoordinator._apply_harness_run_config_defaults).
+                **(
+                    {"retry_same_candidate_max": int(retry_same_candidate_max)}
+                    if retry_same_candidate_max is not None
+                    else {}
+                ),
                 "max_reproposals_per_step": max_reproposals_per_step,
                 "reproposal_on_repeat_failure": reproposal_on_repeat_failure,
                 "candidate_rescue_enabled": candidate_rescue_enabled,
@@ -1689,7 +1695,7 @@ def create_app(
                     intermediate_prediction_enabled=True,
                     max_steps=payload.max_steps,
                     max_runtime_seconds=payload.max_runtime_seconds,
-                    retry_same_candidate_max=1,
+                    retry_same_candidate_max=None,
                     max_reproposals_per_step=4,
                     reproposal_on_repeat_failure=True,
                     candidate_rescue_enabled=True,
@@ -3682,7 +3688,7 @@ def create_app(
                 intermediate_prediction_enabled=True,
                 max_steps=6,
                 max_runtime_seconds=180.0,
-                retry_same_candidate_max=1,
+                retry_same_candidate_max=None,
                 max_reproposals_per_step=4,
                 reproposal_on_repeat_failure=True,
                 candidate_rescue_enabled=True,

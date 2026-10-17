@@ -1731,8 +1731,14 @@ def run(
         "--model",
         help="Exact model identifier used for all LLM-backed subagents",
     ),
-    max_steps: int = typer.Option(10, "--max-steps", help="Maximum mechanism loop steps"),
+    max_steps: int = typer.Option(14, "--max-steps", help="Maximum mechanism loop steps"),
     max_runtime: float = typer.Option(1200.0, "--max-runtime", help="Maximum runtime in seconds"),
+    retry_same_candidate_max: Optional[int] = typer.Option(
+        None,
+        "--retry-same-candidate-max",
+        min=1,
+        help="Retries per rejected candidate (default: the harness decides — run_config_defaults, then loop_module.max_retries_per_candidate)",
+    ),
     orchestration_mode: str = typer.Option(
         "standard",
         "--orchestration-mode",
@@ -1908,6 +1914,11 @@ def run(
             "model_plan_notes": model_plan.notes,
             "max_steps": max_steps,
             "max_runtime_seconds": max_runtime,
+            **(
+                {"retry_same_candidate_max": int(retry_same_candidate_max)}
+                if isinstance(retry_same_candidate_max, int)
+                else {}
+            ),
             "orchestration_mode": orchestration_mode,
             "harness_name": harness,
             "harness_strategy": harness_strategy,
@@ -3592,6 +3603,7 @@ def _execute_harness_eval_run(
     selected_case_ids: Optional[Sequence[str]] = None,
     planner_metadata: Optional[Dict[str, Any]] = None,
     hide_products: bool = False,
+    retry_same_candidate_max: Optional[int] = None,
 ) -> Dict[str, Any]:
     from mechanistic_agent.scoring import (
         DEFAULT_SCORING_VERSION,
@@ -3699,6 +3711,11 @@ def _execute_harness_eval_run(
                     "runtime_trace_enabled": trace_runtime,
                     "runtime_trace_label": case_id,
                     "hide_products": hide_products,
+                    **(
+                        {"retry_same_candidate_max": int(retry_same_candidate_max)}
+                        if retry_same_candidate_max is not None
+                        else {}
+                    ),
                 },
                 **hashes,
             )
@@ -3997,6 +4014,12 @@ def eval_cmd(
     # 14 leaves slack above the 10-step hard band (training_data/eval_tiers.json).
     max_steps: int = typer.Option(14, "--max-steps", help="Max mechanism steps per case"),
     max_runtime: float = typer.Option(1200.0, "--max-runtime", help="Per-case timeout in seconds"),
+    retry_same_candidate_max: Optional[int] = typer.Option(
+        None,
+        "--retry-same-candidate-max",
+        min=1,
+        help="Retries per rejected candidate (default: the harness decides — run_config_defaults, then loop_module.max_retries_per_candidate)",
+    ),
     chemistry_backend: str = typer.Option(
         "auto",
         "--chemistry-backend",
@@ -4090,8 +4113,11 @@ def eval_cmd(
     run_group = _unwrap_option(run_group)
     max_cases = int(_unwrap_option(max_cases, 25))
     max_per_tier = _unwrap_option(max_per_tier)
-    max_steps = int(_unwrap_option(max_steps, 10))
+    max_steps = int(_unwrap_option(max_steps, 14))
     max_runtime = float(_unwrap_option(max_runtime, 1200.0))
+    retry_same_candidate_max = _unwrap_option(retry_same_candidate_max)
+    if retry_same_candidate_max is not None:
+        retry_same_candidate_max = max(1, int(retry_same_candidate_max))
     chemistry_backend = str(_unwrap_option(chemistry_backend, "auto") or "auto").strip().lower()
     rdkit_cli_command = _unwrap_option(rdkit_cli_command)
     chemistry_backend_parity = bool(_unwrap_option(chemistry_backend_parity, False))
@@ -4272,6 +4298,7 @@ def eval_cmd(
                 max_cases=max_cases,
                 max_steps=max_steps,
                 max_runtime=max_runtime,
+                retry_same_candidate_max=retry_same_candidate_max,
                 chemistry_backend=chemistry_backend,
                 rdkit_cli_command=rdkit_cli_command,
                 chemistry_backend_parity=chemistry_backend_parity,
@@ -4327,6 +4354,7 @@ def eval_cmd(
                 max_cases=tier_limit,
                 max_steps=max_steps,
                 max_runtime=max_runtime,
+                retry_same_candidate_max=retry_same_candidate_max,
                 chemistry_backend=chemistry_backend,
                 rdkit_cli_command=rdkit_cli_command,
                 chemistry_backend_parity=chemistry_backend_parity,
@@ -4455,6 +4483,7 @@ def eval_cmd(
         max_cases=max_cases,
         max_steps=max_steps,
         max_runtime=max_runtime,
+        retry_same_candidate_max=retry_same_candidate_max,
         chemistry_backend=chemistry_backend,
         rdkit_cli_command=rdkit_cli_command,
         chemistry_backend_parity=chemistry_backend_parity,

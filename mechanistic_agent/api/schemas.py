@@ -36,9 +36,11 @@ class CreateRunRequest(BaseModel):
     optional_llm_tools: List[str] = Field(default_factory=lambda: ["attempt_atom_mapping", "predict_missing_reagents"])
     functional_groups_enabled: bool = True
     intermediate_prediction_enabled: bool = True
-    max_steps: int = 10
+    max_steps: int = 14
     max_runtime_seconds: float = 1200.0
-    retry_same_candidate_max: int = 1
+    # None = the harness decides (run_config_defaults, then
+    # loop_module.max_retries_per_candidate); a value here always wins.
+    retry_same_candidate_max: Optional[int] = Field(default=None, ge=1)
     max_reproposals_per_step: int = 4
     reproposal_on_repeat_failure: bool = True
     candidate_rescue_enabled: bool = True

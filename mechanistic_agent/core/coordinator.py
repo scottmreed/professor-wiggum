@@ -1674,12 +1674,22 @@ class RunCoordinator:
         Explicit per-run values (present in the stored run config) always win;
         the harness only fills gaps. Returns the applied overrides so callers
         and tests can inspect them.
+
+        Per-candidate retry budget (``retry_same_candidate_max``), highest
+        precedence first:
+
+        1. an explicit run value (run config key, ``--retry-same-candidate-max``
+           on the CLI, ``retry_same_candidate_max`` in the API request);
+        2. ``run_config_defaults.retry_same_candidate_max`` in harness.json;
+        3. ``loop_module.max_retries_per_candidate`` in harness.json;
+        4. the ``RunConfig`` dataclass default (1).
         """
-        if harness is None or not getattr(harness, "run_config_defaults", None):
+        if harness is None:
             return {}
         explicit = raw_config if isinstance(raw_config, dict) else {}
         applied: Dict[str, Any] = {}
-        for key, value in dict(harness.run_config_defaults).items():
+        sources: Dict[str, str] = {}
+        for key, value in dict(getattr(harness, "run_config_defaults", None) or {}).items():
             if key not in self._HARNESS_RUN_CONFIG_DEFAULT_KEYS:
                 continue
             if key in explicit and explicit.get(key) is not None:
@@ -1695,11 +1705,25 @@ class RunCoordinator:
                 coerced = value
             setattr(state.run_config, key, coerced)
             applied[key] = coerced
+            sources[key] = "run_config_defaults"
+
+        retry_key = "retry_same_candidate_max"
+        loop_module = getattr(harness, "loop_module", None)
+        loop_retries = loop_module.get("max_retries_per_candidate") if isinstance(loop_module, dict) else None
+        if (
+            retry_key not in applied
+            and explicit.get(retry_key) is None
+            and loop_retries is not None
+        ):
+            coerced_retries = max(1, self._coerce_int(loop_retries, state.run_config.retry_same_candidate_max))
+            state.run_config.retry_same_candidate_max = coerced_retries
+            applied[retry_key] = coerced_retries
+            sources[retry_key] = "loop_module.max_retries_per_candidate"
         if applied:
             self.store.append_event(
                 state.run_id,
                 "harness_run_config_defaults_applied",
-                {"harness": getattr(harness, "name", None), "applied": applied},
+                {"harness": getattr(harness, "name", None), "applied": applied, "sources": sources},
             )
         return applied
 
