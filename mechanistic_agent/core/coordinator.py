@@ -3080,7 +3080,9 @@ class RunCoordinator:
                     return validated
             arrows = [
                 _arrow_count.candidate_arrow_count(
-                    (c.mechanism_output or {}).get("reaction_smirks"), list(c.resulting_state or [])
+                    (c.mechanism_output or {}).get("reaction_smirks"),
+                    list(c.resulting_state or []),
+                    list(state.current_state or []),
                 )
                 for c in validated
             ]

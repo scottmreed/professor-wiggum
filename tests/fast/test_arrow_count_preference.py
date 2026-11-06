@@ -37,6 +37,7 @@ SMIRKS_FROM_C = (
     "[CH2-:1][C:2]([CH3:3])=[O:4].[CH3:5][I:6]>>[CH3:5][CH2:1][C:2]([CH3:3])=[O:4].[I-:6]"
 )  # 2 arrows: C lone pair -> C-CH3, C-I -> I-
 PRODUCT = ["CCC(C)=O", "[I-]"]
+ENOLATE_STATE = [ENOLATE_O, "CI"]
 OTHER_PRODUCT = ["CC(=CC)C", "[I-]"]  # a different species
 
 
@@ -79,21 +80,61 @@ def test_unmeasurable_steps_have_no_count(smirks) -> None:
 def test_candidate_arrow_count_requires_smirks_to_describe_the_stated_outcome() -> None:
     # The arrow count measures the SMIRKS; it only counts for the candidate when the
     # SMIRKS products (>= 2 heavy atoms) are, up to resonance, in its resulting state.
-    assert candidate_arrow_count(SMIRKS_FROM_C, PRODUCT) == 2
-    assert candidate_arrow_count(SMIRKS_FROM_O, ["CCC(C)=O", "[I-]", "O"]) == 3
-    assert candidate_arrow_count(SMIRKS_FROM_C, OTHER_PRODUCT) is None
-    assert candidate_arrow_count(None, PRODUCT) is None
-    assert candidate_arrow_count(SMIRKS_FROM_C, ["not a smiles"]) is None
-    # A reaction-centre SMIRKS (partial species) counts when its product fragments are
-    # substructures of the stated species, as quality_scoring's notation check does.
+    assert candidate_arrow_count(SMIRKS_FROM_C, PRODUCT, ENOLATE_STATE) == 2
+    assert candidate_arrow_count(SMIRKS_FROM_O, ["CCC(C)=O", "[I-]", "O"], ENOLATE_STATE) == 3
+    assert candidate_arrow_count(SMIRKS_FROM_C, OTHER_PRODUCT, ENOLATE_STATE) is None
+    assert candidate_arrow_count(None, PRODUCT, ENOLATE_STATE) is None
+    assert candidate_arrow_count(SMIRKS_FROM_C, ["not a smiles"], ENOLATE_STATE) is None
+    # Only a fully mapped, whole-species SMIRKS is a measurement: a reaction-centre
+    # (core-only) SMIRKS leaves atoms out of the count, so it takes no part.
     core = "[N:1].[C:2](=[O:3])[Cl:4]>>[N+:1][C:2](=[O:3]).[Cl-:4]"
-    assert candidate_arrow_count(core, ["CC(=O)[NH3+]", "[Cl-]"]) is not None
-    assert candidate_arrow_count(core, ["CC(=O)OC", "[Cl-]"]) is None
+    assert candidate_arrow_count(core, ["CC(=O)[NH3+]", "[Cl-]"], ["N", "CC(=O)Cl"]) is None
+
+
+SN2_STATE = ["CO", "[Br-]"]
+SN2_START = ["[OH-]", "CBr"]
+
+
+def test_full_mapping_is_required_so_under_mapping_cannot_win() -> None:
+    full = "[OH-:1].[CH3:2][Br:3]>>[OH:1][CH3:2].[Br-:3]"
+    assert candidate_arrow_count(full, SN2_STATE, SN2_START) == 2
+    # Br left unmapped: its C-Br bond change would vanish from the BE count.
+    assert candidate_arrow_count("[OH-:1].[CH3:2]Br>>[OH:1][CH3:2].[Br-]", SN2_STATE, SN2_START) is None
+    # A map that exists on one side only.
+    assert candidate_arrow_count("[OH-:1].[CH3:2][Br:3]>>[OH:1][CH3:2].[Br-]", SN2_STATE, SN2_START) is None
+    # Leaving group left out: [CH3] is then a methyl radical, not the CH3Br in the state.
+    assert candidate_arrow_count("[OH-:1].[CH3:2]>>[OH:1][CH3:2]", SN2_STATE, SN2_START) is None
+    decision = choose_arrow_count_preference(
+        [SN2_STATE, SN2_STATE],
+        [candidate_arrow_count(full, SN2_STATE, SN2_START),
+         candidate_arrow_count("[OH-:1].[CH3:2]Br>>[OH:1][CH3:2].[Br-]", SN2_STATE, SN2_START)],
+    )
+    assert decision is None
+
+
+def test_large_fully_mapped_step_stays_fast() -> None:
+    import time
+
+    n = 400
+    chain = "".join(f"[CH2:{i}]" for i in range(2, n))
+    smirks = f"[CH3:1]{chain}[CH2:{n}][Br:{n + 1}].[OH-:{n + 2}]>>[CH3:1]{chain}[CH2:{n}][OH:{n + 2}].[Br-:{n + 1}]"
+    assert step_arrow_count(smirks) == 2
+    start = time.perf_counter()
+    for _ in range(3):
+        step_arrow_count(smirks)
+    assert (time.perf_counter() - start) / 3 < 0.05  # dense n x n matrices took ~190 ms here
 
 
 # ---------------------------------------------------------------------------
 # Outcome and charge
 # ---------------------------------------------------------------------------
+
+def test_reactants_must_be_current_species_up_to_resonance() -> None:
+    # The carbanion form is another contributor of the O- enolate in the state: allowed.
+    assert candidate_arrow_count(SMIRKS_FROM_C, PRODUCT, [ENOLATE_O, "CI"]) == 2
+    # A reactant that is not in the current state at all.
+    assert candidate_arrow_count(SMIRKS_FROM_C, PRODUCT, ["CC(C)=O", "CI"]) is None
+
 
 def test_outcome_joins_resonance_forms_and_ignores_small_species() -> None:
     assert outcome_key([ENOLATE_O, "O"]) == outcome_key([ENOLATE_C])

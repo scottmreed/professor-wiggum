@@ -93,3 +93,14 @@ def test_skeleton_alignment_key_stays_tautomer_agnostic() -> None:
     # The path-alignment key deliberately joins tautomers; the resonance key does not.
     assert skeleton_species_keys("CC(C)=O") == skeleton_species_keys("C=C(C)O")
     assert resonance_key("CC(C)=O") != resonance_key("C=C(C)O")
+
+
+def test_key_cache_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mechanistic_agent import resonance
+
+    monkeypatch.setattr(resonance, "_KEY_CACHE_MAX", 10)
+    resonance._KEY_CACHE.clear()
+    for n in range(1, 40):
+        resonance_key("C" * n)
+    assert len(resonance._KEY_CACHE) <= 10
+    assert resonance_key("CCCC") == "[CH3][CH2][CH2][CH3]|q=0|r=0"

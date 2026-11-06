@@ -36,6 +36,9 @@ from mechanistic_agent.skeleton_alignment import _parse
 
 RESONANCE_KEY_VERSION = "connectivity_h_per_atom_net_charge_radicals.v1"
 
+#: Keys cached per input string; bounded because the runtime also runs in long-lived
+#: host processes (ChemIllusion). When full, the cache is simply cleared.
+_KEY_CACHE_MAX = 20000
 _KEY_CACHE: Dict[str, Optional[str]] = {}
 
 
@@ -83,6 +86,8 @@ def resonance_key(smiles: Any) -> Optional[str]:
     if text in _KEY_CACHE:
         return _KEY_CACHE[text]
     key = _compute_key(text)
+    if len(_KEY_CACHE) >= _KEY_CACHE_MAX:
+        _KEY_CACHE.clear()
     _KEY_CACHE[text] = key
     return key
 

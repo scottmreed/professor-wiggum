@@ -6,14 +6,19 @@ Ported from ChemIllusion's ``mechanism_resonance_service`` (``be_distance``,
 Every two-electron arrow changes the bond-electron (BE) matrix by exactly 4 in
 L1 distance (lone pair -> new bond: -2 on the donor's diagonal, +2 on the new
 bond's off-diagonal cell; heterolysis and bond -> new bond likewise), so
-``ceil(BE_L1 / 4)`` is the arrow count of an ordinary step. The BE matrices come
-from ``core/bond_electron.py`` (``ugi_flower_kekule_v1``: off-diagonal =
-2 x Kekulé bond order, diagonal = non-bonding electrons with H folded in), and
-the L1 distance counts every diagonal cell plus each off-diagonal cell **once
-per atom pair** (upper triangle), which equals ChemIllusion's
-``Σ|Δfree| + 2·Σ|Δorder|``. Unmapped hydrogens are folded into their heavy atom,
-so a proton transfer counts as one arrow; that is a constant offset for
-candidates with the same outcome, which are the only ones compared.
+``ceil(BE_L1 / 4)`` is the arrow count of an ordinary step. The convention is
+``core/bond_electron.py``'s ``ugi_flower_kekule_v1`` (off-diagonal = 2 x Kekulé
+bond order, diagonal = non-bonding electrons with H folded in), computed sparsely
+from the parsed atoms and bonds (O(atoms + bonds), no dense matrices): every
+diagonal cell plus each bonded pair once, which equals ChemIllusion's
+``Σ|Δfree| + 2·Σ|Δorder|``. Hydrogens that are not mapped atoms are folded into
+their heavy atom, so their H-X bond is added back as 2 electrons per H gained or
+lost: a proton transfer is 2 arrows, as with explicit hydrogen atoms.
+
+Only a **fully mapped, whole-species** step is measured: both sides carry the
+same atom maps and every heavy atom is mapped. An unmapped or one-sided atom, or
+a reaction-centre (core-only) SMIRKS, would leave electrons out of the count and
+let an under-mapped candidate look more parsimonious.
 
 The count is measured from the candidate's mapped ``reaction_smirks``, never
 from ``len(electron_pushes)``: the pushes are what the model claimed, and that
@@ -31,7 +36,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from mechanistic_agent.resonance import resonance_key
 from mechanistic_agent.skeleton_alignment import _parse
 
-from .bond_electron import build_bond_electron_view
 
 OUTCOME_KEY_VERSION = "resonance_multiset_heavy_ge2.v1"
 
@@ -51,60 +55,83 @@ def _heavy_atoms(mol: Any) -> int:
     return sum(1 for atom in mol.GetAtoms() if atom.GetAtomicNum() > 1)
 
 
-def _folded_hydrogens(side: str) -> Dict[int, int]:
-    """Per mapped heavy atom: hydrogens that are not BE rows (implicit, or unmapped ``[H]``).
+_SideAtoms = Dict[int, Tuple[float, int]]
+_SideBonds = Dict[Tuple[int, int], float]
 
-    ``ugi_flower_kekule_v1`` folds these into the diagonal, so the H-X bond itself
-    never appears as an off-diagonal cell; :func:`step_arrow_count` adds it back
-    (2 electrons per H gained or lost) so a proton transfer is two arrows, as with
-    explicit hydrogen atoms. Mapped ``[H:n]`` atoms are rows already and are skipped.
+
+def _parse_side(side: str) -> Optional[Tuple[_SideAtoms, _SideBonds]]:
+    """Mapped heavy atoms (non-bonding electrons, folded H) and bonds between mapped atoms.
+
+    The same parse, Kekulé form and non-bonding formula as
+    ``reaction_focus.parse_mapped_side`` (outer − charge − Σ bond orders − n_H).
+    ``None`` when a fragment does not parse or a heavy atom is unmapped. Mapped
+    ``[H:n]`` atoms are atoms in their own right; unmapped ``[H]`` atoms are folded.
     """
     from rdkit import Chem
 
     from .mechanism_moves import mapped_smiles_parser_params
 
-    counts: Dict[int, int] = {}
+    table = Chem.GetPeriodicTable()
+    atoms: _SideAtoms = {}
+    bonds: _SideBonds = {}
     for token in side.split("."):
         token = token.strip()
         if not token:
             continue
         mol = Chem.MolFromSmiles(token, mapped_smiles_parser_params(sanitize=True))
         if mol is None:
-            raise ValueError(f"Invalid mapped SMILES: {token!r}")
+            return None
+        try:
+            Chem.Kekulize(mol, clearAromaticFlags=True)
+        except Exception:  # noqa: BLE001 - keep aromatic orders, as parse_mapped_side does
+            pass
         for atom in mol.GetAtoms():
             m = int(atom.GetAtomMapNum() or 0)
-            if m <= 0 or atom.GetAtomicNum() == 1:
+            if m <= 0:
+                if atom.GetAtomicNum() > 1:
+                    return None  # an unmapped heavy atom: its bond changes would vanish
                 continue
-            unmapped_h = sum(
-                1 for n in atom.GetNeighbors() if n.GetAtomicNum() == 1 and not n.GetAtomMapNum()
-            )
-            counts[m] = int(atom.GetTotalNumHs()) + unmapped_h
-    return counts
+            if m in atoms:
+                return None  # a map number used twice
+            order_sum = sum(float(b.GetBondTypeAsDouble()) for b in atom.GetBonds())
+            n_h = int(atom.GetTotalNumHs())
+            nonbonding = float(table.GetNOuterElecs(atom.GetAtomicNum())) - atom.GetFormalCharge() - order_sum - n_h
+            unmapped_h = sum(1 for n in atom.GetNeighbors() if n.GetAtomicNum() == 1 and not n.GetAtomMapNum())
+            atoms[m] = (nonbonding, n_h + unmapped_h if atom.GetAtomicNum() > 1 else 0)
+        for bond in mol.GetBonds():
+            a = int(bond.GetBeginAtom().GetAtomMapNum() or 0)
+            b = int(bond.GetEndAtom().GetAtomMapNum() or 0)
+            if a > 0 and b > 0:
+                bonds[(min(a, b), max(a, b))] = float(bond.GetBondTypeAsDouble())
+    return atoms, bonds
 
 
 def step_arrow_count(reaction_smirks: Any) -> Optional[int]:
-    """``ceil(BE_L1 / 4)`` for a mapped step; ``None`` when it cannot be measured.
+    """``ceil(BE_L1 / 4)`` for a fully mapped step; ``None`` when it cannot be measured.
 
-    Unmeasurable: no SMIRKS, no atom maps, a BE ``projection_error``, or a step
-    that changes no electrons (a real step always takes at least one arrow).
+    Unmeasurable: no SMIRKS, a side that does not parse, an unmapped heavy atom,
+    atom maps that differ between the sides, or a step that changes no electrons
+    (a real step always takes at least one arrow).
     """
     text = str(reaction_smirks or "").strip()
-    if not text or ">>" not in text:
+    if ">>" not in text:
         return None
-    view = build_bond_electron_view(text)
-    if view.get("error") or not view.get("atom_ids"):
-        return None
-    delta = view.get("delta") or []
-    total = 0.0
-    for i, row in enumerate(delta):
-        for j in range(i, len(row)):
-            total += abs(float(row[j]))
+    left_text, right_text = text.split(">>", 1)
     try:
-        left_text, right_text = text.split(">>", 1)
-        h_before, h_after = _folded_hydrogens(left_text), _folded_hydrogens(right_text)
-    except Exception:  # noqa: BLE001 - keep the BE-only count
-        h_before, h_after = {}, {}
-    total += 2.0 * sum(abs(h_after[m] - h_before[m]) for m in set(h_before) & set(h_after))
+        left, right = _parse_side(left_text), _parse_side(right_text)
+    except Exception:  # noqa: BLE001 - unmeasurable
+        return None
+    if left is None or right is None:
+        return None
+    (atoms_l, bonds_l), (atoms_r, bonds_r) = left, right
+    if not atoms_l or set(atoms_l) != set(atoms_r):
+        return None
+    total = 0.0
+    for m, (nonbonding_l, h_l) in atoms_l.items():
+        nonbonding_r, h_r = atoms_r[m]
+        total += abs(nonbonding_r - nonbonding_l) + 2.0 * abs(h_r - h_l)
+    for pair in set(bonds_l) | set(bonds_r):
+        total += 2.0 * abs(bonds_r.get(pair, 0.0) - bonds_l.get(pair, 0.0))
     arrows = math.ceil(total / 4.0 - 1e-9)
     return arrows if arrows >= 1 else None
 
@@ -131,34 +158,49 @@ def outcome_key(resulting_state: Iterable[Any]) -> Optional[OutcomeKey]:
     return tuple(sorted(keys))
 
 
-def candidate_arrow_count(reaction_smirks: Any, resulting_state: Iterable[Any]) -> Optional[int]:
-    """:func:`step_arrow_count` when the SMIRKS describes the candidate's stated outcome.
+def _species_keys(species: Iterable[Any]) -> Optional[Counter]:
+    """Resonance keys of every species (small ones included), or ``None`` if one is unparseable."""
+    keys: Counter = Counter()
+    for fragment in _fragments(species):
+        key = resonance_key(fragment)
+        if key is None:
+            return None
+        keys[key] += 1
+    return keys
+
+
+def candidate_arrow_count(
+    reaction_smirks: Any,
+    resulting_state: Iterable[Any],
+    current_state: Iterable[Any],
+) -> Optional[int]:
+    """:func:`step_arrow_count` when the SMIRKS describes the candidate's own step.
 
     The arrows are measured on the SMIRKS while "same outcome" is judged on
-    ``resulting_state``; the count only stands for the candidate when the SMIRKS
-    product side describes that state. Whole species: every product with at least
-    two heavy atoms is, up to resonance, in the state (as a sub-multiset). A
-    reaction-centre SMIRKS (partial species): every product fragment is a
-    substructure of the stated species, charges included — the product half of
-    ``quality_scoring._smirks_matches_states``. The reactant side is not checked,
-    because pushing from another contributor of the current state is exactly what
-    this preference rewards. Otherwise the candidate is unmeasurable and keeps
-    its rank.
+    ``resulting_state``, so the count only stands for the candidate when
+
+    * every SMIRKS product with at least two heavy atoms is, up to resonance, in
+      ``resulting_state`` (as a sub-multiset), and
+    * every SMIRKS reactant, small species included, is, up to resonance, in
+      ``current_state`` (as a sub-multiset). Up to resonance, because pushing from
+      another contributor of a current species is exactly what is being rewarded;
+      a reactant that is not a current species (a leaving group left out of the
+      SMIRKS, which turns CH3Br into a methyl radical) is not.
+
+    Otherwise the candidate is unmeasurable and keeps its rank.
     """
     text = str(reaction_smirks or "").strip()
     if ">>" not in text:
         return None
-    resulting = list(resulting_state or [])
-    state_keys = outcome_key(resulting)
-    if state_keys is None:
+    left_text, right_text = text.split(">>", 1)
+    state_keys = outcome_key(list(resulting_state or []))
+    product_keys = outcome_key([right_text])
+    if state_keys is None or product_keys is None or Counter(product_keys) - Counter(state_keys):
         return None
-    product_keys = outcome_key([text.split(">>", 1)[1]])
-    if product_keys is None or Counter(product_keys) - Counter(state_keys):
-        from mechanistic_agent.quality_scoring import _fragments_in_state, normalize_smirks
-
-        raw_right = normalize_smirks(text).partition(">>")[2]
-        if not _fragments_in_state(raw_right, resulting):
-            return None
+    current_keys = _species_keys(list(current_state or []))
+    reactant_keys = _species_keys([left_text])
+    if current_keys is None or not reactant_keys or reactant_keys - current_keys:
+        return None
     return step_arrow_count(text)
 
 
