@@ -54,6 +54,7 @@ from .subagents import (
 from .tool_executor import ToolExecutor
 from .call_recorder import close_call_context, current_call_context, open_call_context
 from .conversation_thread import ConversationThread
+from . import arrow_count as _arrow_count
 from .bond_electron import build_bond_electron_view
 from .reaction_focus import build_reaction_focus
 from .proton_transfer import (
@@ -3045,6 +3046,75 @@ class RunCoordinator:
             step_name="mechanism_synthesis",
         )
         return [chosen] + [c for idx, c in enumerate(validated) if idx != chosen_index]
+
+    def _apply_arrow_count_preference(
+        self,
+        state: RunState,
+        validated: List[BranchCandidate],
+        *,
+        proton_preference_applied: bool = False,
+    ) -> List[BranchCandidate]:
+        """Deterministic tie-break over rank-sorted, fully validated candidates.
+
+        Among candidates with the same outcome up to resonance as the top one
+        (``arrow_count.outcome_key``), the one whose mapped SMIRKS needs the fewest
+        two-electron arrows (``ceil(BE_L1 / 4)``) goes first; equal arrows → fewer
+        charged atoms; equal on both → rank order. The displaced candidate stays as
+        the branch alternative.
+
+        It runs after ``_apply_proton_transfer_preference`` and does nothing when
+        that one fired this step, so each step has at most one deterministic
+        reorder. It never rejects, filters, adds or changes a candidate: the
+        result is a permutation of ``validated``. It is a no-op outside
+        unverified mode, with fewer than two candidates, when any candidate is a
+        soft advance or did not pass validation, and on any internal exception.
+        """
+        if proton_preference_applied or state.mode != "unverified" or len(validated) < 2:
+            return validated
+        try:
+            for candidate in validated:
+                summary = candidate.validation_summary or {}
+                if summary.get("passed") is False or summary.get("soft_advance") or (
+                    (candidate.mechanism_output or {}).get("soft_advance")
+                ):
+                    return validated
+            arrows = [
+                _arrow_count.candidate_arrow_count(
+                    (c.mechanism_output or {}).get("reaction_smirks"), list(c.resulting_state or [])
+                )
+                for c in validated
+            ]
+            decision = _arrow_count.choose_arrow_count_preference(
+                [list(c.resulting_state or []) for c in validated], arrows
+            )
+            if decision is None:
+                return validated
+            chosen_index = int(decision["chosen_index"])
+            chosen = validated[chosen_index]
+            displaced = validated[int(decision["displaced_index"])]
+            reordered = [chosen] + [c for idx, c in enumerate(validated) if idx != chosen_index]
+            self.store.append_event(
+                state.run_id,
+                "arrow_count_preference_applied",
+                {
+                    "step_index": state.step_index + 1,
+                    "chosen_candidate_id": chosen.candidate_id,
+                    "chosen_rank": chosen.rank,
+                    "displaced_candidate_id": displaced.candidate_id,
+                    "displaced_rank": displaced.rank,
+                    "chosen_arrows": decision["chosen_arrows"],
+                    "displaced_arrows": decision["displaced_arrows"],
+                    "chosen_charged_atoms": decision["chosen_charged_atoms"],
+                    "displaced_charged_atoms": decision["displaced_charged_atoms"],
+                    "outcome_key": decision["outcome_key"],
+                    "outcome_key_version": _arrow_count.OUTCOME_KEY_VERSION,
+                    "reason": decision["reason"],
+                },
+                step_name="mechanism_synthesis",
+            )
+            return reordered
+        except Exception:  # never fail or change a step over the preference
+            return validated
 
     @staticmethod
     def _excess_reagent_for_candidate(candidate: BranchCandidate) -> Optional[Dict[str, Any]]:
@@ -6409,7 +6479,15 @@ class RunCoordinator:
                 validated.sort(key=lambda bc: bc.rank)
                 # Prefer an equivalent intermolecular proton transfer through an
                 # available shuttle over a top-ranked intramolecular shift.
+                ranked_top = validated[0] if validated else None
                 validated = self._apply_proton_transfer_preference(state, validated)
+                # Then prefer the fewest-arrow candidate with the same outcome up
+                # to resonance — skipped when the proton preference reordered.
+                validated = self._apply_arrow_count_preference(
+                    state,
+                    validated,
+                    proton_preference_applied=bool(validated) and validated[0] is not ranked_top,
+                )
                 chosen = validated[0]
                 alternatives = validated[1:]
                 reproposal_hints.pop(state.step_index + 1, None)
