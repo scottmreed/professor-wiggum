@@ -311,11 +311,14 @@ def _bond_electron_valid(step: QualityStep) -> Tuple[bool, Optional[str]]:
         from mechanistic_agent.core.mechanism_moves import serialize_move_token
         parsed = normalize_electron_pushes(pushes)
         # Historical closed-shell reference SMIRKS sometimes omit bracket H,
-        # which RDKit reads as artificial radicals. Use the actual states to
+        # which RDKit reads as artificial radicals. Use the actual states
+        # (open-shell main-group atoms only; H and metal atoms excluded) to
         # select strict radical checking; any explicit fishhook still selects it.
-        state_reaction = ".".join(step.current_state) + ">>" + ".".join(step.resulting_state)
-        if requires_radical_validation(state_reaction, parsed):
-            _core, metadata_moves, metadata = extract_mechanism_moves(smirks)
+        _core, metadata_moves, metadata = extract_mechanism_moves(smirks)
+        if requires_radical_validation(
+            list(parsed) + list(metadata_moves or []),
+            states=[list(step.current_state or []), list(step.resulting_state or [])],
+        ):
             if metadata.get("mech") is not None and (
                 metadata.get("error") or sorted(map(serialize_move_token, parsed)) !=
                 sorted(map(serialize_move_token, metadata_moves))

@@ -13,14 +13,41 @@ from typing import Any
 from rdkit import Chem, rdBase
 
 
-def extract_radical_training_cases(
-    source: Path, *, limit: int | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    source = Path(source).resolve()
-    if source.name != 'train.txt' or 'leaderboard_holdout' in source.parts:
+_NON_TRAIN_SEGMENTS = {'test', 'tests', 'val', 'valid', 'validation'}
+
+
+def _is_non_train_segment(segment: str) -> bool:
+    text = segment.lower()
+    return text in _NON_TRAIN_SEGMENTS or 'holdout' in text
+
+
+def _check_train_only(given: Path, resolved: Path) -> None:
+    if resolved.name != 'train.txt' or given.name != 'train.txt':
         raise ValueError('Only a FlowER train.txt source is permitted')
+    for path in (given, resolved):
+        if any(_is_non_train_segment(part) for part in path.parts[:-1]):
+            raise ValueError(
+                'Only a FlowER train.txt source is permitted; refusing a path inside a '
+                'test/validation/holdout directory'
+            )
+
+
+def extract_radical_training_cases(
+    source: Path, *, limit: int | None = None, per_label: int | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Extract unique RC/RS rows from a FlowER ``train.txt``.
+
+    ``per_label`` keeps the first N cases (by content-derived ID) of each
+    label; ``limit`` then keeps the first N overall. The report records the
+    source path as given, so a repo-relative invocation stays reproducible.
+    """
+    given = Path(source)
+    source = given.resolve()
+    _check_train_only(given, source)
     if limit is not None and limit < 1:
         raise ValueError('limit must be positive')
+    if per_label is not None and per_label < 1:
+        raise ValueError('per_label must be positive')
     digest = hashlib.sha256()
     counts: Counter = Counter()
     records: dict[str, dict[str, Any]] = {}
@@ -67,14 +94,25 @@ def extract_radical_training_cases(
                 },
             }
     cases = sorted(records.values(), key=lambda case: case['id'])
-    exported = cases if limit is None else cases[:limit]
+    exported = cases
+    if per_label is not None:
+        taken: Counter = Counter()
+        exported = []
+        for case in cases:
+            label = case['provenance']['source_label']
+            if taken[label] < per_label:
+                taken[label] += 1
+                exported.append(case)
+    if limit is not None:
+        exported = exported[:limit]
     report = {
         'schema_version': 'radical_training_extract.v1',
-        'source': str(source), 'source_split': 'train',
+        'source': given.as_posix(), 'source_split': 'train',
         'source_sha256': digest.hexdigest(),
         **{k: counts[k] for k in ('radical_rows', 'duplicate_rows', 'rejected_rows')},
         'labels': {k: counts[k] for k in ('RC', 'RS')},
         'unique_cases': len(cases), 'exported_cases': len(exported),
+        'per_label': per_label, 'limit': limit,
         'rejections': rejected,
     }
     for case in exported:

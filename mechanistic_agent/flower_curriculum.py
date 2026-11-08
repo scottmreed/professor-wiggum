@@ -411,7 +411,10 @@ def _infer_arrows_from_bond_and_charge_changes(mapped_reaction: str) -> Tuple[Li
         cursor += 1
 
     electron_pushes = [_move_dict_from_arrow(arrow, reactant_bonds) for arrow in arrows]
-    normalized = normalize_electron_pushes(electron_pushes)
+    try:
+        normalized = normalize_electron_pushes(electron_pushes)
+    except ValueError as exc:  # MechanismMoveFormatError: report as a conversion failure
+        raise ConversionError("electron_push_normalization_failed") from exc
     if len(normalized) != len(electron_pushes):
         raise ConversionError("electron_push_normalization_failed")
     notation = serialize_mechanism_moves(normalized)

@@ -2,9 +2,10 @@
 
 `cases.json` contains 24 single-step cases, 12 each from the RC and RS labels in
 FlowER's `flower_new_dataset/train.txt`. Rows are sorted by content-derived ID;
-the sample uses the first 12 per label. `extraction_report.json` records the
-source hash and complete extraction counts: 4,606 rows, 206 exact duplicates,
-4,400 unique cases, no parse/radical-detection rejections.
+the sample uses the first 12 per label (`--per-label 12`). `extraction_report.json`
+records the source path as given, the source hash and complete extraction counts:
+4,606 rows, 206 exact duplicates, 4,400 unique cases, 24 exported, no
+parse/radical-detection rejections.
 
 These are **train-derived development cases**, not held-out evaluation or
 complete reaction pathways. No arrows or pathway grouping are fabricated.
@@ -16,15 +17,21 @@ The authored deterministic arrow/chain contract lives in
 `tests/fixtures/radical_contract.json`. Its successful replay is implementation
 evidence, not an LLM quality measurement and not an approved prompt trace.
 
-Reproduce the complete extraction without opening validation/test files:
+Reproduce both committed files byte for byte (from the repository root, with a
+FlowER checkout next to it) without opening validation/test files:
 
 ```sh
 PYTHONPATH=. python scripts/extract_radical_training.py \
   --train ../FlowER/data/flower_new_dataset/train.txt \
-  --output /tmp/wiggum-radical-training.json
+  --per-label 12 \
+  --output training_data/radical_development/cases.json \
+  --report training_data/radical_development/extraction_report.json
 ```
 
-The extractor accepts only `train.txt`, rejects a leaderboard_holdout path,
+Drop `--per-label` (and point `--output`/`--report` elsewhere) to export all
+4,400 unique cases. The extractor accepts only a file named `train.txt`, refuses
+any path with a `test`/`tests`/`val`/`valid`/`validation` directory or a
+directory whose name contains `holdout`,
 retains source-line references and hashes, deduplicates exact labelled reactions,
 and does not mutate the existing numeric curriculum or any evaluation tier.
 

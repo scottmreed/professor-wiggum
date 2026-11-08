@@ -64,11 +64,18 @@ from .core.reaction_type_templates import (
 )
 from .core.chemistry_backend import execute_chemistry_check
 from .core.chemistry_backend import ChemistryBackendConfig, resolve_rdkit_cli_command
-from .core.radical_validation import requires_radical_validation, validate_radical_moves, radical_states_match
+from .core.radical_validation import (
+    radical_states_match,
+    requires_radical_validation,
+    state_has_radicals,
+    validate_radical_moves,
+)
 from .core.mechanism_moves import (
+    MechanismMoveFormatError,
     extract_mechanism_moves,
     implied_bond_deltas,
     normalize_electron_pushes,
+    pushes_include_one_electron,
     reaction_bond_deltas,
     repair_candidate_reaction_smirks,
     split_cxsmiles_metadata,
@@ -5461,7 +5468,13 @@ class MechanismStepCandidate(BaseModel):
     @field_validator("electron_pushes")
     @classmethod
     def _validate_electron_pushes(cls, value: List[Dict[str, object]]) -> List[Dict[str, object]]:
-        return [move.as_dict() for move in normalize_electron_pushes(value)]
+        try:
+            return [move.as_dict() for move in normalize_electron_pushes(value)]
+        except MechanismMoveFormatError:
+            # A malformed one-electron push invalidates only this candidate:
+            # keep the raw pushes so candidate validation rejects it later
+            # instead of failing the whole response.
+            return list(value or [])
 
 
 class MechanismStepPrediction(BaseModel):
@@ -6387,6 +6400,12 @@ def propose_intermediates(
                     return False, "resulting_state_invalid"
                 validated_state: List[str] = []
                 seen_state: set[str] = set()
+                # Radical steps keep multiplicities (Cl-Cl -> 2 Cl.); pair steps
+                # keep the historical de-duplication.
+                keep_duplicates = pushes_include_one_electron(item.get("electron_pushes")) or any(
+                    state_has_radicals(species_list)
+                    for species_list in (list(current_state or []), [str(x) for x in resulting_state_raw])
+                )
                 for idx, species in enumerate(resulting_state_raw):
                     canonical_species, species_diag = _validate_smiles_with_diagnostics(
                         species,
@@ -6418,7 +6437,7 @@ def propose_intermediates(
                             species_diag.get("code") if isinstance(species_diag, dict) else "smiles_parse"
                         )
                         return False, "resulting_state_invalid"
-                    if canonical_species in seen_state:
+                    if canonical_species in seen_state and not keep_duplicates:
                         continue
                     seen_state.add(canonical_species)
                     validated_state.append(canonical_species)
@@ -6451,7 +6470,10 @@ def propose_intermediates(
                 item["dbe_repair"] = "synthesized_dbe_from_electron_pushes"
                 item["inferred_dbe"] = dbe_entries
 
-            valid_pushes = normalize_electron_pushes(item.get("electron_pushes"))
+            try:
+                valid_pushes = normalize_electron_pushes(item.get("electron_pushes"))
+            except MechanismMoveFormatError:
+                valid_pushes = []
             if not valid_pushes:
                 return False, "invalid_electron_pushes"
 
@@ -6990,7 +7012,17 @@ def predict_mechanistic_step(
         raise ValueError("At least one electron push must be provided")
 
     normalized_moves = normalize_electron_pushes(electron_pushes)
-    radical_step = requires_radical_validation(str(reaction_smirks or ""), normalized_moves)
+    # Strict radical checking only for explicit one-electron moves (in the
+    # pushes or the mech block) or genuinely radical runtime states; never
+    # from H-less bracket atoms in a core-only SMIRKS.
+    _metadata_moves = extract_mechanism_moves(str(reaction_smirks or ""))[1] if reaction_smirks else []
+    radical_step = requires_radical_validation(
+        list(normalized_moves) + list(_metadata_moves),
+        states=[
+            list(current_state or []),
+            list(resulting_state or []) + ([str(predicted_intermediate)] if predicted_intermediate else []),
+        ],
+    )
     cleaned_pushes = [move.as_dict() for move in normalized_moves]
     if not cleaned_pushes:
         raise ValueError("At least one valid explicit electron push must be provided")

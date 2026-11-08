@@ -11,7 +11,8 @@
     "RS": 3223
   },
   "unique_cases": 4400,
-  "exported_cases": 4400,
-  "rejections": [],
-  "sample_cases": 24
+  "exported_cases": 24,
+  "per_label": 12,
+  "limit": null,
+  "rejections": []
 }

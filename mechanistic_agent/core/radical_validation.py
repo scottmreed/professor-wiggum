@@ -39,15 +39,41 @@ def _inventory(side):
     return atoms, bonds, nonbonding
 
 
-def requires_radical_validation(reaction_smirks: str, moves: Iterable[MechanismMove]) -> bool:
+# Atoms whose radical electrons mark a genuinely radical state. Hydrogen and
+# metal atoms are excluded: ``[H]``, ``[Na]``, ``[Cu]`` in a pair-arrow step
+# are almost always a proton or a counter-ion drawn without charge, and are
+# not open-shell organic intermediates.
+_RADICAL_STATE_ELEMENTS = {5, 6, 7, 8, 9, 14, 15, 16, 17, 34, 35, 53}
+
+
+def state_has_radicals(species: Iterable[str]) -> bool:
+    """Whether runtime state SMILES contain an open-shell main-group atom.
+
+    Runtime states are ordinary SMILES with their real hydrogen counts, unlike
+    core-only SMIRKS fragments where an H-less bracket atom (``[C:1]``) only
+    looks like a radical. Only an odd radical-electron count counts, so
+    closed-shell singlet carbenes/nitrenes in pair-arrow chemistry keep the
+    historical validation.
+    """
+    for text in species or []:
+        mol = Chem.MolFromSmiles(str(text or ""))
+        if mol is None:
+            continue
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() in _RADICAL_STATE_ELEMENTS and atom.GetNumRadicalElectrons() % 2 == 1:
+                return True
+    return False
+
+
+def requires_radical_validation(moves: Iterable[MechanismMove], states: Iterable[Iterable[str]] = ()) -> bool:
+    """Choose strict radical checking from explicit fishhooks or radical states.
+
+    Never inferred from SMIRKS atoms: RDKit reads H-less bracket atoms in
+    core-only SMIRKS (``[C:1]``) as radicals although they are not.
+    """
     if any(m.electrons == 1 or m.kind in {"radical", "electron_transfer"} for m in moves):
         return True
-    core, _ = split_cxsmiles_metadata(reaction_smirks)
-    for side in core.split(">>"):
-        mol = Chem.MolFromSmiles(side, mapped_smiles_parser_params(sanitize=True))
-        if mol is not None and any(a.GetNumRadicalElectrons() for a in mol.GetAtoms()):
-            return True
-    return False
+    return any(state_has_radicals(species) for species in states or ())
 
 
 def validate_radical_moves(reaction_smirks: str, moves: Iterable[MechanismMove]) -> dict:
@@ -89,6 +115,10 @@ def validate_radical_moves(reaction_smirks: str, moves: Iterable[MechanismMove])
                 pair = tuple(sorted((move.bond_start, move.bond_end)))
                 if pair not in lb or move.through_atom not in pair:
                     raise ValueError("Missing source bond or invalid delivering endpoint")
+                if move.target_atom in pair and move.target_atom != move.through_atom:
+                    # Breaking a bond back onto its own other end changes nothing,
+                    # so it would let invalid arrows cancel.
+                    raise ValueError("Bond-source move has no net electron change")
                 spent_bonds[pair] += n
                 (spent_pi if move.kind == "pi_bond" else spent_sigma)[pair] += n
                 expected_bonds[pair] -= n
@@ -119,7 +149,12 @@ def validate_radical_moves(reaction_smirks: str, moves: Iterable[MechanismMove])
 
 
 def radical_states_match(reaction_smirks: str, current_state, resulting_state) -> bool:
-    """Ensure the checked mapped reaction actually represents the runtime states."""
+    """Ensure the checked mapped reaction actually represents the runtime states.
+
+    Each SMIRKS side must be a sub-multiset of its runtime state (species and
+    multiplicities), and the untouched remainder (spectators) must be the same
+    on both sides.
+    """
     def species(items):
         counts = Counter()
         for text in items:
@@ -136,6 +171,10 @@ def radical_states_match(reaction_smirks: str, current_state, resulting_state) -
     try:
         core, _ = split_cxsmiles_metadata(reaction_smirks)
         left, right = core.split('>>')
-        return species([left]) == species(current_state) and species([right]) == species(resulting_state)
+        lhs, rhs = species([left]), species([right])
+        current, resulting = species(current_state), species(resulting_state)
+        if lhs - current or rhs - resulting:
+            return False
+        return (current - lhs) == (resulting - rhs)
     except (ValueError, TypeError, RuntimeError):
         return False

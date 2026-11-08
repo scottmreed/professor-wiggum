@@ -14,10 +14,11 @@ def test_fishhook_roundtrip_and_counts():
     assert synthesize_dbe_entries([m.as_dict() for m in moves])
 
 
+# Pair-move pushes keep the historical tolerant normalization (see
+# test_radical_regressions.py); only one-electron pushes fail closed.
 @pytest.mark.parametrize('push', [
     {'kind': 'radical', 'source_atom': '1', 'target_atom': '2', 'electrons': 2},
-    {'kind': 'lone_pair', 'source_atom': '1', 'target_atom': '2', 'electrons': 0},
-    {'kind': 'mystery', 'start_atom': '1', 'end_atom': '2'},
+    {'kind': 'lone_pair', 'source_atom': '1', 'target_atom': '2', 'electrons': 1},
     {'notation': 'rad:1>2', 'electrons': 2},
     {'notation': 'rad:1>2', 'source_atom': '3'},
 ])
@@ -109,8 +110,9 @@ def test_radical_requires_conserved_unique_atom_maps(reaction):
 
 def test_radical_detection_includes_states_without_fishhooks():
     from mechanistic_agent.core.radical_validation import requires_radical_validation
-    assert requires_radical_validation(CASES[0][0], parse_mechanism_moves('sigma:1-2>2'))
-    assert not requires_radical_validation('[CH3:1][Cl:2]>>[CH3+:1].[Cl-:2]', parse_mechanism_moves('sigma:1-2>2'))
+    pair = parse_mechanism_moves('sigma:1-2>2')
+    assert requires_radical_validation(pair, states=[['ClCl'], ['[Cl]', '[Cl]']])
+    assert not requires_radical_validation(pair, states=[['CCl'], ['[CH3+]', '[Cl-]']])
 
 
 def test_radical_replay_heavy_policy_preserves_heavy_ids():
@@ -130,7 +132,8 @@ def test_radical_replay_rejects_invalid_arrows_and_wrong_map_binding():
     from mechanistic_agent.core.mapped_state import MappedState, execute_candidate
     state = MappedState.from_smiles(['[Cl:1][Cl:2]'])
     bad_arrows = execute_candidate(state, reaction_smirks=CASES[0][0],
-        electron_pushes=[m.as_dict() for m in parse_mechanism_moves('sigma:1-2>2')])
+        electron_pushes=[m.as_dict() for m in parse_mechanism_moves('sigma:1-2>2')],
+        expected_resulting_state=['[Cl:1]', '[Cl:2]'])
     assert not bad_arrows.ok
     renamed = CASES[0][0].replace(':1', ':3').replace(':2', ':4')
     bad_maps = execute_candidate(state, reaction_smirks=renamed,

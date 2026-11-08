@@ -91,6 +91,23 @@ states fail closed. This is main-group electron accounting, not a spin,
 excitation-energy, or reaction-feasibility prediction. Transition-metal
 photoredox cycles are outside this initial support.
 
+**When the radical checks apply.** Strict radical validation and replay are
+selected only by an explicit one-electron move (`rad:`, `et:`, a `:e1` bond
+move, `electrons: 1`, or a `radical`/`electron_transfer` kind, in the pushes or
+the `mech` block) or by an open-shell main-group atom (odd radical-electron
+count; H and metal atoms excluded) in the runtime current/resulting state
+SMILES. H-less bracket atoms in a core-only SMIRKS (`[C:1]`) never select it,
+and pair-arrow steps keep the historical validation, de-duplication and
+scoring. Runtime species must contain the SMIRKS sides as sub-multisets with
+the same untouched spectators on both sides; radical candidates keep repeated
+species (`ClCl` -> `[Cl]`, `[Cl]`). A bond-source move whose target is the
+other end of its own bond has no net effect and is rejected.
+
+**Parsing.** Pair pushes keep the historical tolerant normalization: an entry
+that cannot be read is skipped. One-electron pushes are parsed strictly and a
+malformed one raises `MechanismMoveFormatError`; during proposal parsing that
+rejects only the candidate that carries it, not the whole response.
+
 ReactionFocus adds `changed_radical_electrons`. The pair-arrow-count preference
 abstains on radical species rather than treating a fishhook pair as one arrow.
 Runtime and quality scoring use the same radical validation contract.

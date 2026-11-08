@@ -82,6 +82,7 @@ from mechanistic_agent.core.mechanism_moves import (
     extract_mechanism_moves,
     mapped_smiles_parser_params,
     normalize_electron_pushes,
+    pushes_include_one_electron,
     split_cxsmiles_metadata,
 )
 from mechanistic_agent.core.radical_validation import requires_radical_validation, validate_radical_moves
@@ -1158,7 +1159,10 @@ def execute_moves(
         return _failure("moves", state, "smirks_syntax", str(exc))
     if isinstance(moves, str) and reaction_smirks is None:
         reaction_smirks = moves
-    if reaction_smirks and requires_radical_validation(reaction_smirks, parsed):
+    if reaction_smirks and requires_radical_validation(
+        list(parsed) + _metadata_moves(reaction_smirks),
+        states=[list(state.species), list(expected_resulting_state or [])],
+    ):
         return _execute_radical_candidate(
             state, reaction_smirks, parsed,
             expected_resulting_state=expected_resulting_state, step_label=step_label,
@@ -1325,6 +1329,15 @@ def execute_moves(
 # ---------------------------------------------------------------------------
 
 
+def _metadata_moves(reaction_smirks: Optional[str]) -> List[MechanismMove]:
+    if not reaction_smirks:
+        return []
+    try:
+        return list(extract_mechanism_moves(reaction_smirks)[1])
+    except Exception:  # noqa: BLE001 - unreadable metadata selects nothing
+        return []
+
+
 def _execute_radical_candidate(
     state: MappedState,
     reaction_smirks: str,
@@ -1385,13 +1398,17 @@ def execute_candidate(
     """Route A first, Route B as fallback (§16.8 ``mapped_state.execute``)."""
     result: Optional[ExecutionResult] = None
     if reaction_smirks:
+        # Radical replay only for explicit one-electron moves or genuinely
+        # radical states, never because a core-only SMIRKS has H-less atoms.
+        states = [list(getattr(mapped_current_state, "species", []) or []), list(expected_resulting_state or [])]
+        metadata_moves = _metadata_moves(reaction_smirks)
         try:
             parsed = _coerce_moves(electron_pushes if electron_pushes else reaction_smirks)
         except ValueError as exc:
-            if requires_radical_validation(reaction_smirks, []):
+            if pushes_include_one_electron(electron_pushes) or requires_radical_validation(metadata_moves, states=states):
                 return _failure("moves", mapped_current_state, "smirks_syntax", str(exc))
             parsed = []
-        if requires_radical_validation(reaction_smirks, parsed):
+        if requires_radical_validation(list(parsed) + metadata_moves, states=states):
             return _execute_radical_candidate(
                 mapped_current_state, reaction_smirks, parsed,
                 expected_resulting_state=expected_resulting_state, step_label=step_label,
