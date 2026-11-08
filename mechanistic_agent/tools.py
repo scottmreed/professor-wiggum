@@ -65,9 +65,9 @@ from .core.reaction_type_templates import (
 from .core.chemistry_backend import execute_chemistry_check
 from .core.chemistry_backend import ChemistryBackendConfig, resolve_rdkit_cli_command
 from .core.radical_validation import (
+    moves_agree,
     radical_states_match,
     requires_radical_validation,
-    state_has_radicals,
     validate_radical_moves,
 )
 from .core.mechanism_moves import (
@@ -80,7 +80,6 @@ from .core.mechanism_moves import (
     repair_candidate_reaction_smirks,
     split_cxsmiles_metadata,
     synthesize_dbe_entries,
-    serialize_mechanism_moves,
 )
 
 logger = logging.getLogger(__name__)
@@ -6400,11 +6399,13 @@ def propose_intermediates(
                     return False, "resulting_state_invalid"
                 validated_state: List[str] = []
                 seen_state: set[str] = set()
-                # Radical steps keep multiplicities (Cl-Cl -> 2 Cl.); pair steps
-                # keep the historical de-duplication.
-                keep_duplicates = pushes_include_one_electron(item.get("electron_pushes")) or any(
-                    state_has_radicals(species_list)
-                    for species_list in (list(current_state or []), [str(x) for x in resulting_state_raw])
+                # Radical steps keep multiplicities (Cl-Cl -> 2 Cl.); pair steps,
+                # including ones next to an untouched radical spectator, keep
+                # the historical de-duplication.
+                keep_duplicates = pushes_include_one_electron(item.get("electron_pushes")) or requires_radical_validation(
+                    [],
+                    states=[list(current_state or []), [str(x) for x in resulting_state_raw]],
+                    reaction_smirks=str(item.get("reaction_smirks") or ""),
                 )
                 for idx, species in enumerate(resulting_state_raw):
                     canonical_species, species_diag = _validate_smiles_with_diagnostics(
@@ -7013,8 +7014,9 @@ def predict_mechanistic_step(
 
     normalized_moves = normalize_electron_pushes(electron_pushes)
     # Strict radical checking only for explicit one-electron moves (in the
-    # pushes or the mech block) or genuinely radical runtime states; never
-    # from H-less bracket atoms in a core-only SMIRKS.
+    # pushes or the mech block) or a radical species the step changes or
+    # touches; never from H-less bracket atoms in a core-only SMIRKS or an
+    # untouched radical spectator.
     _metadata_moves = extract_mechanism_moves(str(reaction_smirks or ""))[1] if reaction_smirks else []
     radical_step = requires_radical_validation(
         list(normalized_moves) + list(_metadata_moves),
@@ -7022,6 +7024,7 @@ def predict_mechanistic_step(
             list(current_state or []),
             list(resulting_state or []) + ([str(predicted_intermediate)] if predicted_intermediate else []),
         ],
+        reaction_smirks=str(reaction_smirks or ""),
     )
     cleaned_pushes = [move.as_dict() for move in normalized_moves]
     if not cleaned_pushes:
@@ -7153,7 +7156,9 @@ def predict_mechanistic_step(
                 bond_electron_validation["error"] = details["error"]
             if radical_step:
                 strict = validate_radical_moves(core, normalized_moves)
-                if mech_details.get("error") or sorted(serialize_mechanism_moves([m]) for m in moves) != sorted(serialize_mechanism_moves([m]) for m in normalized_moves):
+                # A mech block, when present, must agree with the pushes
+                # (bond order insensitive); without one the pushes stand alone.
+                if mech_details.get("mech") is not None and (mech_details.get("error") or not moves_agree(moves, normalized_moves)):
                     strict = {"valid": False, "error": "Radical mech metadata and electron_pushes must agree"}
                 elif not radical_states_match(core, current_state, resulting_state):
                     strict = {"valid": False, "error": "Mapped radical reaction does not match current/resulting state species and multiplicities"}

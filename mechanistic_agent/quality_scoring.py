@@ -306,22 +306,26 @@ def _bond_electron_valid(step: QualityStep) -> Tuple[bool, Optional[str]]:
         if not pushes:
             return False, "no valid explicit electron pushes"
         from mechanistic_agent.core.radical_validation import (
-            requires_radical_validation, validate_radical_moves, radical_states_match,
+            moves_agree, requires_radical_validation, validate_radical_moves, radical_states_match,
         )
-        from mechanistic_agent.core.mechanism_moves import serialize_move_token
-        parsed = normalize_electron_pushes(pushes)
+        # Parse the step's own pushes: the as_dict() round trip above writes
+        # pair-move notation in as-given bond order, which drops a delivering
+        # endpoint that is the first bond atom.
+        parsed = normalize_electron_pushes(step.electron_pushes or []) or normalize_electron_pushes(pushes)
         # Historical closed-shell reference SMIRKS sometimes omit bracket H,
-        # which RDKit reads as artificial radicals. Use the actual states
-        # (open-shell main-group atoms only; H and metal atoms excluded) to
-        # select strict radical checking; any explicit fishhook still selects it.
+        # which RDKit reads as artificial radicals. Select strict radical
+        # checking only when a radical species (open-shell main-group atoms;
+        # H and metal atoms excluded) changes or is touched by the SMIRKS; an
+        # untouched radical spectator keeps the pair check. Any explicit
+        # fishhook still selects it.
         _core, metadata_moves, metadata = extract_mechanism_moves(smirks)
         if requires_radical_validation(
             list(parsed) + list(metadata_moves or []),
             states=[list(step.current_state or []), list(step.resulting_state or [])],
+            reaction_smirks=smirks,
         ):
             if metadata.get("mech") is not None and (
-                metadata.get("error") or sorted(map(serialize_move_token, parsed)) !=
-                sorted(map(serialize_move_token, metadata_moves))
+                metadata.get("error") or not moves_agree(parsed, metadata_moves)
             ):
                 return False, "radical move metadata disagrees with electron pushes"
             if not radical_states_match(smirks, step.current_state, step.resulting_state):

@@ -1162,6 +1162,7 @@ def execute_moves(
     if reaction_smirks and requires_radical_validation(
         list(parsed) + _metadata_moves(reaction_smirks),
         states=[list(state.species), list(expected_resulting_state or [])],
+        reaction_smirks=reaction_smirks,
     ):
         return _execute_radical_candidate(
             state, reaction_smirks, parsed,
@@ -1352,6 +1353,8 @@ def _execute_radical_candidate(
     unconstrained match. Under heavy-atom policy bonded H identity is omitted
     consistently with the rest of the executor.
     """
+    if not moves:
+        return _failure("moves", state, "electron_inventory", "Radical replay requires at least one electron move")
     checked = validate_radical_moves(reaction_smirks, moves)
     if not checked["valid"]:
         return _failure("moves", state, "electron_inventory", checked["error"])
@@ -1398,17 +1401,20 @@ def execute_candidate(
     """Route A first, Route B as fallback (§16.8 ``mapped_state.execute``)."""
     result: Optional[ExecutionResult] = None
     if reaction_smirks:
-        # Radical replay only for explicit one-electron moves or genuinely
-        # radical states, never because a core-only SMIRKS has H-less atoms.
+        # Radical replay only for explicit one-electron moves or a radical
+        # species the step changes or touches, never because a core-only
+        # SMIRKS has H-less atoms or a radical spectator sits untouched.
         states = [list(getattr(mapped_current_state, "species", []) or []), list(expected_resulting_state or [])]
         metadata_moves = _metadata_moves(reaction_smirks)
         try:
             parsed = _coerce_moves(electron_pushes if electron_pushes else reaction_smirks)
         except ValueError as exc:
-            if pushes_include_one_electron(electron_pushes) or requires_radical_validation(metadata_moves, states=states):
+            if pushes_include_one_electron(electron_pushes) or requires_radical_validation(
+                metadata_moves, states=states, reaction_smirks=reaction_smirks
+            ):
                 return _failure("moves", mapped_current_state, "smirks_syntax", str(exc))
             parsed = []
-        if requires_radical_validation(list(parsed) + metadata_moves, states=states):
+        if requires_radical_validation(list(parsed) + metadata_moves, states=states, reaction_smirks=reaction_smirks):
             return _execute_radical_candidate(
                 mapped_current_state, reaction_smirks, parsed,
                 expected_resulting_state=expected_resulting_state, step_label=step_label,

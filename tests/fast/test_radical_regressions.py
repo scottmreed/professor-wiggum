@@ -352,3 +352,143 @@ def test_pair_step_with_metal_or_h_atom_scores_as_base(extra):
     assert not requires_radical_validation(
         normalize_electron_pushes(CORE_PUSHES), states=[step.current_state, step.resulting_state]
     )
+
+
+# --- Round 2, finding 1: an untouched radical spectator keeps the pair path ----
+
+TEMPO = "CC1(C)CCCC(C)(C)N1[O]"
+SN2_PUSHES = [
+    {"kind": "lone_pair", "source_atom": "1", "target_atom": "3", "electrons": 2},
+    {"kind": "sigma_bond", "source_bond": ["3", "4"], "through_atom": "4", "target_atom": "4", "electrons": 2},
+]
+SN2_CORE = "[O-:1].[CH3:3][Br:4]>>[O:1][CH3:3].[Br-:4] |mech:v1;lp:1>3;sigma:3-4>4|"
+SN2_FULL = "[CH3:2][O-:1].[CH3:3][Br:4]>>[CH3:2][O:1][CH3:3].[Br-:4] |mech:v1;lp:1>3;sigma:3-4>4|"
+
+
+@pytest.mark.parametrize("spectator", [TEMPO, "[O][O]"])
+def test_pair_step_with_untouched_radical_spectator_matches_base(spectator):
+    current, resulting = ["C[O-]", "CBr", spectator], ["COC", "[Br-]", spectator]
+    assert not requires_radical_validation(
+        normalize_electron_pushes(SN2_PUSHES), states=[current, resulting], reaction_smirks=SN2_CORE,
+    )
+    result = _predict(current_state=current, resulting_state=resulting, electron_pushes=SN2_PUSHES, reaction_smirks=SN2_CORE)
+    assert result["bond_electron_validation"]["valid"] is True, result["bond_electron_validation"]
+    assert result["resulting_state"] == resulting
+    assert _bond_electron_valid(QualityStep(1, current, resulting, SN2_CORE, SN2_PUSHES)) == (True, None)
+
+
+def test_pair_step_with_radical_spectator_still_dedupes():
+    result = _predict(
+        current_state=["C[O-]", "CBr", TEMPO, "O", "O"],
+        resulting_state=["COC", "[Br-]", TEMPO, "O", "O"],
+        electron_pushes=SN2_PUSHES,
+        reaction_smirks=SN2_FULL,
+    )
+    assert result["resulting_state"] == ["COC", "[Br-]", TEMPO, "O"]
+
+
+def test_mapped_executor_pair_step_with_radical_spectator_matches_base():
+    from mechanistic_agent.core.mapped_state import advance_mapped_loop_state
+
+    _snap, record = advance_mapped_loop_state(
+        None, previous_state=["C[O-]", "CBr", TEMPO], stated_resulting_state=["COC", "[Br-]", TEMPO],
+        reaction_smirks=SN2_CORE, electron_pushes=SN2_PUSHES,
+    )
+    assert record.get("executed") is True, record
+    assert record.get("smirks_state_agreement") is True, record
+    assert record.get("failure_category") is None
+
+
+def test_pair_step_creating_a_radical_still_fails_closed():
+    current, resulting = ["C[O-]", "CBr"], ["COC", "[Br]"]
+    assert requires_radical_validation(normalize_electron_pushes(SN2_PUSHES), states=[current, resulting])
+    result = _predict(current_state=current, resulting_state=resulting, electron_pushes=SN2_PUSHES, reaction_smirks=SN2_CORE)
+    assert result["bond_electron_validation"]["valid"] is False
+    assert _bond_electron_valid(QualityStep(1, current, resulting, SN2_CORE, SN2_PUSHES))[0] is False
+
+
+def test_pair_arrows_touching_a_radical_species_select_strict_path():
+    # Degenerate exchange: the radical species multiset is unchanged, but the
+    # SMIRKS touches the chlorine radical.
+    pair = parse_mechanism_moves("lp:1>2;sigma:2-3>3")
+    smirks = "[Cl:1].[Cl:2][Cl:3]>>[Cl:1][Cl:2].[Cl:3]"
+    assert requires_radical_validation(pair, states=[["[Cl]", "ClCl"], ["ClCl", "[Cl]"]], reaction_smirks=smirks)
+
+
+# --- Round 2, finding 2: cancelling one-electron arrows and empty steps -------
+
+CL2_HOMOLYSIS_CORE = "[Cl:1][Cl:2]>>[Cl:1].[Cl:2]"
+
+
+def test_legitimate_homolysis_still_validates():
+    assert validate_radical_moves(CL2_HOMOLYSIS_CORE, parse_mechanism_moves("sigma:1-2>2:e1;sigma:2-1>1:e1"))["valid"]
+
+
+@pytest.mark.parametrize("reaction,notation", [
+    (CL2_HOMOLYSIS_CORE, "sigma:1-2>2:e1;sigma:2-1>1:e1;et:1>2;et:2>1"),
+    ("[Cl:1].[Cl:2]>>[Cl:1].[Cl:2]", "et:1>2;et:2>1"),
+    ("[Cl:1].[Cl:2].[Cl:3]>>[Cl:1].[Cl:2].[Cl:3]", "et:1>2;et:2>3;et:3>1"),
+])
+def test_mutually_cancelling_moves_rejected(reaction, notation):
+    assert not validate_radical_moves(reaction, parse_mechanism_moves(notation))["valid"]
+
+
+def test_cancelling_et_pair_fails_quality_scoring():
+    pushes = [{"notation": n} for n in ("et:1>2", "et:2>1")]
+    step = QualityStep(1, ["[Cl]", "[Cl]"], ["[Cl]", "[Cl]"], "[Cl:1].[Cl:2]>>[Cl:1].[Cl:2]", pushes)
+    assert _bond_electron_valid(step)[0] is False
+    step = QualityStep(1, ["ClCl", "O"], ["[Cl]", "[Cl]", "O"], CL2_HOMOLYSIS_CORE,
+                       [{"notation": n} for n in ("sigma:1-2>2:e1", "sigma:2-1>1:e1", "et:1>2", "et:2>1")])
+    assert _bond_electron_valid(step)[0] is False
+
+
+def test_empty_radical_steps_rejected():
+    assert not validate_radical_moves(">>", [])["valid"]
+    assert not validate_radical_moves("[Cl:1].[Cl:2]>>[Cl:1].[Cl:2]", [])["valid"]
+    assert not radical_states_match(">>", ["[Cl]", "[Cl]"], ["[Cl]", "[Cl]"])
+
+
+def test_radical_executor_rejects_empty_moves():
+    from mechanistic_agent.core.mapped_state import MappedState, _execute_radical_candidate
+
+    state = MappedState.from_smiles(["[Cl:1]", "[Cl:2]"])
+    result = _execute_radical_candidate(
+        state, "[Cl:1].[Cl:2]>>[Cl:1].[Cl:2]", [], expected_resulting_state=["[Cl]", "[Cl]"], step_label="t",
+    )
+    assert not result.ok
+
+
+# --- Round 2, findings 3 and 4: metadata/push agreement --------------------------
+
+RADICAL_SN2_STATES = (["C[O-]", "CBr", "[Cl]"], ["COC", "[Br-]", "[Cl]"])
+
+
+def test_reordered_pair_bond_agrees_with_metadata():
+    pushes = [
+        {"kind": "lone_pair", "source_atom": "1", "target_atom": "3", "electrons": 2},
+        {"kind": "sigma_bond", "source_bond": ["4", "3"], "through_atom": "4", "target_atom": "4", "electrons": 2},
+    ]
+    smirks = "[CH3:2][O-:1].[CH3:3][Br:4].[Cl:5]>>[CH3:2][O:1][CH3:3].[Br-:4].[Cl:5] |mech:v1;lp:1>3;sigma:3-4>4|"
+    # [Cl:5] is touched by the SMIRKS, so the strict radical path runs.
+    assert requires_radical_validation(normalize_electron_pushes(pushes), states=RADICAL_SN2_STATES, reaction_smirks=smirks)
+    assert _bond_electron_valid(QualityStep(1, *RADICAL_SN2_STATES, smirks, pushes)) == (True, None)
+    result = _predict(current_state=RADICAL_SN2_STATES[0], resulting_state=RADICAL_SN2_STATES[1],
+                      electron_pushes=pushes, reaction_smirks=smirks)
+    assert result["bond_electron_validation"]["valid"] is True, result["bond_electron_validation"]
+
+
+def test_radical_step_without_mech_block_consistent_across_paths():
+    pushes = [m.as_dict() for m in parse_mechanism_moves("sigma:1-2>2:e1;sigma:2-1>1:e1")]
+    current, resulting = ["ClCl"], ["[Cl]", "[Cl]"]
+    assert _bond_electron_valid(QualityStep(1, current, resulting, CL2_HOMOLYSIS_CORE, pushes)) == (True, None)
+    result = _predict(current_state=current, resulting_state=resulting, electron_pushes=pushes,
+                      reaction_smirks=CL2_HOMOLYSIS_CORE)
+    assert result["bond_electron_validation"]["valid"] is True, result["bond_electron_validation"]
+
+
+def test_radical_metadata_disagreement_fails_both_paths():
+    pushes = [m.as_dict() for m in parse_mechanism_moves("sigma:1-2>2:e1;sigma:2-1>1:e1")]
+    smirks = CL2_HOMOLYSIS_CORE + " |mech:v1;sigma:1-2>2:e1|"
+    assert _bond_electron_valid(QualityStep(1, ["ClCl"], ["[Cl]", "[Cl]"], smirks, pushes))[0] is False
+    result = _predict(current_state=["ClCl"], resulting_state=["[Cl]", "[Cl]"], electron_pushes=pushes, reaction_smirks=smirks)
+    assert result["bond_electron_validation"]["valid"] is False
