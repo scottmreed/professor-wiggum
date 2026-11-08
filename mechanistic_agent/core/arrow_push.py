@@ -132,7 +132,11 @@ def _normalize_push_ref(value: Any) -> str:
 
 def _electron_pushes(payload: Any) -> List[Dict[str, Any]]:
     pushes: List[Dict[str, Any]] = []
-    for move in normalize_electron_pushes(payload):
+    try:
+        moves = normalize_electron_pushes(payload)
+    except ValueError:  # malformed one-electron push: nothing readable
+        moves = []
+    for move in moves:
         source_ref = ""
         if move.kind == "lone_pair" and move.source_atom is not None:
             source_ref = _normalize_push_ref(move.source_atom)

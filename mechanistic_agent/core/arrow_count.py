@@ -81,6 +81,10 @@ def _parse_side(side: str) -> Optional[Tuple[_SideAtoms, _SideBonds]]:
         mol = Chem.MolFromSmiles(token, mapped_smiles_parser_params(sanitize=True))
         if mol is None:
             return None
+        # This tie-break estimates pair arrows only; fishhooks have a different
+        # electron budget and must not receive an artificially cheaper score.
+        if any(atom.GetNumRadicalElectrons() for atom in mol.GetAtoms()):
+            return None
         try:
             Chem.Kekulize(mol, clearAromaticFlags=True)
         except Exception:  # noqa: BLE001 - keep aromatic orders, as parse_mapped_side does
@@ -148,6 +152,10 @@ def outcome_key(resulting_state: Iterable[Any]) -> Optional[OutcomeKey]:
     for fragment in _fragments(resulting_state):
         mol = _parse(fragment)
         if mol is None:
+            return None
+        # This tie-break estimates pair arrows only; fishhooks have a different
+        # electron budget and must not receive an artificially cheaper score.
+        if any(atom.GetNumRadicalElectrons() for atom in mol.GetAtoms()):
             return None
         if _heavy_atoms(mol) <= 1:
             continue

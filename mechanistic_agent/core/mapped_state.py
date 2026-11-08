@@ -82,8 +82,10 @@ from mechanistic_agent.core.mechanism_moves import (
     extract_mechanism_moves,
     mapped_smiles_parser_params,
     normalize_electron_pushes,
+    pushes_include_one_electron,
     split_cxsmiles_metadata,
 )
+from mechanistic_agent.core.radical_validation import requires_radical_validation, validate_radical_moves
 from mechanistic_agent.smiles_utils import species_match_signature
 
 HydrogenPolicy = Literal["auto", "heavy_atom", "explicit"]
@@ -1153,10 +1155,19 @@ def execute_moves(
     state = _coerce_state(mapped_current_state, hydrogen_policy)
     try:
         parsed = _coerce_moves(moves)
-    except MappedStateError as exc:
+    except ValueError as exc:
         return _failure("moves", state, "smirks_syntax", str(exc))
     if isinstance(moves, str) and reaction_smirks is None:
         reaction_smirks = moves
+    if reaction_smirks and requires_radical_validation(
+        list(parsed) + _metadata_moves(reaction_smirks),
+        states=[list(state.species), list(expected_resulting_state or [])],
+        reaction_smirks=reaction_smirks,
+    ):
+        return _execute_radical_candidate(
+            state, reaction_smirks, parsed,
+            expected_resulting_state=expected_resulting_state, step_label=step_label,
+        )
     for move in parsed:
         if int(move.electrons or 2) != 2:
             return _failure("moves", state, "unsupported_move", "only two-electron moves are supported")
@@ -1319,6 +1330,66 @@ def execute_moves(
 # ---------------------------------------------------------------------------
 
 
+def _metadata_moves(reaction_smirks: Optional[str]) -> List[MechanismMove]:
+    if not reaction_smirks:
+        return []
+    try:
+        return list(extract_mechanism_moves(reaction_smirks)[1])
+    except Exception:  # noqa: BLE001 - unreadable metadata selects nothing
+        return []
+
+
+def _execute_radical_candidate(
+    state: MappedState,
+    reaction_smirks: str,
+    moves: Sequence[MechanismMove],
+    *,
+    expected_resulting_state: Optional[Sequence[str]],
+    step_label: str,
+) -> ExecutionResult:
+    """Replay complete, validated radical SMILES with exact mapped identity.
+
+    Radical steps use SMILES inventories, never SMARTS H-count semantics or an
+    unconstrained match. Under heavy-atom policy bonded H identity is omitted
+    consistently with the rest of the executor.
+    """
+    if not moves:
+        return _failure("moves", state, "electron_inventory", "Radical replay requires at least one electron move")
+    checked = validate_radical_moves(reaction_smirks, moves)
+    if not checked["valid"]:
+        return _failure("moves", state, "electron_inventory", checked["error"])
+    try:
+        lhs, rhs = _split_reaction(reaction_smirks)
+        reactant = Chem.MolFromSmiles(lhs, _parser_params(sanitize=True))
+        product = Chem.MolFromSmiles(rhs, _parser_params(sanitize=True))
+        if reactant is None or product is None:
+            raise MappedStateError("Cannot parse radical state")
+        if state.hydrogen_policy == "heavy_atom":
+            reactant = Chem.RemoveHs(reactant, _remove_hs_params())
+            product = Chem.RemoveHs(product, _remove_hs_params())
+        lhs_species = [Chem.MolToSmiles(f) for f in Chem.GetMolFrags(reactant, asMols=True)]
+        remaining = mapped_signature(state.species)
+        for component in mapped_signature(lhs_species):
+            if component not in remaining:
+                return _failure("moves", state, "lhs_state_mismatch", "Radical replay requires matching complete components and atom maps")
+            remaining.remove(component)
+        # Whole untouched components are spectators; preserve their IDs too.
+        for component in remaining:
+            spectator = Chem.MolFromSmiles(component, _parser_params(sanitize=True))
+            product = Chem.CombineMols(product, spectator)
+        _freeze_hydrogens(product)
+        _sanitize_product(product)
+        source_pid = {a.GetIdx(): state.map_to_pid.get(a.GetAtomMapNum()) for a in product.GetAtoms()}
+        hints = {a.GetIdx(): a.GetAtomMapNum() for a in product.GetAtoms()}
+        return _finalize(
+            route="moves", state=state, product=product, source_pid=source_pid,
+            new_provenance={}, template_map_hint=hints, expected=expected_resulting_state,
+            match_mode="map_constrained_radical_inventory", distinct_outcomes=1, step_label=step_label,
+        )
+    except (ValueError, RuntimeError) as exc:
+        return _failure("moves", state, "smirks_syntax", str(exc))
+
+
 def execute_candidate(
     mapped_current_state: MappedState,
     *,
@@ -1329,6 +1400,25 @@ def execute_candidate(
 ) -> ExecutionResult:
     """Route A first, Route B as fallback (§16.8 ``mapped_state.execute``)."""
     result: Optional[ExecutionResult] = None
+    if reaction_smirks:
+        # Radical replay only for explicit one-electron moves or a radical
+        # species the step changes or touches, never because a core-only
+        # SMIRKS has H-less atoms or a radical spectator sits untouched.
+        states = [list(getattr(mapped_current_state, "species", []) or []), list(expected_resulting_state or [])]
+        metadata_moves = _metadata_moves(reaction_smirks)
+        try:
+            parsed = _coerce_moves(electron_pushes if electron_pushes else reaction_smirks)
+        except ValueError as exc:
+            if pushes_include_one_electron(electron_pushes) or requires_radical_validation(
+                metadata_moves, states=states, reaction_smirks=reaction_smirks
+            ):
+                return _failure("moves", mapped_current_state, "smirks_syntax", str(exc))
+            parsed = []
+        if requires_radical_validation(list(parsed) + metadata_moves, states=states, reaction_smirks=reaction_smirks):
+            return _execute_radical_candidate(
+                mapped_current_state, reaction_smirks, parsed,
+                expected_resulting_state=expected_resulting_state, step_label=step_label,
+            )
     if reaction_smirks:
         result = execute_smirks(
             mapped_current_state,

@@ -432,7 +432,7 @@ _MECHANISM_STEP_CANDIDATE = {
                 "properties": {
                     "kind": {
                         "type": "string",
-                        "enum": ["lone_pair", "pi_bond", "sigma_bond"],
+                        "enum": ["lone_pair", "pi_bond", "sigma_bond", "radical", "electron_transfer"],
                         "description": "Source type for the electron move.",
                     },
                     "source_atom": {
@@ -456,12 +456,12 @@ _MECHANISM_STEP_CANDIDATE = {
                     },
                     "electrons": {
                         "type": "integer",
-                        "enum": [2],
-                        "description": "Number of electrons moved; use 2 for arrow-pushing pairs.",
+                        "enum": [1, 2],
+                        "description": "Use 2 for lone pairs; 1 for radical/electron_transfer; 1 or 2 for bond sources.",
                     },
                     "notation": {
                         "type": "string",
-                        "description": "Optional compact move token such as 'lp:4>2' or 'pi:1-2>2'.",
+                        "description": "Optional token: lp:4>2, rad:4>2, et:4>2, or pi:1-2>2:e1 (fishhook).",
                     },
                     "description": {"type": "string", "description": "Optional short description."},
                 },
@@ -569,7 +569,7 @@ _ELECTRON_PUSH_ITEM: Dict[str, Any] = {
     "properties": {
         "kind": {
             "type": "string",
-            "enum": ["lone_pair", "pi_bond", "sigma_bond"],
+            "enum": ["lone_pair", "pi_bond", "sigma_bond", "radical", "electron_transfer"],
             "description": "Source type for the electron move.",
         },
         "source_atom": {
@@ -593,7 +593,7 @@ _ELECTRON_PUSH_ITEM: Dict[str, Any] = {
         },
         "electrons": {
             "type": "integer",
-            "enum": [2],
+            "enum": [1, 2],
             "description": "Number of electrons moved (use 2 for a lone pair).",
         },
     },

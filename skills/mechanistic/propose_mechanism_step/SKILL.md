@@ -69,12 +69,12 @@ Ranked list of candidates, each with:
                 "type": "array",
                 "description": "REQUIRED. At least one move. For lone_pair: {kind, source_atom, target_atom, electrons:2}. For pi_bond/sigma_bond: {kind, source_bond:[bondStart,bondEnd], through_atom:bondEnd, target_atom, electrons:2}. through_atom is REQUIRED for pi_bond and sigma_bond moves.",
                 "items": {"type": "object", "properties": {
-                  "kind": {"type": "string", "enum": ["lone_pair", "pi_bond", "sigma_bond"]},
+                  "kind": {"type": "string", "enum": ["lone_pair", "pi_bond", "sigma_bond", "radical", "electron_transfer"]},
                   "source_atom": {"type": "string"},
                   "source_bond": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2},
                   "through_atom": {"type": "string", "description": "REQUIRED for pi_bond/sigma_bond: must equal source_bond[1]."},
                   "target_atom": {"type": "string"},
-                  "electrons": {"type": "integer", "enum": [2]}
+                  "electrons": {"type": "integer", "enum": [1, 2]}
                 }}
               },
               "confidence": {"type": "string", "enum": ["high", "medium", "low"]}
@@ -153,6 +153,27 @@ When proposing candidates, validate each SMILES mentally:
 - Can the full `reaction_smirks` left and right sides be parsed species-by-species after atom-map stripping?
 - Does the candidate remain executable (has valid `reaction_smirks` + explicit `electron_pushes`) without relying on fallback repair?
 - Only emit command plans when they add concrete value; default to retry-first usage instead of spending tools on the initial pass.
+
+### Radical and one-electron steps
+
+Use one-electron fishhooks only when the species and conditions support a radical
+pathway. Preserve radical SMILES, charges, every atom and reagent equivalent.
+Light/heat/initiators can justify initiation; propagation transfers the radical;
+termination consumes radicals. Do not infer a radical pathway merely from a
+halogen or peroxide name, and do not replace hydrogen-atom transfer by proton transfer.
+
+- Radical bond contribution: `{"kind":"radical","source_atom":"1","target_atom":"2","electrons":1}`, compact `rad:1>2`.
+- Bond fishhook: `{"kind":"sigma_bond","source_bond":["1","2"],"through_atom":"2","target_atom":"2","electrons":1}`, compact `sigma:1-2>2:e1` (or `pi:...:e1`). The second source atom is the delivering end.
+- Atom-to-atom single-electron transfer without forming a bond: `{"kind":"electron_transfer","source_atom":"1","target_atom":"2","electrons":1}`, compact `et:1>2`. Include both donor and acceptor; photons are energy, not an electron source.
+- Existing `lp:`, `pi:` and `sigma:` tokens without an electron suffix still mean two electrons. Do not encode a radical as a lone pair.
+- Homolysis needs both fishhooks: `[Cl:1][Cl:2]>>[Cl:1].[Cl:2] |mech:v1;sigma:1-2>2:e1;sigma:2-1>1:e1|`.
+- Recombination needs both radical contributions: `[CH3:1].[CH3:2]>>[CH3:1][CH3:2] |mech:v1;rad:1>2;rad:2>1|`.
+- Radical addition needs three fishhooks, not one pair arrow: `[CH3:1].[CH2:2]=[CH2:3]>>[CH3:1][CH2:2][CH2:3] |mech:v1;rad:1>2;pi:3-2>1:e1;pi:2-3>3:e1|`.
+
+The structured pushes and compact block must describe the same moves. Supply
+explicit mapped H when transferring a hydrogen atom; never silently lose a
+radical or change charge to make a proposed state parse.
+
 <!-- PROMPT_END -->
 
 ## Standalone Usage

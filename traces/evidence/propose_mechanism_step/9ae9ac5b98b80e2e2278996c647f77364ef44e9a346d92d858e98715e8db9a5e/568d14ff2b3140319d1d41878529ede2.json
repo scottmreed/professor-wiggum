@@ -1,0 +1,196 @@
+{
+  "approval_label": "radical_support_medium10",
+  "approval_notes": "Radical-support branch 8e1a536, paired medium10 eval 0a547647c3de46de9860a935a350caeb (radical_bench_medium10_after_7320eee), case flower_175010: run completed; threaded_unified, anthropic/claude-opus-5.5 low via headless claude -p bridge, responder_saw_ground_truth=false. Approved by Claude Code on the maintainer's instruction to wrap up the radical-support release gates.",
+  "approved_at": 1794102817.343063,
+  "approved_bool": true,
+  "approved_by": "scottmreed",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1794102817.3693461,
+  "exported_by": "scottmreed",
+  "model_version": {
+    "created_at": 1793926143.6998851,
+    "family": "agent",
+    "id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+    "model_version_id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+    "pricing_sha256": "8122e31df20141a24e5719d58fbefc36336975b0487b6c55a71b4087dc01faa0",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "radical-support paired medium eval: headless claude -p --effort low (scripts/bridge_headless_responder.py isolation flags, empty tmp cwd); sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "headless_claude_cli",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "ae0b4cd172ab9c51da437ab7fe11a8ee123f0e27e7fff911bc8b32604f12585d",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "e84dd09d70b5493599de2f69674bb442",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "9ae9ac5b98b80e2e2278996c647f77364ef44e9a346d92d858e98715e8db9a5e",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "e84dd09d70b5493599de2f69674bb442",
+  "responder_saw_ground_truth": false,
+  "run_id": "384d273a30d04b008831765cc2fca7c3",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 2,
+    "captured_at": 1794102769.208404,
+    "cost": null,
+    "duration_human": "9.6s",
+    "duration_seconds": 9.642443180084229,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:9>6",
+              "source_atom": "9",
+              "target_atom": "6"
+            }
+          ],
+          "inferred_dbe": "9-6:+2;9-9:-2",
+          "intermediate_smiles": "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1",
+          "intermediate_type": "neutral_product",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": "Net intramolecular tautomerising proton transfer; solvent or amine-assisted in reality.",
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Proton transfer: the N9 amidate lone pair takes an H from N6+. The N6\u2013H bond electrons stay on N6, neutralising it. Both nitrogens end up as neutral NH, giving the urea. The step is atom-balanced and the net charge stays at 0.",
+          "reaction_smirks": "[CH3:1][c:2]1[cH:3][cH:4][c:5]([NH2+:6][C:7](=[O:8])[N-:9][c:10]2[cH:11][cH:12][cH:13][cH:14][c:15]2[Br:16])[c:17]([OH:18])[cH:19]1>>[CH3:1][c:2]1[cH:3][cH:4][c:5]([NH:6][C:7](=[O:8])[NH:9][c:10]2[cH:11][cH:12][cH:13][cH:14][c:15]2[Br:16])[c:17]([OH:18])[cH:19]1 |mech:v1;lp:9>6|",
+          "resulting_state": [
+            "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1"
+          ],
+          "template_alignment": null,
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "Cc1ccc([NH2+]C(=O)[N-]c2ccccc2Br)c(O)c1"
+      ],
+      "executable_candidate_count": 1,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 1,
+      "llm_reasoning": "The zwitterionic adduct needs one proton moved from the anilinium N6 (NH2+) to the amidate N9 (N-) to give the neutral urea. The current state holds only this single species, so no external acid or base shuttle is available. The transfer is therefore drawn as an intramolecular N-to-N proton shift. In practice it is mediated by solvent or a second amine molecule, but the net outcome is the same: the neutral target urea, with atoms and charge balanced.",
+      "message": "Proposed 1 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1\",\n      \"reaction_description\": \"Proton transfer: the N9 amidate lone pair takes an H from N6+. The N6\\u2013H bond electrons stay on N6, neutralising it. Both nitrogens end up as neutral NH, giving the urea. The step is atom-balanced and the net charge stays at 0.\",\n      \"reaction_smirks\": \"[CH3:1][c:2]1[cH:3][cH:4][c:5]([NH2+:6][C:7](=[O:8])[N-:9][c:10]2[cH:11][cH:12][cH:13][cH:14][c:15]2[Br:16])[c:17]([OH:18])[cH:19]1>>[CH3:1][c:2]1[cH:3][cH:4][c:5]([NH:6][C:7](=[O:8])[NH:9][c:10]2[cH:11][cH:12][cH:13][cH:14][c:15]2[Br:16])[c:17]([OH:18])[cH:19]1 |mech:v1;lp:9>6|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"6\",\n          \"electrons\": 2,\n          \"source_atom\": \"9\",\n          \"notation\": \"lp:9>6\"\n        }\n      ],\n      \"resulting_state\": [\n        \"Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": null,\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"neutral_product\",\n      \"note\": \"Net intramolecular tautomerising proton transfer; solvent or amine-assisted in reality.\"\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"The zwitterionic adduct needs one proton moved from the anilinium N6 (NH2+) to the amidate N9 (N-) to give the neutral urea. The current state holds only this single species, so no external acid or base shuttle is available. The transfer is therefore drawn as an intramolecular N-to-N proton shift. In practice it is mediated by solvent or a second amine molecule, but the net outcome is the same: the neutral target urea, with atoms and charge balanced.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "The zwitterionic adduct needs one proton moved from the anilinium N6 (NH2+) to the amidate N9 (N-) to give the neutral urea. The current state holds only this single species, so no external acid or base shuttle is available. The transfer is therefore drawn as an intramolecular N-to-N proton shift. In practice it is mediated by solvent or a second amine molecule, but the net outcome is the same: the neutral target urea, with atoms and charge balanced.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:9>6",
+                "source_atom": "9",
+                "target_atom": "6"
+              }
+            ],
+            "inferred_dbe": "9-6:+2;9-9:-2",
+            "intermediate_smiles": "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1",
+            "intermediate_type": "neutral_product",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": "Net intramolecular tautomerising proton transfer; solvent or amine-assisted in reality.",
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Proton transfer: the N9 amidate lone pair takes an H from N6+. The N6\u2013H bond electrons stay on N6, neutralising it. Both nitrogens end up as neutral NH, giving the urea. The step is atom-balanced and the net charge stays at 0.",
+            "reaction_smirks": "[CH3:1][c:2]1[cH:3][cH:4][c:5]([NH2+:6][C:7](=[O:8])[N-:9][c:10]2[cH:11][cH:12][cH:13][cH:14][c:15]2[Br:16])[c:17]([OH:18])[cH:19]1>>[CH3:1][c:2]1[cH:3][cH:4][c:5]([NH:6][C:7](=[O:8])[NH:9][c:10]2[cH:11][cH:12][cH:13][cH:14][c:15]2[Br:16])[c:17]([OH:18])[cH:19]1 |mech:v1;lp:9>6|",
+            "resulting_state": [
+              "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1"
+            ],
+            "template_alignment": null,
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "thread": {
+        "message_count": 6,
+        "mode": "delta",
+        "prompt_chars": 42347,
+        "step": 2,
+        "thread_chars": 32239
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "canonical": "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "cleaned": "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1",
+          "note": "Net intramolecular tautomerising proton transfer; solvent or amine-assisted in reality.",
+          "raw": "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1",
+          "raw_cleaned": "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1",
+          "rdkit_cli_mode_mismatch": {
+            "expected": "smiles",
+            "failed_checks": [
+              "state_progress"
+            ],
+            "got": "state_progress"
+          },
+          "source": "model_json",
+          "type": "neutral_product",
+          "validated": true,
+          "validated_from": "Cc1ccc(NC(=O)Nc2ccccc2Br)c(O)c1"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "568d14ff2b3140319d1d41878529ede2"
+}

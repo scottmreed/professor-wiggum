@@ -1,0 +1,18 @@
+{
+  "schema_version": "radical_training_extract.v1",
+  "source": "../FlowER/data/flower_new_dataset/train.txt",
+  "source_split": "train",
+  "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95",
+  "radical_rows": 4606,
+  "duplicate_rows": 206,
+  "rejected_rows": 0,
+  "labels": {
+    "RC": 1383,
+    "RS": 3223
+  },
+  "unique_cases": 4400,
+  "exported_cases": 24,
+  "per_label": 12,
+  "limit": null,
+  "rejections": []
+}

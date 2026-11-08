@@ -71,3 +71,43 @@ Legacy `dbe` strings are no longer the authoring target. They may still exist in
 ## References
 
 - [2512.05722v1.pdf](file:///Users/scottreed/Desktop/Mechanistic/Refs/2512.05722v1.pdf) - This variant uses explicit terms for the sake of the LLMs
+
+## One-electron extension
+
+Existing pair tokens are unchanged. Radical bond contributions use `rad:a>b`;
+one-electron bond moves use `pi:a-b>c:e1` or `sigma:a-b>c:e1`. The second
+source-bond map is the delivering endpoint. Atom-to-atom single-electron transfer
+(with no bond formation) uses `et:a>b`. Structured kinds are `radical` and
+`electron_transfer`; both require `electrons: 1`. Lone pairs require 2.
+
+For example homolysis is `sigma:1-2>2:e1;sigma:2-1>1:e1`, recombination is
+`rad:1>2;rad:2>1`. Radical addition to a double bond needs the radical contribution
+plus **two** fishhooks from the pi bond: `rad:1>2;pi:3-2>1:e1;pi:2-3>3:e1`.
+
+The validator checks the complete mapped before/after electron inventory, source
+capacity, atom identities, and runtime species multiplicities. Transferred H
+must be explicit and mapped. Unsupported atoms and incomplete mapped radical
+states fail closed. This is main-group electron accounting, not a spin,
+excitation-energy, or reaction-feasibility prediction. Transition-metal
+photoredox cycles are outside this initial support.
+
+**When the radical checks apply.** Strict radical validation and replay are
+selected only by an explicit one-electron move (`rad:`, `et:`, a `:e1` bond
+move, `electrons: 1`, or a `radical`/`electron_transfer` kind, in the pushes or
+the `mech` block) or by an open-shell main-group atom (odd radical-electron
+count; H and metal atoms excluded) in the runtime current/resulting state
+SMILES. H-less bracket atoms in a core-only SMIRKS (`[C:1]`) never select it,
+and pair-arrow steps keep the historical validation, de-duplication and
+scoring. Runtime species must contain the SMIRKS sides as sub-multisets with
+the same untouched spectators on both sides; radical candidates keep repeated
+species (`ClCl` -> `[Cl]`, `[Cl]`). A bond-source move whose target is the
+other end of its own bond has no net effect and is rejected.
+
+**Parsing.** Pair pushes keep the historical tolerant normalization: an entry
+that cannot be read is skipped. One-electron pushes are parsed strictly and a
+malformed one raises `MechanismMoveFormatError`; during proposal parsing that
+rejects only the candidate that carries it, not the whole response.
+
+ReactionFocus adds `changed_radical_electrons`. The pair-arrow-count preference
+abstains on radical species rather than treating a fishhook pair as one arrow.
+Runtime and quality scoring use the same radical validation contract.

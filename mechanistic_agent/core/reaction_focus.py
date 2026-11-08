@@ -185,6 +185,7 @@ def _empty_focus(error: str, **ids: Any) -> Dict[str, Any]:
         "unbalanced_atom_ids": [],
         "changed_bonds": [],
         "changed_formal_charges": [],
+        "changed_radical_electrons": [],
         "changed_lone_pairs": [],
         "changed_hydrogens": [],
         "electron_flow_atom_ids": [],
@@ -226,13 +227,14 @@ def build_reaction_focus(
         bond_atoms.update(pair)
 
     charge_atoms = {m for m in both if left.atoms[m].formal_charge != right.atoms[m].formal_charge}
+    radical_atoms = {m for m in both if left.atoms[m].radical_electrons != right.atoms[m].radical_electrons}
     h_atoms = {m for m in both if left.atoms[m].total_h != right.atoms[m].total_h}
     lone_atoms = {m for m in both if abs(left.atoms[m].nonbonding_electrons - right.atoms[m].nonbonding_electrons) > 1e-6}
     flow_atoms = _push_atoms(electron_pushes) & all_maps
     delta_atoms, delta_lone = _delta_atoms(bond_electron_deltas)
     lone_atoms |= delta_lone & all_maps
 
-    core = bond_atoms | charge_atoms | h_atoms | lone_atoms | flow_atoms | (delta_atoms & all_maps) | unbalanced
+    core = bond_atoms | charge_atoms | radical_atoms | h_atoms | lone_atoms | flow_atoms | (delta_atoms & all_maps) | unbalanced
 
     # Context: BFS to ``context_radius`` over the union adjacency, then ring completion.
     adjacency: Dict[int, Set[int]] = {}
@@ -264,6 +266,7 @@ def build_reaction_focus(
         "unbalanced_atom_ids": _sorted_ids(unbalanced),
         "changed_bonds": changed_bonds,
         "changed_formal_charges": _sorted_ids(charge_atoms),
+        "changed_radical_electrons": _sorted_ids(radical_atoms),
         "changed_lone_pairs": _sorted_ids(lone_atoms),
         "changed_hydrogens": _sorted_ids(h_atoms),
         "electron_flow_atom_ids": _sorted_ids(flow_atoms),

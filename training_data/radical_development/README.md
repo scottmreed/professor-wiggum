@@ -1,0 +1,41 @@
+# Radical development data
+
+`cases.json` contains 24 single-step cases, 12 each from the RC and RS labels in
+FlowER's `flower_new_dataset/train.txt`. Rows are sorted by content-derived ID;
+the sample uses the first 12 per label (`--per-label 12`). `extraction_report.json`
+records the source path as given, the source hash and complete extraction counts:
+4,606 rows, 206 exact duplicates, 4,400 unique cases, 24 exported, no
+parse/radical-detection rejections.
+
+These are **train-derived development cases**, not held-out evaluation or
+complete reaction pathways. No arrows or pathway grouping are fabricated.
+The reaction reference is recorded separately from the model input. The custom
+case import API accepts their starting materials/products; keep provenance in
+this source artifact when using an importer that omits extra fields.
+
+The authored deterministic arrow/chain contract lives in
+`tests/fixtures/radical_contract.json`. Its successful replay is implementation
+evidence, not an LLM quality measurement and not an approved prompt trace.
+
+Reproduce both committed files byte for byte (from the repository root, with a
+FlowER checkout next to it) without opening validation/test files:
+
+```sh
+PYTHONPATH=. python scripts/extract_radical_training.py \
+  --train ../FlowER/data/flower_new_dataset/train.txt \
+  --per-label 12 \
+  --output training_data/radical_development/cases.json \
+  --report training_data/radical_development/extraction_report.json
+```
+
+Drop `--per-label` (and point `--output`/`--report` elsewhere) to export all
+4,400 unique cases. The extractor accepts only a file named `train.txt`, refuses
+any path with a `test`/`tests`/`val`/`valid`/`validation` directory or a
+directory whose name contains `holdout`,
+retains source-line references and hashes, deduplicates exact labelled reactions,
+and does not mutate the existing numeric curriculum or any evaluation tier.
+
+Source: Joung et al., *Electron flow matching for generative reaction mechanism
+prediction*, Nature 645 (2025), DOI 10.1038/s41586-025-09426-9.
+Dataset: https://figshare.com/articles/dataset/28359407/3 (MIT-labelled release).
+The user authorized this local noncommercial testing use on 2026-11-07.

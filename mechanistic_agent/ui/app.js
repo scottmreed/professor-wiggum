@@ -3648,6 +3648,7 @@ function _obsBondElectronDetail(cand) {
   const focusLine = [
     focus.changed_bonds && focus.changed_bonds.length ? `bonds: ${focus.changed_bonds.map((b) => `${b.atom_ids.join("–")} ${b.order_before}→${b.order_after}`).join(", ")}` : "",
     focus.changed_formal_charges && focus.changed_formal_charges.length ? `charge: ${focus.changed_formal_charges.join(", ")}` : "",
+    focus.changed_radical_electrons && focus.changed_radical_electrons.length ? `radicals: ${focus.changed_radical_electrons.join(", ")}` : "",
     focus.changed_lone_pairs && focus.changed_lone_pairs.length ? `lone pairs: ${focus.changed_lone_pairs.join(", ")}` : "",
     focus.changed_hydrogens && focus.changed_hydrogens.length ? `H count: ${focus.changed_hydrogens.join(", ")}` : "",
     focus.context_atom_ids && focus.context_atom_ids.length ? `context: ${focus.context_atom_ids.join(", ")}` : "",
