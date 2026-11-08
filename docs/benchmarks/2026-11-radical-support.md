@@ -13,7 +13,7 @@ Data: local FlowER `flower_new_dataset/train.txt` contains 4,606 RC/RS rows,
 radical electrons. Extraction hashes the entire train file, never reads test or
 validation, and retains source labels/line references. The 24-case development
 sample is in `training_data/radical_development/`. Full local extraction:
-`/private/tmp/wiggum-radical-training.json`. These are train-derived examples,
+a local file outside the repo (not committed). These are train-derived examples,
 not held-out scores. RC/RS are not pathway IDs and no arrows are fabricated.
 
 Verification: `PYTHONPATH=. python -m pytest tests/fast/ -q` completed with
@@ -79,8 +79,8 @@ case, eval run `0a547647…`) are exported under
 The ChemIllusion runtime pin moves through the `chemillusion-runtime-bump`
 workflow after merge (this is a harness-engine change), not by hand.
 
-ChemIllusion integration is prepared separately in
-`/private/tmp/chemillusion-radicals`, branch `codex/radical-mechanism-consumer`:
+ChemIllusion integration is prepared separately on ChemIllusion branch
+`codex/radical-mechanism-consumer`:
 radical/fishhook SVG support, animation, replay source fields, explicit rejection
 of radical conversion into closed-shell Lab/3D. Its runtime pin is unchanged.
 A pin bump must reference a reviewed Wiggum commit after the evidence gate passes.
