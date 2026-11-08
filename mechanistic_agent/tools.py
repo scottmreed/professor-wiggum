@@ -64,6 +64,7 @@ from .core.reaction_type_templates import (
 )
 from .core.chemistry_backend import execute_chemistry_check
 from .core.chemistry_backend import ChemistryBackendConfig, resolve_rdkit_cli_command
+from .core.radical_validation import requires_radical_validation, validate_radical_moves, radical_states_match
 from .core.mechanism_moves import (
     extract_mechanism_moves,
     implied_bond_deltas,
@@ -72,6 +73,7 @@ from .core.mechanism_moves import (
     repair_candidate_reaction_smirks,
     split_cxsmiles_metadata,
     synthesize_dbe_entries,
+    serialize_mechanism_moves,
 )
 
 logger = logging.getLogger(__name__)
@@ -610,7 +612,10 @@ def _require_rdkit() -> None:
 _MECH_FORMAT_GUIDANCE = (
     "Append CXSMILES/SMIRKS with a '|mech:v1;...|' block using explicit move sources: "
     "'lp:a>b' for lone-pair attack, 'pi:a-b>c' for pi-bond donation, and "
-    "'sigma:a-b>c' for sigma-bond attack."
+    "'sigma:a-b>c' for sigma-bond attack. For fishhooks use radical sources 'rad:a>b', "
+    "bond sources 'pi:a-b>c:e1'/'sigma:a-b>c:e1', or atom-to-atom SET 'et:a>b'. "
+    "radical and electron_transfer moves carry electrons=1; lone_pair carries 2. "
+    "Bond fishhooks carry 1. Map transferred hydrogens explicitly and include every electron."
 )
 
 
@@ -5852,11 +5857,12 @@ def propose_intermediates(
             f"({reason_str}). This means the validator could not find valid electron-push moves or "
             "a parseable reaction_smirks. Please ensure every candidate includes:\n"
             "  • reaction_smirks: CXSMILES/SMIRKS with a |mech:v1;...| block (e.g., "
-            "[C:1][O:2]>>[C:1].[O:2] |mech:v1;lp:2>1|)\n"
+            f"{_MECH_EXAMPLE})\n"
             "  • electron_pushes: at least one move object; for lone_pair moves include "
             "kind, source_atom, target_atom, electrons=2; for pi_bond/sigma_bond moves include "
             "kind, source_bond ([bondStart, bondEnd]), through_atom (must equal source_bond[1]), "
-            "target_atom, electrons=2.\n\n"
+            "target_atom, electrons=2 (or 1 for fishhooks). radical/electron_transfer use source_atom, "
+            "target_atom, electrons=1. Use rad:a>b or et:a>b; add :e1 to bond fishhook notation.\n\n"
         )
 
     if rejection_notes_text:
@@ -6983,7 +6989,9 @@ def predict_mechanistic_step(
     if not electron_pushes:
         raise ValueError("At least one electron push must be provided")
 
-    cleaned_pushes = [move.as_dict() for move in normalize_electron_pushes(electron_pushes)]
+    normalized_moves = normalize_electron_pushes(electron_pushes)
+    radical_step = requires_radical_validation(str(reaction_smirks or ""), normalized_moves)
+    cleaned_pushes = [move.as_dict() for move in normalized_moves]
     if not cleaned_pushes:
         raise ValueError("At least one valid explicit electron push must be provided")
 
@@ -7041,7 +7049,7 @@ def predict_mechanistic_step(
         resulting = [str(item) for item in resulting_state]
         if predicted_intermediate and predicted_intermediate not in resulting:
             resulting.append(predicted_intermediate)
-    resulting_state = _dedupe_species(resulting)
+    resulting_state = resulting if radical_step else _dedupe_species(resulting)
 
     visited: set[str] = set(previous_intermediates or [])
     is_reverse = False
@@ -7111,6 +7119,15 @@ def predict_mechanistic_step(
             if details.get("error"):
                 bond_electron_validation["valid"] = False
                 bond_electron_validation["error"] = details["error"]
+            if radical_step:
+                strict = validate_radical_moves(core, normalized_moves)
+                if mech_details.get("error") or sorted(serialize_mechanism_moves([m]) for m in moves) != sorted(serialize_mechanism_moves([m]) for m in normalized_moves):
+                    strict = {"valid": False, "error": "Radical mech metadata and electron_pushes must agree"}
+                elif not radical_states_match(core, current_state, resulting_state):
+                    strict = {"valid": False, "error": "Mapped radical reaction does not match current/resulting state species and multiplicities"}
+                bond_electron_validation.update(strict)
+                if strict["valid"]:
+                    bond_electron_validation.pop("error", None)
         else:
             bond_electron_validation = {
                 "valid": False,

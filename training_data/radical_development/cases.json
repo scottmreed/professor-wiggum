@@ -1,0 +1,715 @@
+[
+  {
+    "id": "flower_radical_rc_000dc511b61969153441",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2](=[O:3])[C:4]([H:8])([H:9])[H:10])([O:5])([H:6])[H:7]"
+    ],
+    "products": [
+      "[C:1](=[O:5])([H:6])[H:7]",
+      "[C:2](=[O:3])[C:4]([H:8])([H:9])[H:10]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2](=[O:3])[C:4]([H:8])([H:9])[H:10])([O:5])([H:6])[H:7]>>[C:1](=[O:5])([H:6])[H:7].[C:2](=[O:3])[C:4]([H:8])([H:9])[H:10]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1902327
+      ],
+      "record_sha256": "000dc511b61969153441c2079d77c37866df527385e537727a1bc46b08e7d076",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_0061a366d6ae493cd435",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]([O:3][H:16])[C:4]1=[C:5]([H:17])[C:6]([H:18])=[C:7]([H:19])[C:8]([H:20])=[C:9]1[H:21])([C:10]([C:11]([C:12]([Cl:13])([H:25])[H:26])[H:24])([H:22])[H:23])([H:14])[H:15]"
+    ],
+    "products": [
+      "[C:10](=[C:11]([C:12]([Cl:13])([H:25])[H:26])[H:24])([H:22])[H:23]",
+      "[C:1](=[C:2]([O:3][H:16])[C:4]1=[C:5]([H:17])[C:6]([H:18])=[C:7]([H:19])[C:8]([H:20])=[C:9]1[H:21])([H:14])[H:15]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]([O:3][H:16])[C:4]1=[C:5]([H:17])[C:6]([H:18])=[C:7]([H:19])[C:8]([H:20])=[C:9]1[H:21])([C:10]([C:11]([C:12]([Cl:13])([H:25])[H:26])[H:24])([H:22])[H:23])([H:14])[H:15]>>[C:10](=[C:11]([C:12]([Cl:13])([H:25])[H:26])[H:24])([H:22])[H:23].[C:1](=[C:2]([O:3][H:16])[C:4]1=[C:5]([H:17])[C:6]([H:18])=[C:7]([H:19])[C:8]([H:20])=[C:9]1[H:21])([H:14])[H:15]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1902246
+      ],
+      "record_sha256": "0061a366d6ae493cd435dd51096a238f3e26c493f60bdbae5a190905bdf6add6",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_0086ae16a1aab8a816f9",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]([C:3]([F:4])([C:5]([Cl:6])([Cl:7])[Cl:8])[H:17])([H:15])[H:16])([H:12])([H:13])[H:14]",
+      "[Cl:9][Cl:10]",
+      "[He:11]"
+    ],
+    "products": [
+      "[C:1]([C:2]([C:3]([F:4])([C:5]([Cl:6])([Cl:7])[Cl:8])[H:17])([H:15])[H:16])([H:12])([H:13])[H:14]",
+      "[Cl:10]",
+      "[Cl:9]",
+      "[He:11]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]([C:3]([F:4])([C:5]([Cl:6])([Cl:7])[Cl:8])[H:17])([H:15])[H:16])([H:12])([H:13])[H:14].[Cl:9][Cl:10].[He:11]>>[C:1]([C:2]([C:3]([F:4])([C:5]([Cl:6])([Cl:7])[Cl:8])[H:17])([H:15])[H:16])([H:12])([H:13])[H:14].[Cl:10].[Cl:9].[He:11]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1903169
+      ],
+      "record_sha256": "0086ae16a1aab8a816f9aeae7dda78285c340a99f882a234e6c3704cf46642a6",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_00db9306115a364f0103",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:14]([C:15]([C:16]([C:17]([Sn:18]([Br:19])([C:20]([C:21]([C:22]([C:23]([H:67])([H:68])[H:69])([H:65])[H:66])([H:63])[H:64])([H:61])[H:62])[C:24]([C:25]([C:26]([C:27]([H:76])([H:77])[H:78])([H:74])[H:75])([H:72])[H:73])([H:70])[H:71])([H:59])[H:60])([H:57])[H:58])([H:55])[H:56])([H:52])([H:53])[H:54]",
+      "[C:1]([C:2]([C:3]([C:4]([Sn:5]([C:6]([C:7]([C:8]([C:9]([H:95])([H:96])[H:97])([H:93])[H:94])([H:91])[H:92])([H:89])[H:90])([C:10]([C:11]([C:12]([C:13]([H:104])([H:105])[H:106])([H:102])[H:103])([H:100])[H:101])([H:98])[H:99])[H:88])([H:86])[H:87])([H:84])[H:85])([H:82])[H:83])([H:79])([H:80])[H:81]",
+      "[C:28]([O:29][C:30](=[O:31])[C:32]12[C:33]([H:110])([H:111])[C:34]([H:112])([H:113])[C:35]([H:114])([C:36](=[C:37][Si:38]([C:39]([H:115])([H:116])[H:117])([C:40]([H:118])([H:119])[H:120])[C:41]([H:121])([H:122])[H:123])[C:42]1([H:124])[H:125])[N:43]2[C:44](=[O:45])[C:46]1=[C:47]([H:126])[C:48]([H:127])=[C:49]([H:128])[C:50]([H:129])=[C:51]1[H:130])([H:107])([H:108])[H:109]"
+    ],
+    "products": [
+      "[C:14]([C:15]([C:16]([C:17]([Sn:18]([Br:19])([C:20]([C:21]([C:22]([C:23]([H:67])([H:68])[H:69])([H:65])[H:66])([H:63])[H:64])([H:61])[H:62])[C:24]([C:25]([C:26]([C:27]([H:76])([H:77])[H:78])([H:74])[H:75])([H:72])[H:73])([H:70])[H:71])([H:59])[H:60])([H:57])[H:58])([H:55])[H:56])([H:52])([H:53])[H:54]",
+      "[C:1]([C:2]([C:3]([C:4]([Sn:5]([C:6]([C:7]([C:8]([C:9]([H:95])([H:96])[H:97])([H:93])[H:94])([H:91])[H:92])([H:89])[H:90])[C:10]([C:11]([C:12]([C:13]([H:104])([H:105])[H:106])([H:102])[H:103])([H:100])[H:101])([H:98])[H:99])([H:86])[H:87])([H:84])[H:85])([H:82])[H:83])([H:79])([H:80])[H:81]",
+      "[C:28]([O:29][C:30](=[O:31])[C:32]12[C:33]([H:110])([H:111])[C:34]([H:112])([H:113])[C:35]([H:114])([C:36](=[C:37]([Si:38]([C:39]([H:115])([H:116])[H:117])([C:40]([H:118])([H:119])[H:120])[C:41]([H:121])([H:122])[H:123])[H:88])[C:42]1([H:124])[H:125])[N:43]2[C:44](=[O:45])[C:46]1=[C:47]([H:126])[C:48]([H:127])=[C:49]([H:128])[C:50]([H:129])=[C:51]1[H:130])([H:107])([H:108])[H:109]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:14]([C:15]([C:16]([C:17]([Sn:18]([Br:19])([C:20]([C:21]([C:22]([C:23]([H:67])([H:68])[H:69])([H:65])[H:66])([H:63])[H:64])([H:61])[H:62])[C:24]([C:25]([C:26]([C:27]([H:76])([H:77])[H:78])([H:74])[H:75])([H:72])[H:73])([H:70])[H:71])([H:59])[H:60])([H:57])[H:58])([H:55])[H:56])([H:52])([H:53])[H:54].[C:1]([C:2]([C:3]([C:4]([Sn:5]([C:6]([C:7]([C:8]([C:9]([H:95])([H:96])[H:97])([H:93])[H:94])([H:91])[H:92])([H:89])[H:90])([C:10]([C:11]([C:12]([C:13]([H:104])([H:105])[H:106])([H:102])[H:103])([H:100])[H:101])([H:98])[H:99])[H:88])([H:86])[H:87])([H:84])[H:85])([H:82])[H:83])([H:79])([H:80])[H:81].[C:28]([O:29][C:30](=[O:31])[C:32]12[C:33]([H:110])([H:111])[C:34]([H:112])([H:113])[C:35]([H:114])([C:36](=[C:37][Si:38]([C:39]([H:115])([H:116])[H:117])([C:40]([H:118])([H:119])[H:120])[C:41]([H:121])([H:122])[H:123])[C:42]1([H:124])[H:125])[N:43]2[C:44](=[O:45])[C:46]1=[C:47]([H:126])[C:48]([H:127])=[C:49]([H:128])[C:50]([H:129])=[C:51]1[H:130])([H:107])([H:108])[H:109]>>[C:14]([C:15]([C:16]([C:17]([Sn:18]([Br:19])([C:20]([C:21]([C:22]([C:23]([H:67])([H:68])[H:69])([H:65])[H:66])([H:63])[H:64])([H:61])[H:62])[C:24]([C:25]([C:26]([C:27]([H:76])([H:77])[H:78])([H:74])[H:75])([H:72])[H:73])([H:70])[H:71])([H:59])[H:60])([H:57])[H:58])([H:55])[H:56])([H:52])([H:53])[H:54].[C:1]([C:2]([C:3]([C:4]([Sn:5]([C:6]([C:7]([C:8]([C:9]([H:95])([H:96])[H:97])([H:93])[H:94])([H:91])[H:92])([H:89])[H:90])[C:10]([C:11]([C:12]([C:13]([H:104])([H:105])[H:106])([H:102])[H:103])([H:100])[H:101])([H:98])[H:99])([H:86])[H:87])([H:84])[H:85])([H:82])[H:83])([H:79])([H:80])[H:81].[C:28]([O:29][C:30](=[O:31])[C:32]12[C:33]([H:110])([H:111])[C:34]([H:112])([H:113])[C:35]([H:114])([C:36](=[C:37]([Si:38]([C:39]([H:115])([H:116])[H:117])([C:40]([H:118])([H:119])[H:120])[C:41]([H:121])([H:122])[H:123])[H:88])[C:42]1([H:124])[H:125])[N:43]2[C:44](=[O:45])[C:46]1=[C:47]([H:126])[C:48]([H:127])=[C:49]([H:128])[C:50]([H:129])=[C:51]1[H:130])([H:107])([H:108])[H:109]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1902404
+      ],
+      "record_sha256": "00db9306115a364f0103e9d94799d5cfbfe41b560dbfa086e1f0874a19f9fbb9",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_00ee56711059d29a54d2",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[Br:6]",
+      "[C:1]([C:2]([C:3]([H:10])([H:11])[H:12])=[C:4]([C:5]([H:14])([H:15])[H:16])[H:13])([H:7])([H:8])[H:9]"
+    ],
+    "products": [
+      "[Br:6][H:7]",
+      "[C:1]([C:2]([C:3]([H:10])([H:11])[H:12])=[C:4]([C:5]([H:14])([H:15])[H:16])[H:13])([H:8])[H:9]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[Br:6].[C:1]([C:2]([C:3]([H:10])([H:11])[H:12])=[C:4]([C:5]([H:14])([H:15])[H:16])[H:13])([H:7])([H:8])[H:9]>>[Br:6][H:7].[C:1]([C:2]([C:3]([H:10])([H:11])[H:12])=[C:4]([C:5]([H:14])([H:15])[H:16])[H:13])([H:8])[H:9]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1903130
+      ],
+      "record_sha256": "00ee56711059d29a54d26bda2de546657036208c5759cfac5bfb4b95d00e9bc8",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_0168736aa7b849b01d3c",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:3]1([H:9])[C:4]([H:10])([H:11])[C:5]([H:12])([H:13])[C:6]([H:14])([H:15])[C:7]([H:16])([H:17])[C:8]1([H:18])[H:19]",
+      "[Cl:1][Cl:2]"
+    ],
+    "products": [
+      "[Cl:1][C:3]1([H:9])[C:4]([H:10])([H:11])[C:5]([H:12])([H:13])[C:6]([H:14])([H:15])[C:7]([H:16])([H:17])[C:8]1([H:18])[H:19]",
+      "[Cl:2]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:3]1([H:9])[C:4]([H:10])([H:11])[C:5]([H:12])([H:13])[C:6]([H:14])([H:15])[C:7]([H:16])([H:17])[C:8]1([H:18])[H:19].[Cl:1][Cl:2]>>[Cl:1][C:3]1([H:9])[C:4]([H:10])([H:11])[C:5]([H:12])([H:13])[C:6]([H:14])([H:15])[C:7]([H:16])([H:17])[C:8]1([H:18])[H:19].[Cl:2]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1902846,
+        1902956
+      ],
+      "record_sha256": "0168736aa7b849b01d3c5b5f1dd7d4fa8dcc27b3b57b64826a1a91e1fb85dac3",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_017c8dbe9e59663036a9",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[Br:1][Br:2]",
+      "[C:3]([C:4]([C:5]([H:13])([H:14])[H:15])([C:6]([H:16])([H:17])[H:18])[C:7]([C:8]([H:19])([H:20])[H:21])[C:9]([H:22])([H:23])[H:24])([H:10])([H:11])[H:12]"
+    ],
+    "products": [
+      "[Br:1][C:7]([C:4]([C:3]([H:10])([H:11])[H:12])([C:5]([H:13])([H:14])[H:15])[C:6]([H:16])([H:17])[H:18])([C:8]([H:19])([H:20])[H:21])[C:9]([H:22])([H:23])[H:24]",
+      "[Br:2]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[Br:1][Br:2].[C:3]([C:4]([C:5]([H:13])([H:14])[H:15])([C:6]([H:16])([H:17])[H:18])[C:7]([C:8]([H:19])([H:20])[H:21])[C:9]([H:22])([H:23])[H:24])([H:10])([H:11])[H:12]>>[Br:1][C:7]([C:4]([C:3]([H:10])([H:11])[H:12])([C:5]([H:13])([H:14])[H:15])[C:6]([H:16])([H:17])[H:18])([C:8]([H:19])([H:20])[H:21])[C:9]([H:22])([H:23])[H:24].[Br:2]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1902774
+      ],
+      "record_sha256": "017c8dbe9e59663036a9c09797d6f183d948b5106272d44c39e1d5de84a01e35",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_01819459878c6ea1aad8",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:1]1([H:9])[C:2]([H:10])([H:11])[C:3]([H:12])([H:13])[C:4]([C:7]([H:14])([H:15])[H:16])([C:8]([H:17])([H:18])[H:19])[C:5]([H:20])=[C:6]1[H:21]"
+    ],
+    "products": [
+      "[C:1]1([H:9])=[C:6]([H:21])[C:5]([H:20])[C:4]([C:7]([H:14])([H:15])[H:16])([C:8]([H:17])([H:18])[H:19])[C:3]([H:12])([H:13])[C:2]1([H:10])[H:11]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]1([H:9])[C:2]([H:10])([H:11])[C:3]([H:12])([H:13])[C:4]([C:7]([H:14])([H:15])[H:16])([C:8]([H:17])([H:18])[H:19])[C:5]([H:20])=[C:6]1[H:21]>>[C:1]1([H:9])=[C:6]([H:21])[C:5]([H:20])[C:4]([C:7]([H:14])([H:15])[H:16])([C:8]([H:17])([H:18])[H:19])[C:3]([H:12])([H:13])[C:2]1([H:10])[H:11]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1903005
+      ],
+      "record_sha256": "01819459878c6ea1aad83ed06cc2320a9c8a747bf37539cfd60f5eee7a7253ed",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_018b87e63dfa1909d026",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]([C:3](=[C:4]([C:5]([H:14])([H:15])[H:16])[C:6](=[C:7]([C:8]([H:19])([H:20])[H:21])[H:18])[H:17])[H:13])[H:12])([H:9])([H:10])[H:11]"
+    ],
+    "products": [
+      "[C:1]([C:2](=[C:3]([C:4]([C:5]([H:14])([H:15])[H:16])[C:6](=[C:7]([C:8]([H:19])([H:20])[H:21])[H:18])[H:17])[H:13])[H:12])([H:9])([H:10])[H:11]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]([C:3](=[C:4]([C:5]([H:14])([H:15])[H:16])[C:6](=[C:7]([C:8]([H:19])([H:20])[H:21])[H:18])[H:17])[H:13])[H:12])([H:9])([H:10])[H:11]>>[C:1]([C:2](=[C:3]([C:4]([C:5]([H:14])([H:15])[H:16])[C:6](=[C:7]([C:8]([H:19])([H:20])[H:21])[H:18])[H:17])[H:13])[H:12])([H:9])([H:10])[H:11]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1902281
+      ],
+      "record_sha256": "018b87e63dfa1909d026c4abf6e68f97586874f77baf43ba516d7abf894f9068",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_01ed2e35e04b9c47e0f3",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[Br:1][Br:2]",
+      "[C:3]([C:4]1([C:5]([H:15])([H:16])[H:17])[C:6]([H:18])([H:19])[C:7]([H:20])([H:21])[C:8]([H:22])([H:23])[C:9]([C:10]([H:24])([H:25])[H:26])[C:11]1([H:27])[H:28])([H:12])([H:13])[H:14]"
+    ],
+    "products": [
+      "[Br:1][C:9]1([C:10]([H:24])([H:25])[H:26])[C:8]([H:22])([H:23])[C:7]([H:20])([H:21])[C:6]([H:18])([H:19])[C:4]([C:3]([H:12])([H:13])[H:14])([C:5]([H:15])([H:16])[H:17])[C:11]1([H:27])[H:28]",
+      "[Br:2]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[Br:1][Br:2].[C:3]([C:4]1([C:5]([H:15])([H:16])[H:17])[C:6]([H:18])([H:19])[C:7]([H:20])([H:21])[C:8]([H:22])([H:23])[C:9]([C:10]([H:24])([H:25])[H:26])[C:11]1([H:27])[H:28])([H:12])([H:13])[H:14]>>[Br:1][C:9]1([C:10]([H:24])([H:25])[H:26])[C:8]([H:22])([H:23])[C:7]([H:20])([H:21])[C:6]([H:18])([H:19])[C:4]([C:3]([H:12])([H:13])[H:14])([C:5]([H:15])([H:16])[H:17])[C:11]1([H:27])[H:28].[Br:2]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1903166
+      ],
+      "record_sha256": "01ed2e35e04b9c47e0f391bc92d1f775e2f9fe8d0414d0c850efb61a2ee916eb",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_01f6373a0aac7508ecb8",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:11]([C:12](=[O:13])[C:14]([Cl:15])([H:18])[H:19])([H:16])[H:17]",
+      "[C:1]([C:2]1([C:10]([H:23])([H:24])[H:25])[C:3]2([H:26])[C:4]([H:27])([H:28])[C:5]([H:29])([H:30])[C:6](=[C:7]([H:31])[H:32])[C:8]1([H:33])[C:9]2([H:34])[H:35])([H:20])([H:21])[H:22]"
+    ],
+    "products": [
+      "[C:1]([C:2]1([C:10]([H:23])([H:24])[H:25])[C:3]2([H:26])[C:4]([H:27])([H:28])[C:5]([H:29])([H:30])[C:6]([C:7]([C:11]([C:12](=[O:13])[C:14]([Cl:15])([H:18])[H:19])([H:16])[H:17])([H:31])[H:32])[C:8]1([H:33])[C:9]2([H:34])[H:35])([H:20])([H:21])[H:22]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:11]([C:12](=[O:13])[C:14]([Cl:15])([H:18])[H:19])([H:16])[H:17].[C:1]([C:2]1([C:10]([H:23])([H:24])[H:25])[C:3]2([H:26])[C:4]([H:27])([H:28])[C:5]([H:29])([H:30])[C:6](=[C:7]([H:31])[H:32])[C:8]1([H:33])[C:9]2([H:34])[H:35])([H:20])([H:21])[H:22]>>[C:1]([C:2]1([C:10]([H:23])([H:24])[H:25])[C:3]2([H:26])[C:4]([H:27])([H:28])[C:5]([H:29])([H:30])[C:6]([C:7]([C:11]([C:12](=[O:13])[C:14]([Cl:15])([H:18])[H:19])([H:16])[H:17])([H:31])[H:32])[C:8]1([H:33])[C:9]2([H:34])[H:35])([H:20])([H:21])[H:22]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1902581
+      ],
+      "record_sha256": "01f6373a0aac7508ecb8d8c3659ef9adfa2372a8d00705d8c7c4c9ef0625845c",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rc_0203c335d811b8f5951b",
+    "name": "FlowER RC elementary radical step",
+    "starting_materials": [
+      "[C:1]1([H:22])=[C:2]([H:23])[C:3]([H:24])=[C:4]([C:7]([C:8]2=[C:9]([H:25])[C:10]([H:26])=[C:11]([H:27])[C:12]([H:28])=[C:13]2[H:29])[C:14]2=[C:15]([H:30])[C:16]([H:31])=[C:17]([H:32])[C:18]([H:33])=[C:19]2[H:34])[C:5]([H:35])=[C:6]1[H:36]",
+      "[O:20][O:21]"
+    ],
+    "products": [
+      "[C:1]1([H:22])=[C:2]([H:23])[C:3]([H:24])=[C:4]([C:7]([C:8]2=[C:9]([H:25])[C:10]([H:26])=[C:11]([H:27])[C:12]([H:28])=[C:13]2[H:29])([C:14]2=[C:15]([H:30])[C:16]([H:31])=[C:17]([H:32])[C:18]([H:33])=[C:19]2[H:34])[O:21][O:20])[C:5]([H:35])=[C:6]1[H:36]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]1([H:22])=[C:2]([H:23])[C:3]([H:24])=[C:4]([C:7]([C:8]2=[C:9]([H:25])[C:10]([H:26])=[C:11]([H:27])[C:12]([H:28])=[C:13]2[H:29])[C:14]2=[C:15]([H:30])[C:16]([H:31])=[C:17]([H:32])[C:18]([H:33])=[C:19]2[H:34])[C:5]([H:35])=[C:6]1[H:36].[O:20][O:21]>>[C:1]1([H:22])=[C:2]([H:23])[C:3]([H:24])=[C:4]([C:7]([C:8]2=[C:9]([H:25])[C:10]([H:26])=[C:11]([H:27])[C:12]([H:28])=[C:13]2[H:29])([C:14]2=[C:15]([H:30])[C:16]([H:31])=[C:17]([H:32])[C:18]([H:33])=[C:19]2[H:34])[O:21][O:20])[C:5]([H:35])=[C:6]1[H:36]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RC",
+      "source_lines": [
+        1902412,
+        1902798
+      ],
+      "record_sha256": "0203c335d811b8f5951bbfa34d7b6dc672c7b0a46b89824fc1ac4992f8a8d192",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_0006769d84a8b20939e7",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]1=[C:3]([H:15])[C:4]([H:16])([H:17])[C:5]2([H:18])[C:6]([H:19])([H:20])[C:7]1([H:21])[C:8]2([C:9]([H:22])([H:23])[H:24])[C:10]([H:25])([H:26])[H:27])([H:12])([H:13])[H:14]",
+      "[O:11][H:28]"
+    ],
+    "products": [
+      "[C:1]([C:2]1([O:11][H:28])[C:3]([H:15])[C:4]([H:16])([H:17])[C:5]2([H:18])[C:6]([H:19])([H:20])[C:7]1([H:21])[C:8]2([C:9]([H:22])([H:23])[H:24])[C:10]([H:25])([H:26])[H:27])([H:12])([H:13])[H:14]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]1=[C:3]([H:15])[C:4]([H:16])([H:17])[C:5]2([H:18])[C:6]([H:19])([H:20])[C:7]1([H:21])[C:8]2([C:9]([H:22])([H:23])[H:24])[C:10]([H:25])([H:26])[H:27])([H:12])([H:13])[H:14].[O:11][H:28]>>[C:1]([C:2]1([O:11][H:28])[C:3]([H:15])[C:4]([H:16])([H:17])[C:5]2([H:18])[C:6]([H:19])([H:20])[C:7]1([H:21])[C:8]2([C:9]([H:22])([H:23])[H:24])[C:10]([H:25])([H:26])[H:27])([H:12])([H:13])[H:14]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1931847
+      ],
+      "record_sha256": "0006769d84a8b20939e76bb0f01bfb5bb9920a7f905c2ab50bf6814cb9fa1960",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_00118d766d73739cfc64",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]([O:3][O:4][N:5]=[O:6])([C:7]([O:8][H:15])([H:13])[H:14])[H:12])([H:9])([H:10])[H:11]"
+    ],
+    "products": [
+      "[C:1]([C:2]([O:3])([C:7]([O:8][H:15])([H:13])[H:14])[H:12])([H:9])([H:10])[H:11]",
+      "[O:4][N:5]=[O:6]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]([O:3][O:4][N:5]=[O:6])([C:7]([O:8][H:15])([H:13])[H:14])[H:12])([H:9])([H:10])[H:11]>>[C:1]([C:2]([O:3])([C:7]([O:8][H:15])([H:13])[H:14])[H:12])([H:9])([H:10])[H:11].[O:4][N:5]=[O:6]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1931915
+      ],
+      "record_sha256": "00118d766d73739cfc6449c08c71aa46f38c5f89319263a81ed01195fc002822",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_001b6f5e8109bc5c12b9",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[O:1][O:2][C:3]([Cl:4])([Cl:5])[H:10]",
+      "[O:6]=[N+:7]([O-:8])[O:9]"
+    ],
+    "products": [
+      "[O:1]([O:2][C:3]([Cl:4])([Cl:5])[H:10])[O:9][N+:7](=[O:6])[O-:8]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[O:1][O:2][C:3]([Cl:4])([Cl:5])[H:10].[O:6]=[N+:7]([O-:8])[O:9]>>[O:1]([O:2][C:3]([Cl:4])([Cl:5])[H:10])[O:9][N+:7](=[O:6])[O-:8]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1933121
+      ],
+      "record_sha256": "001b6f5e8109bc5c12b9751cd714a869db05fbfb68327281bcc897cd0a3ec6b3",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_002eeb24a880aaebf3b0",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]12[C:3]([H:21])=[C:4]([H:22])[C:5]([C:6]([H:23])([H:24])[H:25])([O:7][O:8][O:9][N+:10](=[O:11])[O-:12])[C:13]([H:26])([O:14][O:15]1)[C:16]2([O:17][H:28])[H:27])([H:18])([H:19])[H:20]"
+    ],
+    "products": [
+      "[C:1]([C:2]12[C:3]([H:21])=[C:4]([H:22])[C:5]([C:6]([H:23])([H:24])[H:25])([O:7][O:8][O:9])[C:13]([H:26])([O:14][O:15]1)[C:16]2([O:17][H:28])[H:27])([H:18])([H:19])[H:20]",
+      "[N+:10](=[O:11])[O-:12]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]12[C:3]([H:21])=[C:4]([H:22])[C:5]([C:6]([H:23])([H:24])[H:25])([O:7][O:8][O:9][N+:10](=[O:11])[O-:12])[C:13]([H:26])([O:14][O:15]1)[C:16]2([O:17][H:28])[H:27])([H:18])([H:19])[H:20]>>[C:1]([C:2]12[C:3]([H:21])=[C:4]([H:22])[C:5]([C:6]([H:23])([H:24])[H:25])([O:7][O:8][O:9])[C:13]([H:26])([O:14][O:15]1)[C:16]2([O:17][H:28])[H:27])([H:18])([H:19])[H:20].[N+:10](=[O:11])[O-:12]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1932838
+      ],
+      "record_sha256": "002eeb24a880aaebf3b063478d3f959dd5dc9aa2422e5dd5256ce091b9e81c0b",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_004740b6646c567eaa8a",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]1=[C:3]([H:14])[C:4]([H:15])=[C:5]([C:6]([H:16])([H:17])[H:18])[C:7]([C:8]([H:19])([H:20])[H:21])=[C:9]1[H:22])([H:11])([H:12])[H:13]",
+      "[O:10][H:23]"
+    ],
+    "products": [
+      "[C:1]([C:2]1[C:3]([H:14])=[C:4]([H:15])[C:5]([C:6]([H:16])([H:17])[H:18])=[C:7]([C:8]([H:19])([H:20])[H:21])[C:9]1([O:10][H:23])[H:22])([H:11])([H:12])[H:13]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]1=[C:3]([H:14])[C:4]([H:15])=[C:5]([C:6]([H:16])([H:17])[H:18])[C:7]([C:8]([H:19])([H:20])[H:21])=[C:9]1[H:22])([H:11])([H:12])[H:13].[O:10][H:23]>>[C:1]([C:2]1[C:3]([H:14])=[C:4]([H:15])[C:5]([C:6]([H:16])([H:17])[H:18])=[C:7]([C:8]([H:19])([H:20])[H:21])[C:9]1([O:10][H:23])[H:22])([H:11])([H:12])[H:13]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1931578
+      ],
+      "record_sha256": "004740b6646c567eaa8a16c398b9e246fd9d204bd34df7d837145c10af1a21f6",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_0048f5362916d0191406",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]([C:3]([H:17])([H:18])[H:19])([C:4]([C:5]([O:6][H:23])([H:21])[H:22])([O:7][O:8])[H:20])[H:16])([H:13])([H:14])[H:15]",
+      "[O:9][N+:10](=[O:11])[O-:12]"
+    ],
+    "products": [
+      "[C:1]([C:2]([C:3]([H:17])([H:18])[H:19])([C:4]([C:5]([O:6][H:23])([H:21])[H:22])([O:7][O:8][O:9][N+:10](=[O:11])[O-:12])[H:20])[H:16])([H:13])([H:14])[H:15]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]([C:3]([H:17])([H:18])[H:19])([C:4]([C:5]([O:6][H:23])([H:21])[H:22])([O:7][O:8])[H:20])[H:16])([H:13])([H:14])[H:15].[O:9][N+:10](=[O:11])[O-:12]>>[C:1]([C:2]([C:3]([H:17])([H:18])[H:19])([C:4]([C:5]([O:6][H:23])([H:21])[H:22])([O:7][O:8][O:9][N+:10](=[O:11])[O-:12])[H:20])[H:16])([H:13])([H:14])[H:15]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1931994
+      ],
+      "record_sha256": "0048f5362916d01914060ee5c2183b7813f07cdf2a5e9e236305aaa7a0b11717",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_005f28631cbb6879fd3c",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([O:2][C:3]([O:4])([H:11])[H:12])([H:8])([H:9])[H:10]",
+      "[O:5]([O:6][O:7])[H:13]"
+    ],
+    "products": [
+      "[C:1]([O:2][C:3]([O:4])([H:11])[H:12])([H:8])([H:9])[H:10]",
+      "[O:5][H:13]",
+      "[O:6][O:7]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([O:2][C:3]([O:4])([H:11])[H:12])([H:8])([H:9])[H:10].[O:5]([O:6][O:7])[H:13]>>[C:1]([O:2][C:3]([O:4])([H:11])[H:12])([H:8])([H:9])[H:10].[O:5][H:13].[O:6][O:7]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1933327
+      ],
+      "record_sha256": "005f28631cbb6879fd3cb8332653a226793649a784ea5eef1b67c9cf1dd2d7b5",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_007d55a1ba1f3bd380c8",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[O:1]([C:2]([C:3]([C:4]([H:14])([H:15])[H:16])([C:5]([C:6]([O:7][O:8][H:20])([H:18])[H:19])([O:9][H:21])[H:17])[O:10])([H:12])[H:13])[H:11]"
+    ],
+    "products": [
+      "[C:5]([C:6]([O:7][O:8][H:20])([H:18])[H:19])([O:9][H:21])[H:17]",
+      "[O:1]([C:2]([C:3]([C:4]([H:14])([H:15])[H:16])=[O:10])([H:12])[H:13])[H:11]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[O:1]([C:2]([C:3]([C:4]([H:14])([H:15])[H:16])([C:5]([C:6]([O:7][O:8][H:20])([H:18])[H:19])([O:9][H:21])[H:17])[O:10])([H:12])[H:13])[H:11]>>[C:5]([C:6]([O:7][O:8][H:20])([H:18])[H:19])([O:9][H:21])[H:17].[O:1]([C:2]([C:3]([C:4]([H:14])([H:15])[H:16])=[O:10])([H:12])[H:13])[H:11]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1930911
+      ],
+      "record_sha256": "007d55a1ba1f3bd380c8ab16c4858523c6408a71c9f7368bb4571ffd6d87dd44",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_00d363de1d1008cebf6c",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1](=[C:2]([C:3]([H:10])([H:11])[H:12])[C:4]([O:5][H:14])[H:13])([C:6]([O:7][O:8][H:17])([H:15])[H:16])[H:9]"
+    ],
+    "products": [
+      "[C:1]([C:2]([C:3]([H:10])([H:11])[H:12])=[C:4]([O:5][H:14])[H:13])([C:6]([O:7][O:8][H:17])([H:15])[H:16])[H:9]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1](=[C:2]([C:3]([H:10])([H:11])[H:12])[C:4]([O:5][H:14])[H:13])([C:6]([O:7][O:8][H:17])([H:15])[H:16])[H:9]>>[C:1]([C:2]([C:3]([H:10])([H:11])[H:12])=[C:4]([O:5][H:14])[H:13])([C:6]([O:7][O:8][H:17])([H:15])[H:16])[H:9]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1930692,
+        1930694
+      ],
+      "record_sha256": "00d363de1d1008cebf6cc499910859726aff0e09dbe20e23e85f63e3d023b365",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_00e3535cd6f2f055b29b",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2](=[C:3]([C:4]([H:13])[H:14])[H:12])[C:5]([O:6][H:17])([H:15])[H:16])([H:9])([H:10])[H:11]",
+      "[O:7][O:8]"
+    ],
+    "products": [
+      "[C:1]([C:2](=[C:3]([C:4]([O:7][O:8])([H:13])[H:14])[H:12])[C:5]([O:6][H:17])([H:15])[H:16])([H:9])([H:10])[H:11]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2](=[C:3]([C:4]([H:13])[H:14])[H:12])[C:5]([O:6][H:17])([H:15])[H:16])([H:9])([H:10])[H:11].[O:7][O:8]>>[C:1]([C:2](=[C:3]([C:4]([O:7][O:8])([H:13])[H:14])[H:12])[C:5]([O:6][H:17])([H:15])[H:16])([H:9])([H:10])[H:11]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1930556,
+        1930559,
+        1930566,
+        1933298,
+        1933320
+      ],
+      "record_sha256": "00e3535cd6f2f055b29b100c68d93de0ca006135fd2ab2fe23f143591d82d3e1",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_00fad00554913788efc7",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]([C:3](=[C:4]([O:5][H:16])[H:15])[H:14])([C:6]([O:7][O:8][H:19])([H:17])[H:18])[O:9][O:10])([H:11])([H:12])[H:13]"
+    ],
+    "products": [
+      "[C:1]([C:2]([C:3](=[C:4]([O:5][H:16])[H:15])[H:14])[C:6]([O:7][O:8][H:19])([H:17])[H:18])([H:11])([H:12])[H:13]",
+      "[O:9][O:10]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]([C:3](=[C:4]([O:5][H:16])[H:15])[H:14])([C:6]([O:7][O:8][H:19])([H:17])[H:18])[O:9][O:10])([H:11])([H:12])[H:13]>>[C:1]([C:2]([C:3](=[C:4]([O:5][H:16])[H:15])[H:14])[C:6]([O:7][O:8][H:19])([H:17])[H:18])([H:11])([H:12])[H:13].[O:9][O:10]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1930730
+      ],
+      "record_sha256": "00fad00554913788efc7557821fa217f8ce408f85e7446492076516d61336058",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  },
+  {
+    "id": "flower_radical_rs_0117762611e14e090643",
+    "name": "FlowER RS elementary radical step",
+    "starting_materials": [
+      "[C:1]([C:2]([C:3]([H:15])([H:16])[H:17])([O:4][C:5]([C:6]([H:19])([H:20])[H:21])([C:7]([O:8][O:9][O:10])([H:22])[H:23])[H:18])[H:14])([H:11])([H:12])[H:13]"
+    ],
+    "products": [
+      "[C:1]([C:2]([C:3]([H:15])([H:16])[H:17])([O:4][C:5]([C:6]([H:19])([H:20])[H:21])([C:7]([O:8])([H:22])[H:23])[H:18])[H:14])([H:11])([H:12])[H:13]",
+      "[O:9][O:10]"
+    ],
+    "tags": [
+      "radical",
+      "elementary_step",
+      "train_derived"
+    ],
+    "notes": "Development step case; no curated arrow annotations or full pathway. Not a held-out quality claim.",
+    "reference_reaction_smirks": "[C:1]([C:2]([C:3]([H:15])([H:16])[H:17])([O:4][C:5]([C:6]([H:19])([H:20])[H:21])([C:7]([O:8][O:9][O:10])([H:22])[H:23])[H:18])[H:14])([H:11])([H:12])[H:13]>>[C:1]([C:2]([C:3]([H:15])([H:16])[H:17])([O:4][C:5]([C:6]([H:19])([H:20])[H:21])([C:7]([O:8])([H:22])[H:23])[H:18])[H:14])([H:11])([H:12])[H:13].[O:9][O:10]",
+    "provenance": {
+      "source_dataset": "FlowER flower_new_dataset",
+      "source_split": "train",
+      "source_label": "RS",
+      "source_lines": [
+        1933380
+      ],
+      "record_sha256": "0117762611e14e0906436f0b5add9f4601383fa6c0c2506ef8b246484232dbab",
+      "source_url": "https://figshare.com/articles/dataset/28359407/3",
+      "source_sha256": "ff46fd15e9cc6576bb5da36970c3c6cbfdf359824147773d6084e354fa51ef95"
+    }
+  }
+]

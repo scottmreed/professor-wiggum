@@ -11,7 +11,7 @@ except Exception:  # pragma: no cover - defensive
     Chem = None  # type: ignore[assignment]
 
 
-MoveKind = Literal["lone_pair", "pi_bond", "sigma_bond"]
+MoveKind = Literal["lone_pair", "pi_bond", "sigma_bond", "radical", "electron_transfer"]
 
 
 class MechanismMoveFormatError(ValueError):
@@ -59,6 +59,10 @@ def split_cxsmiles_metadata(expression: str) -> Tuple[str, List[str]]:
 def _normalize_kind(raw: str) -> Optional[MoveKind]:
     text = str(raw or "").strip().lower().replace("-", "_")
     aliases = {
+        "rad": "radical",
+        "radical": "radical",
+        "et": "electron_transfer",
+        "electron_transfer": "electron_transfer",
         "lp": "lone_pair",
         "lone_pair": "lone_pair",
         "lonepair": "lone_pair",
@@ -70,16 +74,22 @@ def _normalize_kind(raw: str) -> Optional[MoveKind]:
         "sigmabond": "sigma_bond",
     }
     value = aliases.get(text)
-    if value in {"lone_pair", "pi_bond", "sigma_bond"}:
+    if value in {"lone_pair", "pi_bond", "sigma_bond", "radical", "electron_transfer"}:
         return value
     return None
 
 
 def serialize_move_token(move: MechanismMove) -> str:
-    if move.kind == "lone_pair":
-        return f"lp:{move.source_atom}>{move.target_atom}"
+    if move.kind in {"lone_pair", "radical", "electron_transfer"}:
+        prefix = {"lone_pair": "lp", "radical": "rad", "electron_transfer": "et"}[move.kind]
+        return f"{prefix}:{move.source_atom}>{move.target_atom}"
     prefix = "pi" if move.kind == "pi_bond" else "sigma"
-    return f"{prefix}:{move.bond_start}-{move.bond_end}>{move.target_atom}"
+    suffix = ":e1" if move.electrons == 1 else ""
+    # Bond order encodes the delivering endpoint in the compact notation.
+    start, end = move.bond_start, move.bond_end
+    if move.through_atom == start:
+        start, end = end, start
+    return f"{prefix}:{start}-{end}>{move.target_atom}{suffix}"
 
 
 def serialize_mechanism_moves(moves: Iterable[MechanismMove]) -> str:
@@ -101,15 +111,23 @@ def parse_move_token(token: str) -> MechanismMove:
         raise MechanismMoveFormatError(f"Entry '{text}' uses an unsupported move kind")
     if ">" not in rest:
         raise MechanismMoveFormatError(f"Entry '{text}' is missing the '>' separator")
+    electrons = 1 if kind in {"radical", "electron_transfer"} else 2
+    if ":e" in rest:
+        rest, count = rest.rsplit(":e", 1)
+        if count not in {"1", "2"}:
+            raise MechanismMoveFormatError("Electron count must be 1 or 2")
+        electrons = int(count)
+    if (kind == "lone_pair" and electrons != 2) or (kind in {"radical", "electron_transfer"} and electrons != 1):
+        raise MechanismMoveFormatError("Electron count does not match source kind")
     source_text, target_text = rest.split(">", 1)
     if not re.fullmatch(r"\d+", target_text.strip()):
         raise MechanismMoveFormatError(f"Entry '{text}' must reference a numeric target atom")
     target_atom = int(target_text.strip())
-    if kind == "lone_pair":
+    if kind in {"lone_pair", "radical", "electron_transfer"}:
         if not re.fullmatch(r"\d+", source_text.strip()):
             raise MechanismMoveFormatError(f"Entry '{text}' must reference a numeric source atom")
         source_atom = int(source_text.strip())
-        return MechanismMove(kind=kind, source_atom=source_atom, target_atom=target_atom)
+        return MechanismMove(kind=kind, source_atom=source_atom, target_atom=target_atom, electrons=electrons)
     source_text = source_text.strip()
     if "-" not in source_text:
         raise MechanismMoveFormatError(f"Entry '{text}' must reference a source bond as mapI-mapJ")
@@ -124,6 +142,7 @@ def parse_move_token(token: str) -> MechanismMove:
         bond_end=bond_end,
         through_atom=bond_end,
         target_atom=target_atom,
+        electrons=electrons,
     )
 
 
@@ -142,73 +161,65 @@ def parse_mechanism_moves(entries: str) -> List[MechanismMove]:
 
 
 def normalize_electron_pushes(pushes: Any) -> List[MechanismMove]:
-    moves: List[MechanismMove] = []
+    """Normalize explicit moves without losing invalid entries or electron counts."""
+    if pushes is None:
+        return []
     if not isinstance(pushes, list):
-        return moves
+        raise MechanismMoveFormatError("electron_pushes must be a list")
+    moves: List[MechanismMove] = []
     for item in pushes:
         if not isinstance(item, dict):
-            continue
+            raise MechanismMoveFormatError("Each electron push must be an object")
+        if "electrons" in item and type(item["electrons"]) is not int:
+            raise MechanismMoveFormatError("Electron count must be integer 1 or 2")
         notation = item.get("notation")
         if notation is not None:
-            try:
-                moves.append(parse_move_token(str(notation)))
-            except MechanismMoveFormatError:
-                continue
+            move = parse_move_token(str(notation))
+            fields = move.as_dict()
+            for key in ("kind", "source_kind", "source_atom", "target_atom", "electrons", "source_bond", "through_atom", "start_atom", "end_atom"):
+                if key not in item:
+                    continue
+                canonical = {"source_kind": "kind", "start_atom": "source_atom", "end_atom": "target_atom"}.get(key, key)
+                value = item[key]
+                if canonical == "kind":
+                    value = _normalize_kind(value)
+                elif canonical == "source_bond":
+                    value = [str(x) for x in value] if isinstance(value, list) else value
+                elif canonical != "electrons":
+                    value = str(value)
+                if value != fields.get(canonical):
+                    raise MechanismMoveFormatError(f"notation contradicts {key}")
+            moves.append(move)
             continue
-        kind = _normalize_kind(str(item.get("kind") or item.get("source_kind") or ""))
-        if kind == "lone_pair":
-            source_atom = item.get("source_atom", item.get("start_atom"))
-            target_atom = item.get("target_atom", item.get("end_atom"))
-            if source_atom is None or target_atom is None:
-                continue
-            try:
-                moves.append(
-                    MechanismMove(
-                        kind="lone_pair",
-                        source_atom=int(str(source_atom)),
-                        target_atom=int(str(target_atom)),
-                    )
-                )
-            except ValueError:
-                continue
-            continue
-        if kind in {"pi_bond", "sigma_bond"}:
-            source_bond = item.get("source_bond")
-            through_atom = item.get("through_atom")
-            target_atom = item.get("target_atom", item.get("end_atom"))
-            if not isinstance(source_bond, list) or len(source_bond) != 2 or target_atom is None:
-                continue
-            # Auto-fill through_atom from source_bond[1] when absent (convention:
-            # the second bond atom delivers the electrons, matching parse_move_token).
-            if through_atom is None:
-                through_atom = source_bond[1]
-            try:
-                moves.append(
-                    MechanismMove(
-                        kind=kind,
-                        bond_start=int(str(source_bond[0])),
-                        bond_end=int(str(source_bond[1])),
-                        through_atom=int(str(through_atom)),
-                        target_atom=int(str(target_atom)),
-                    )
-                )
-            except ValueError:
-                continue
-            continue
-        start_atom = item.get("start_atom")
-        end_atom = item.get("end_atom")
-        if start_atom is None or end_atom is None:
-            continue
+        raw_kind = item.get("kind", item.get("source_kind"))
+        kind = _normalize_kind(raw_kind) if raw_kind is not None else "lone_pair"
+        if kind is None:
+            raise MechanismMoveFormatError("Unsupported electron move kind")
+        electrons = item.get("electrons", 1 if kind in {"radical", "electron_transfer"} else 2)
+        if type(electrons) is not int or electrons not in {1, 2}:
+            raise MechanismMoveFormatError("Electron count must be integer 1 or 2")
+        if (kind == "lone_pair" and electrons != 2) or (kind in {"radical", "electron_transfer"} and electrons != 1):
+            raise MechanismMoveFormatError("Electron count does not match source kind")
         try:
-            moves.append(
-                MechanismMove(
-                    kind="lone_pair",
-                    source_atom=int(str(start_atom)),
-                    target_atom=int(str(end_atom)),
-                )
-            )
-        except ValueError:
-            continue
+            target = int(str(item.get("target_atom", item.get("end_atom"))))
+            if kind in {"lone_pair", "radical", "electron_transfer"}:
+                source = int(str(item.get("source_atom", item.get("start_atom"))))
+                move = MechanismMove(kind=kind, source_atom=source, target_atom=target, electrons=electrons)
+            else:
+                bond = item.get("source_bond")
+                if not isinstance(bond, list) or len(bond) != 2:
+                    raise ValueError("source_bond must have two atom maps")
+                start, end = (int(str(x)) for x in bond)
+                through = int(str(item.get("through_atom", end)))
+                if through not in {start, end}:
+                    raise ValueError("through_atom must be a source bond endpoint")
+                # Canonical ordering makes notation and structured form roundtrip.
+                if through == start:
+                    start, end = end, start
+                move = MechanismMove(kind=kind, bond_start=start, bond_end=end, through_atom=through, target_atom=target, electrons=electrons)
+        except (TypeError, ValueError) as exc:
+            raise MechanismMoveFormatError(f"Invalid electron push: {exc}") from exc
+        moves.append(move)
     return moves
 
 
@@ -303,17 +314,19 @@ def reaction_bond_deltas(reaction_smirks: str) -> List[Dict[str, Any]]:
 def implied_bond_deltas(moves: Iterable[MechanismMove]) -> List[Dict[str, Any]]:
     totals: Dict[Tuple[int, int], float] = {}
     for move in moves:
-        if move.kind == "lone_pair":
+        if move.kind == "electron_transfer":
+            continue
+        if move.kind in {"lone_pair", "radical"}:
             assert move.source_atom is not None
             pair = tuple(sorted((move.source_atom, move.target_atom)))
-            totals[pair] = totals.get(pair, 0.0) + 1.0
+            totals[pair] = totals.get(pair, 0.0) + move.electrons / 2
             continue
         assert move.bond_start is not None and move.bond_end is not None and move.through_atom is not None
         broken = tuple(sorted((move.bond_start, move.bond_end)))
-        totals[broken] = totals.get(broken, 0.0) - 1.0
+        totals[broken] = totals.get(broken, 0.0) - move.electrons / 2
         if move.through_atom != move.target_atom:
             formed = tuple(sorted((move.through_atom, move.target_atom)))
-            totals[formed] = totals.get(formed, 0.0) + 1.0
+            totals[formed] = totals.get(formed, 0.0) + move.electrons / 2
     return [{"pair": pair, "delta": delta} for pair, delta in sorted(totals.items()) if abs(delta) > 1e-6]
 
 
@@ -329,18 +342,22 @@ def synthesize_dbe_entries(electron_pushes: Any) -> Optional[str]:
     if not moves:
         return None
     pair_totals: Dict[Tuple[int, int], int] = {}
+    def add(a: int, b: int, n: int) -> None:
+        pair = tuple(sorted((a, b)))
+        pair_totals[pair] = pair_totals.get(pair, 0) + n
     for move in moves:
-        if move.kind == "lone_pair":
+        n = move.electrons
+        if move.kind in {"lone_pair", "radical", "electron_transfer"}:
             assert move.source_atom is not None
-            pair_totals[(move.source_atom, move.target_atom)] = pair_totals.get((move.source_atom, move.target_atom), 0) + 2
-            pair_totals[(move.source_atom, move.source_atom)] = pair_totals.get((move.source_atom, move.source_atom), 0) - 2
+            add(move.source_atom, move.source_atom, -n)
+            if move.kind == "electron_transfer":
+                add(move.target_atom, move.target_atom, n)
+            else:
+                add(move.source_atom, move.target_atom, n)
             continue
         assert move.bond_start is not None and move.bond_end is not None and move.through_atom is not None
-        pair_totals[(move.bond_start, move.bond_end)] = pair_totals.get((move.bond_start, move.bond_end), 0) - 2
-        if move.through_atom == move.target_atom:
-            pair_totals[(move.target_atom, move.target_atom)] = pair_totals.get((move.target_atom, move.target_atom), 0) + 2
-        else:
-            pair_totals[(move.through_atom, move.target_atom)] = pair_totals.get((move.through_atom, move.target_atom), 0) + 2
+        add(move.bond_start, move.bond_end, -n)
+        add(move.through_atom, move.target_atom, n)
     rows = [(pair, delta) for pair, delta in pair_totals.items() if delta != 0]
     if not rows:
         return None
@@ -352,7 +369,10 @@ def repair_candidate_reaction_smirks(*, reaction_smirks: Any, electron_pushes: A
     text = str(reaction_smirks or "").strip()
     if not text:
         return None, "missing_reaction_smirks"
-    moves = normalize_electron_pushes(electron_pushes)
+    try:
+        moves = normalize_electron_pushes(electron_pushes)
+    except MechanismMoveFormatError:
+        return None, "invalid_electron_pushes"
     if not moves:
         return None, "missing_electron_pushes"
     match = re.search(r"\|mech:([^|]*)\|", text, flags=re.IGNORECASE)

@@ -200,3 +200,10 @@ local_contributions/pr_drafts/
 clawdiators-test/easy/test_ground_truth.json
 clawdiators-test/**/__pycache__/
 docs/PRD_jev_atom_identity_mechanistic.md
+
+# Small train-only radical development sample; bulk extraction stays local.
+!training_data/radical_development/
+!training_data/radical_development/*.json
+!training_data/radical_development/*.md
+!docs/superpowers/plans/
+!docs/superpowers/plans/2026-11-07-radical-support.md

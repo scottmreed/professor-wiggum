@@ -305,6 +305,26 @@ def _bond_electron_valid(step: QualityStep) -> Tuple[bool, Optional[str]]:
             pushes = [move.as_dict() for move in normalize_electron_pushes(raw)]
         if not pushes:
             return False, "no valid explicit electron pushes"
+        from mechanistic_agent.core.radical_validation import (
+            requires_radical_validation, validate_radical_moves, radical_states_match,
+        )
+        from mechanistic_agent.core.mechanism_moves import serialize_move_token
+        parsed = normalize_electron_pushes(pushes)
+        # Historical closed-shell reference SMIRKS sometimes omit bracket H,
+        # which RDKit reads as artificial radicals. Use the actual states to
+        # select strict radical checking; any explicit fishhook still selects it.
+        state_reaction = ".".join(step.current_state) + ">>" + ".".join(step.resulting_state)
+        if requires_radical_validation(state_reaction, parsed):
+            _core, metadata_moves, metadata = extract_mechanism_moves(smirks)
+            if metadata.get("mech") is not None and (
+                metadata.get("error") or sorted(map(serialize_move_token, parsed)) !=
+                sorted(map(serialize_move_token, metadata_moves))
+            ):
+                return False, "radical move metadata disagrees with electron pushes"
+            if not radical_states_match(smirks, step.current_state, step.resulting_state):
+                return False, "radical mapped reaction disagrees with runtime states"
+            result = validate_radical_moves(smirks, parsed)
+            return result["valid"], result.get("error")
         _core, _deltas, details = _extract_dbe_or_infer(smirks, electron_pushes=pushes)
     except Exception as exc:  # noqa: BLE001 - a step the tools cannot read is invalid
         return False, f"unreadable step: {exc}"
