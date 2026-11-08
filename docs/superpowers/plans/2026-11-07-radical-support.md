@@ -16,4 +16,4 @@ Approved by the user on 2026-11-07 for local FlowER testing and eventual ChemIll
 
 Acceptance: one-electron counts survive round trips; incorrect arrows fail even when totals cancel; ordinary pair reactions remain compatible; radical benchmark runs offline; training extraction never reads holdout; ChemIllusion can preserve and display new notation. Deployment and runtime pin promotion follow a later evidence-backed release.
 
-Execution evidence and remaining release gates: `docs/benchmarks/2026-11-radical-support.md`. Verification includes recording the failed prompt evidence gate, not declaring merge readiness.
+Execution evidence and remaining release gates: `docs/benchmarks/2026-11-radical-support.md`. Release gates run 2026-11-07: review fixes, approved prompt evidence and the paired medium eval are recorded there; human core review remains.

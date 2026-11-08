@@ -24,11 +24,60 @@ The chain preserves persistent atom identity. `git diff --check` passed.
 
 This is authored deterministic contract evidence, not evidence of LLM
 prediction quality. No benchmark score or prompt approval was fabricated.
-`validate_prompt_trace_evidence.py --call propose_mechanism_step --call
-baseline_mechanism` fails as expected: no approved traces match the new prompt
-bundles (baseline has none). Before merge, the existing change-evidence policy
-requires approved linked traces, medium-tier improvement, and human core review
-of deterministic validators. No tier definitions or evidence gates were relaxed.
+
+## Release gates (2026-11-07)
+
+**Code review.** Two fresh-context reviews found regressions in 8e1a536 that
+broke the "pair arrows unchanged" invariant. They are fixed test-first in
+7320eee and ba37d49 (`tests/fast/test_radical_regressions.py`):
+
+- H-less SMIRKS atoms (`[C:1]`) were read as radicals and sent polar steps to
+  strict radical validation. So did an untouched radical spectator (TEMPO, O2).
+  The radical path now runs only for an explicit one-electron move or a radical
+  species that the step changes.
+- A malformed pair push raised inside the candidate model and dropped every
+  candidate in the response. Pair pushes are skipped as on b0e6ee8 again. A bad
+  fishhook rejects only its own candidate.
+- Bond sources aimed at their own other endpoint, reversed `et` pairs and empty
+  moves cancelled out and passed. They now fail.
+- Radical multiplicity checks needed the whole state and lost duplicates
+  (`[Cl].[Cl]` deduped). The SMIRKS sides are now sub-multisets with unchanged
+  spectators, and radical candidates are not deduped.
+- Metal and H atoms no longer count as radicals in scoring. Push/metadata
+  agreement ignores bond order. The extraction command reproduces the
+  committed `cases.json` byte for byte.
+
+Fast suite at ba37d49: **1,395 passed, 22 skipped** (b0e6ee8 on the same
+machine runs the pre-existing suite; the delta is the new radical tests).
+
+**Medium-tier paired eval** (not published). Medium set `003aae89…` (not
+holdout), the 10 fixed cases used for PR #101, `threaded_unified`,
+`anthropic/claude-opus-5.5`, thinking low, products given, max-steps 14,
+keyless headless responder (`claude -p --effort low`,
+`responder_saw_ground_truth=false`, `official_holdout_exposed_to_agent=false`).
+
+| Arm | Eval run | quality_v2 | Pass | LLM calls / case |
+|---|---|---|---|---|
+| before b0e6ee8 | `43551fcfc1f84a22bf6c160bda5344e2` | 995.4 | 9/10 | 3.7 |
+| after 7320eee | `0a547647c3de46de9860a935a350caeb` | 1000.0 | 10/10 | 3.8 |
+
+The +4.6 comes from one case: flower_102973 took a 5-step route on the before
+arm (954.2) and 3 steps after (1000.0). The other nine score 1000 on both arms.
+These polar cases never enter the radical path, so read this as **no regression,
+with the gain inside proposal variance**, not as a radical-driven improvement.
+ba37d49 changes only the radical path and was not re-run. The medium tier
+carries no radical cases; radical capability is covered by the deterministic
+contract tests above, not by a live score.
+
+**Prompt evidence.** Ten approved `propose_mechanism_step` traces (one per
+case, eval run `0a547647…`) are exported under
+`traces/evidence/propose_mechanism_step/9ae9ac5b98b8…/`;
+`validate_prompt_trace_evidence.py --base-ref origin/main` passes.
+`baseline_mechanism` is not an evidence-gated call (`gated_call_names`).
+
+**Still required:** human core review of the validator changes (CODEOWNERS).
+The ChemIllusion runtime pin moves through the `chemillusion-runtime-bump`
+workflow after merge (this is a harness-engine change), not by hand.
 
 ChemIllusion integration is prepared separately in
 `/private/tmp/chemillusion-radicals`, branch `codex/radical-mechanism-consumer`:
