@@ -1,0 +1,196 @@
+{
+  "approval_label": "radical_support_medium10",
+  "approval_notes": "Radical-support branch 8e1a536, paired medium10 eval 0a547647c3de46de9860a935a350caeb (radical_bench_medium10_after_7320eee), case flower_103167: run completed; threaded_unified, anthropic/claude-opus-5.5 low via headless claude -p bridge, responder_saw_ground_truth=false. Approved by Claude Code on the maintainer's instruction to wrap up the radical-support release gates.",
+  "approved_at": 1794102817.3397582,
+  "approved_bool": true,
+  "approved_by": "scottmreed",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1794102817.3670459,
+  "exported_by": "scottmreed",
+  "model_version": {
+    "created_at": 1793926143.6998851,
+    "family": "agent",
+    "id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+    "model_version_id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+    "pricing_sha256": "8122e31df20141a24e5719d58fbefc36336975b0487b6c55a71b4087dc01faa0",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "radical-support paired medium eval: headless claude -p --effort low (scripts/bridge_headless_responder.py isolation flags, empty tmp cwd); sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "headless_claude_cli",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "ae0b4cd172ab9c51da437ab7fe11a8ee123f0e27e7fff911bc8b32604f12585d",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "e84dd09d70b5493599de2f69674bb442",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "9ae9ac5b98b80e2e2278996c647f77364ef44e9a346d92d858e98715e8db9a5e",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "e84dd09d70b5493599de2f69674bb442",
+  "responder_saw_ground_truth": false,
+  "run_id": "879d37d639394166815415569035e757",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 3,
+    "captured_at": 1794102678.7170439,
+    "cost": null,
+    "duration_human": "8.2s",
+    "duration_seconds": 8.227385759353638,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:18>10",
+              "source_atom": "18",
+              "target_atom": "10"
+            }
+          ],
+          "inferred_dbe": "18-10:+2;18-18:-2",
+          "intermediate_smiles": "O=C(Nc1ccccc1)Nc1ccc(F)cc1O",
+          "intermediate_type": "neutral_product",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": "Six-membered intramolecular proton transfer completes the phenol relay.",
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Proton transfer: the phenoxide O18 lone pair takes an H from N10+. The N10-H electrons stay on N10, which becomes the neutral urea NH. O18 becomes phenol OH. Net charge is zero.",
+          "reaction_smirks": "[O:1]=[C:2]([NH:3][c:4]1[cH:5][cH:6][cH:7][cH:8][cH:9]1)[NH2+:10][c:11]1[cH:12][cH:13][c:14]([F:15])[cH:16][c:17]1[O-:18]>>[O:1]=[C:2]([NH:3][c:4]1[cH:5][cH:6][cH:7][cH:8][cH:9]1)[NH:10][c:11]1[cH:12][cH:13][c:14]([F:15])[cH:16][c:17]1[OH:18] |mech:v1;lp:18>10|",
+          "resulting_state": [
+            "O=C(Nc1ccccc1)Nc1ccc(F)cc1O"
+          ],
+          "template_alignment": null,
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "O=C(Nc1ccccc1)[NH2+]c1ccc(F)cc1[O-]"
+      ],
+      "executable_candidate_count": 1,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 1,
+      "llm_reasoning": "The phenoxide O18 sits ortho to the ammonium N10. It takes a proton from N10+ through a favourable six-membered arrangement (O18-C17-C11-N10-H). This neutralizes both charges and gives the target urea with the phenol restored. An intermolecular transfer through another molecule is an alternative, but the intramolecular route is geometrically favourable here.",
+      "message": "Proposed 1 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "O=C(Nc1ccccc1)Nc1ccc(F)cc1O"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"O=C(Nc1ccccc1)Nc1ccc(F)cc1O\",\n      \"reaction_description\": \"Proton transfer: the phenoxide O18 lone pair takes an H from N10+. The N10-H electrons stay on N10, which becomes the neutral urea NH. O18 becomes phenol OH. Net charge is zero.\",\n      \"reaction_smirks\": \"[O:1]=[C:2]([NH:3][c:4]1[cH:5][cH:6][cH:7][cH:8][cH:9]1)[NH2+:10][c:11]1[cH:12][cH:13][c:14]([F:15])[cH:16][c:17]1[O-:18]>>[O:1]=[C:2]([NH:3][c:4]1[cH:5][cH:6][cH:7][cH:8][cH:9]1)[NH:10][c:11]1[cH:12][cH:13][c:14]([F:15])[cH:16][c:17]1[OH:18] |mech:v1;lp:18>10|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"10\",\n          \"electrons\": 2,\n          \"source_atom\": \"18\",\n          \"notation\": \"lp:18>10\"\n        }\n      ],\n      \"resulting_state\": [\n        \"O=C(Nc1ccccc1)Nc1ccc(F)cc1O\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": null,\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"neutral_product\",\n      \"note\": \"Six-membered intramolecular proton transfer completes the phenol relay.\"\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"The phenoxide O18 sits ortho to the ammonium N10. It takes a proton from N10+ through a favourable six-membered arrangement (O18-C17-C11-N10-H). This neutralizes both charges and gives the target urea with the phenol restored. An intermolecular transfer through another molecule is an alternative, but the intramolecular route is geometrically favourable here.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "The phenoxide O18 sits ortho to the ammonium N10. It takes a proton from N10+ through a favourable six-membered arrangement (O18-C17-C11-N10-H). This neutralizes both charges and gives the target urea with the phenol restored. An intermolecular transfer through another molecule is an alternative, but the intramolecular route is geometrically favourable here.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:18>10",
+                "source_atom": "18",
+                "target_atom": "10"
+              }
+            ],
+            "inferred_dbe": "18-10:+2;18-18:-2",
+            "intermediate_smiles": "O=C(Nc1ccccc1)Nc1ccc(F)cc1O",
+            "intermediate_type": "neutral_product",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": "Six-membered intramolecular proton transfer completes the phenol relay.",
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Proton transfer: the phenoxide O18 lone pair takes an H from N10+. The N10-H electrons stay on N10, which becomes the neutral urea NH. O18 becomes phenol OH. Net charge is zero.",
+            "reaction_smirks": "[O:1]=[C:2]([NH:3][c:4]1[cH:5][cH:6][cH:7][cH:8][cH:9]1)[NH2+:10][c:11]1[cH:12][cH:13][c:14]([F:15])[cH:16][c:17]1[O-:18]>>[O:1]=[C:2]([NH:3][c:4]1[cH:5][cH:6][cH:7][cH:8][cH:9]1)[NH:10][c:11]1[cH:12][cH:13][c:14]([F:15])[cH:16][c:17]1[OH:18] |mech:v1;lp:18>10|",
+            "resulting_state": [
+              "O=C(Nc1ccccc1)Nc1ccc(F)cc1O"
+            ],
+            "template_alignment": null,
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "thread": {
+        "message_count": 8,
+        "mode": "delta",
+        "prompt_chars": 43807,
+        "step": 3,
+        "thread_chars": 33517
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "canonical": "O=C(Nc1ccccc1)Nc1ccc(F)cc1O",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "cleaned": "O=C(Nc1ccccc1)Nc1ccc(F)cc1O",
+          "note": "Six-membered intramolecular proton transfer completes the phenol relay.",
+          "raw": "O=C(Nc1ccccc1)Nc1ccc(F)cc1O",
+          "raw_cleaned": "O=C(Nc1ccccc1)Nc1ccc(F)cc1O",
+          "rdkit_cli_mode_mismatch": {
+            "expected": "smiles",
+            "failed_checks": [
+              "state_progress"
+            ],
+            "got": "state_progress"
+          },
+          "source": "model_json",
+          "type": "neutral_product",
+          "validated": true,
+          "validated_from": "O=C(Nc1ccccc1)Nc1ccc(F)cc1O"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "837544aea43344f6ae69129f54970123"
+}

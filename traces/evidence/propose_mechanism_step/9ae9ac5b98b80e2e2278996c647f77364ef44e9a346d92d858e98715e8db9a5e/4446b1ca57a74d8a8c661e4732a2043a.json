@@ -1,0 +1,198 @@
+{
+  "approval_label": "radical_support_medium10",
+  "approval_notes": "Radical-support branch 8e1a536, paired medium10 eval 0a547647c3de46de9860a935a350caeb (radical_bench_medium10_after_7320eee), case flower_254799: run completed; threaded_unified, anthropic/claude-opus-5.5 low via headless claude -p bridge, responder_saw_ground_truth=false. Approved by Claude Code on the maintainer's instruction to wrap up the radical-support release gates.",
+  "approved_at": 1794102817.314888,
+  "approved_bool": true,
+  "approved_by": "scottmreed",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1794102817.348236,
+  "exported_by": "scottmreed",
+  "model_version": {
+    "created_at": 1793926143.6998851,
+    "family": "agent",
+    "id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+    "model_version_id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+    "pricing_sha256": "8122e31df20141a24e5719d58fbefc36336975b0487b6c55a71b4087dc01faa0",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "radical-support paired medium eval: headless claude -p --effort low (scripts/bridge_headless_responder.py isolation flags, empty tmp cwd); sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "headless_claude_cli",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "ae0b4cd172ab9c51da437ab7fe11a8ee123f0e27e7fff911bc8b32604f12585d",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "e84dd09d70b5493599de2f69674bb442",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "9ae9ac5b98b80e2e2278996c647f77364ef44e9a346d92d858e98715e8db9a5e",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "e84dd09d70b5493599de2f69674bb442",
+  "responder_saw_ground_truth": false,
+  "run_id": "ea347e190fa24180ab714f88d480c120",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 3,
+    "captured_at": 1794102214.269921,
+    "cost": null,
+    "duration_human": "8.7s",
+    "duration_seconds": 8.726754188537598,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:10>4",
+              "source_atom": "10",
+              "target_atom": "4"
+            }
+          ],
+          "inferred_dbe": "10-4:+2;10-10:-2",
+          "intermediate_smiles": "O=C(F)OCC(F)(F)F",
+          "intermediate_type": "neutral_product",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": null,
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Intermolecular proton transfer. The F10 lone pair takes the H on O4+. The O4\u2013H bond electrons stay on O4, which becomes the neutral ester oxygen. Bond broken: O4\u2013H. Bond formed: F10\u2013H. Charges cancel.",
+          "reaction_smirks": "[O:1]=[C:2]([F:3])[OH+:4][CH2:5][C:6]([F:7])([F:8])[F:9].[F-:10]>>[O:1]=[C:2]([F:3])[O:4][CH2:5][C:6]([F:7])([F:8])[F:9].[FH:10] |mech:v1;lp:10>4|",
+          "resulting_state": [
+            "O=C(F)OCC(F)(F)F",
+            "F"
+          ],
+          "template_alignment": "aligned",
+          "template_alignment_reason": "This is the final deprotonation that completes the acyl substitution."
+        }
+      ],
+      "current_state": [
+        "O=C(F)[OH+]CC(F)(F)F",
+        "[F-]"
+      ],
+      "executable_candidate_count": 1,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 1,
+      "llm_reasoning": "Only the final proton transfer is left. Fluoride F10 takes the proton from the oxonium O4\u2013H, which gives the neutral fluoroformate FC(=O)OCH2CF3 and HF. After this step both target products are present.",
+      "message": "Proposed 1 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "O=C(F)OCC(F)(F)F"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"O=C(F)OCC(F)(F)F\",\n      \"reaction_description\": \"Intermolecular proton transfer. The F10 lone pair takes the H on O4+. The O4\\u2013H bond electrons stay on O4, which becomes the neutral ester oxygen. Bond broken: O4\\u2013H. Bond formed: F10\\u2013H. Charges cancel.\",\n      \"reaction_smirks\": \"[O:1]=[C:2]([F:3])[OH+:4][CH2:5][C:6]([F:7])([F:8])[F:9].[F-:10]>>[O:1]=[C:2]([F:3])[O:4][CH2:5][C:6]([F:7])([F:8])[F:9].[FH:10] |mech:v1;lp:10>4|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"4\",\n          \"electrons\": 2,\n          \"source_atom\": \"10\",\n          \"notation\": \"lp:10>4\"\n        }\n      ],\n      \"resulting_state\": [\n        \"O=C(F)OCC(F)(F)F\",\n        \"F\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": \"aligned\",\n      \"template_alignment_reason\": \"This is the final deprotonation that completes the acyl substitution.\",\n      \"intermediate_type\": \"neutral_product\",\n      \"note\": null\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"Only the final proton transfer is left. Fluoride F10 takes the proton from the oxonium O4\\u2013H, which gives the neutral fluoroformate FC(=O)OCH2CF3 and HF. After this step both target products are present.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "Only the final proton transfer is left. Fluoride F10 takes the proton from the oxonium O4\u2013H, which gives the neutral fluoroformate FC(=O)OCH2CF3 and HF. After this step both target products are present.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:10>4",
+                "source_atom": "10",
+                "target_atom": "4"
+              }
+            ],
+            "inferred_dbe": "10-4:+2;10-10:-2",
+            "intermediate_smiles": "O=C(F)OCC(F)(F)F",
+            "intermediate_type": "neutral_product",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": null,
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Intermolecular proton transfer. The F10 lone pair takes the H on O4+. The O4\u2013H bond electrons stay on O4, which becomes the neutral ester oxygen. Bond broken: O4\u2013H. Bond formed: F10\u2013H. Charges cancel.",
+            "reaction_smirks": "[O:1]=[C:2]([F:3])[OH+:4][CH2:5][C:6]([F:7])([F:8])[F:9].[F-:10]>>[O:1]=[C:2]([F:3])[O:4][CH2:5][C:6]([F:7])([F:8])[F:9].[FH:10] |mech:v1;lp:10>4|",
+            "resulting_state": [
+              "O=C(F)OCC(F)(F)F",
+              "F"
+            ],
+            "template_alignment": "aligned",
+            "template_alignment_reason": "This is the final deprotonation that completes the acyl substitution."
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "thread": {
+        "message_count": 8,
+        "mode": "delta",
+        "prompt_chars": 40284,
+        "step": 3,
+        "thread_chars": 29747
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "canonical": "O=C(F)OCC(F)(F)F",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "cleaned": "O=C(F)OCC(F)(F)F",
+          "raw": "O=C(F)OCC(F)(F)F",
+          "raw_cleaned": "O=C(F)OCC(F)(F)F",
+          "rdkit_cli_mode_mismatch": {
+            "expected": "smiles",
+            "failed_checks": [
+              "state_progress"
+            ],
+            "got": "state_progress"
+          },
+          "source": "model_json",
+          "type": "neutral_product",
+          "validated": true,
+          "validated_from": "O=C(F)OCC(F)(F)F"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "4446b1ca57a74d8a8c661e4732a2043a"
+}

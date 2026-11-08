@@ -1,0 +1,198 @@
+{
+  "approval_label": "radical_support_medium10",
+  "approval_notes": "Radical-support branch 8e1a536, paired medium10 eval 0a547647c3de46de9860a935a350caeb (radical_bench_medium10_after_7320eee), case flower_122060: run completed; threaded_unified, anthropic/claude-opus-5.5 low via headless claude -p bridge, responder_saw_ground_truth=false. Approved by Claude Code on the maintainer's instruction to wrap up the radical-support release gates.",
+  "approved_at": 1794102817.332302,
+  "approved_bool": true,
+  "approved_by": "scottmreed",
+  "call_name": "propose_mechanism_step",
+  "exported_at": 1794102817.359745,
+  "exported_by": "scottmreed",
+  "model_version": {
+    "created_at": 1793926143.6998851,
+    "family": "agent",
+    "id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+    "model_version_id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+    "pricing_sha256": "8122e31df20141a24e5719d58fbefc36336975b0487b6c55a71b4087dc01faa0",
+    "provider": "agent_bridge",
+    "reasoning_level": null,
+    "resolved_model_key": "agent-bridge"
+  },
+  "model_version_id": "299595678e2c4bcd4b859e3dd53f2cc076b5a7db70b0d61c43576022e6e89561",
+  "origin": {
+    "bridge_model": "agent-bridge",
+    "budget_observability": "opaque",
+    "declared_underlying_model": "claude-opus-5-5",
+    "notes": "radical-support paired medium eval: headless claude -p --effort low (scripts/bridge_headless_responder.py isolation flags, empty tmp cwd); sees only model_input",
+    "responder": "agent-bridge",
+    "responder_kind": "headless_claude_cli",
+    "responder_saw_ground_truth": false
+  },
+  "prompt_version": {
+    "asset_scope": "exact_model",
+    "call_base_sha256": "ae0b4cd172ab9c51da437ab7fe11a8ee123f0e27e7fff911bc8b32604f12585d",
+    "call_name": "propose_mechanism_step",
+    "few_shot_sha256": "4719b4f1e2ded3e790127181b32e248561e7c3fe579a0c726a63c9446530de96",
+    "id": "e84dd09d70b5493599de2f69674bb442",
+    "model_name": "anthropic/claude-opus-5.5",
+    "prompt_bundle_sha256": "9ae9ac5b98b80e2e2278996c647f77364ef44e9a346d92d858e98715e8db9a5e",
+    "resolved_call_base_path": "skills/mechanistic/propose_mechanism_step/SKILL.md",
+    "resolved_few_shot_path": "skills/mechanistic/propose_mechanism_step/models/anthropic__claude-opus-5.5/few_shot.jsonl",
+    "resolved_shared_base_path": "skills/mechanistic/base_system/SKILL.md",
+    "shared_base_sha256": "731d6dde2087d17438ffbea4a7808e36ac9593ce68990eb78c53bee664c86565",
+    "step_name": "intermediates"
+  },
+  "prompt_version_id": "e84dd09d70b5493599de2f69674bb442",
+  "responder_saw_ground_truth": false,
+  "run_id": "4ad5656a38fb48a39ec8cc3546510dc7",
+  "source": "run",
+  "step_name": "mechanism_step_proposal",
+  "trace": {
+    "attempt": 2,
+    "captured_at": 1794102487.1577,
+    "cost": null,
+    "duration_human": "12.1s",
+    "duration_seconds": 12.080611944198608,
+    "output": {
+      "candidates": [
+        {
+          "confidence": "high",
+          "dbe_repair": "synthesized_dbe_from_electron_pushes",
+          "electron_pushes": [
+            {
+              "electrons": 2,
+              "kind": "lone_pair",
+              "notation": "lp:7>10",
+              "source_atom": "7",
+              "target_atom": "10"
+            }
+          ],
+          "inferred_dbe": "7-7:-2;7-10:+2",
+          "intermediate_smiles": "COc1ccc(NC(=S)N2CCC(O)C2)cn1",
+          "intermediate_type": "neutral_product",
+          "mechanism_move_repair": "normalized_mech_entries",
+          "note": "No external shuttle is present, so the transfer is drawn as a formal 1,3-shift. An amine-mediated relay would give the same product.",
+          "rank": 1,
+          "rdkit_cli_commands": [],
+          "reaction_description": "Proton transfer: the N7- lone pair takes the H on N10+. The N10-H bond electrons stay on N10, which becomes the neutral tertiary thiourea nitrogen. Bonds broken: N10-H. Bonds formed: N7-H. Net charge 0, and the atoms balance.",
+          "reaction_smirks": "[CH3:1][O:2][c:3]1[cH:4][cH:5][c:6]([N-:7][C:8](=[S:9])[NH+:10]2[CH2:11][CH2:12][CH:13]([OH:14])[CH2:15]2)[cH:16][n:17]1>>[CH3:1][O:2][c:3]1[cH:4][cH:5][c:6]([NH:7][C:8](=[S:9])[N:10]2[CH2:11][CH2:12][CH:13]([OH:14])[CH2:15]2)[cH:16][n:17]1 |mech:v1;lp:7>10|",
+          "resulting_state": [
+            "COc1ccc(NC(=S)N2CCC(O)C2)cn1"
+          ],
+          "template_alignment": null,
+          "template_alignment_reason": null
+        }
+      ],
+      "current_state": [
+        "COc1ccc([N-]C(=S)[NH+]2CCC(O)C2)cn1"
+      ],
+      "executable_candidate_count": 1,
+      "final_products_present": false,
+      "has_executable_candidates": true,
+      "intermediate_count": 1,
+      "llm_reasoning": "The zwitterionic adduct needs one proton transfer to give the neutral thiourea. The proton moves from the ammonium N10-H+ to the anionic aryl amide N7-. No external acid or base is in the current state; the adduct is the only species. A direct N10-to-N7 transfer passes through a four-membered N-C-N-H transition state, but with no shuttle available it is acceptable and gives the target product directly. In practice, excess amine or a second adduct molecule can relay the proton intermolecularly. The same N-to-N bookkeeping applies either way.",
+      "message": "Proposed 1 validated intermediate(s) for next step",
+      "model_used": "agent-bridge",
+      "proposed_intermediates": [
+        "COc1ccc(NC(=S)N2CCC(O)C2)cn1"
+      ],
+      "raw_response": "{\n  \"classification\": \"intermediate_step\",\n  \"candidates\": [\n    {\n      \"rank\": 1,\n      \"intermediate_smiles\": \"COc1ccc(NC(=S)N2CCC(O)C2)cn1\",\n      \"reaction_description\": \"Proton transfer: the N7- lone pair takes the H on N10+. The N10-H bond electrons stay on N10, which becomes the neutral tertiary thiourea nitrogen. Bonds broken: N10-H. Bonds formed: N7-H. Net charge 0, and the atoms balance.\",\n      \"reaction_smirks\": \"[CH3:1][O:2][c:3]1[cH:4][cH:5][c:6]([N-:7][C:8](=[S:9])[NH+:10]2[CH2:11][CH2:12][CH:13]([OH:14])[CH2:15]2)[cH:16][n:17]1>>[CH3:1][O:2][c:3]1[cH:4][cH:5][c:6]([NH:7][C:8](=[S:9])[N:10]2[CH2:11][CH2:12][CH:13]([OH:14])[CH2:15]2)[cH:16][n:17]1 |mech:v1;lp:7>10|\",\n      \"electron_pushes\": [\n        {\n          \"kind\": \"lone_pair\",\n          \"target_atom\": \"10\",\n          \"electrons\": 2,\n          \"source_atom\": \"7\",\n          \"notation\": \"lp:7>10\"\n        }\n      ],\n      \"resulting_state\": [\n        \"COc1ccc(NC(=S)N2CCC(O)C2)cn1\"\n      ],\n      \"rdkit_cli_commands\": [],\n      \"confidence\": \"high\",\n      \"template_alignment\": null,\n      \"template_alignment_reason\": null,\n      \"intermediate_type\": \"neutral_product\",\n      \"note\": \"No external shuttle is present, so the transfer is drawn as a formal 1,3-shift. An amine-mediated relay would give the same product.\"\n    }\n  ],\n  \"intermediates\": [],\n  \"analysis\": \"The zwitterionic adduct needs one proton transfer to give the neutral thiourea. The proton moves from the ammonium N10-H+ to the anionic aryl amide N7-. No external acid or base is in the current state; the adduct is the only species. A direct N10-to-N7 transfer passes through a four-membered N-C-N-H transition state, but with no shuttle available it is acceptable and gives the target product directly. In practice, excess amine or a second adduct molecule can relay the proton intermolecularly. The same N-to-N bookkeeping applies either way.\"\n}",
+      "schema_validation": {
+        "source": "tool_call",
+        "status": "ok",
+        "validator": "MechanismStepPrediction"
+      },
+      "status": "success",
+      "step_classification": "intermediate_step",
+      "structured_response": {
+        "analysis": "The zwitterionic adduct needs one proton transfer to give the neutral thiourea. The proton moves from the ammonium N10-H+ to the anionic aryl amide N7-. No external acid or base is in the current state; the adduct is the only species. A direct N10-to-N7 transfer passes through a four-membered N-C-N-H transition state, but with no shuttle available it is acceptable and gives the target product directly. In practice, excess amine or a second adduct molecule can relay the proton intermolecularly. The same N-to-N bookkeeping applies either way.",
+        "candidates": [
+          {
+            "confidence": "high",
+            "dbe_repair": "synthesized_dbe_from_electron_pushes",
+            "electron_pushes": [
+              {
+                "electrons": 2,
+                "kind": "lone_pair",
+                "notation": "lp:7>10",
+                "source_atom": "7",
+                "target_atom": "10"
+              }
+            ],
+            "inferred_dbe": "7-7:-2;7-10:+2",
+            "intermediate_smiles": "COc1ccc(NC(=S)N2CCC(O)C2)cn1",
+            "intermediate_type": "neutral_product",
+            "mechanism_move_repair": "normalized_mech_entries",
+            "note": "No external shuttle is present, so the transfer is drawn as a formal 1,3-shift. An amine-mediated relay would give the same product.",
+            "rank": 1,
+            "rdkit_cli_commands": [],
+            "reaction_description": "Proton transfer: the N7- lone pair takes the H on N10+. The N10-H bond electrons stay on N10, which becomes the neutral tertiary thiourea nitrogen. Bonds broken: N10-H. Bonds formed: N7-H. Net charge 0, and the atoms balance.",
+            "reaction_smirks": "[CH3:1][O:2][c:3]1[cH:4][cH:5][c:6]([N-:7][C:8](=[S:9])[NH+:10]2[CH2:11][CH2:12][CH:13]([OH:14])[CH2:15]2)[cH:16][n:17]1>>[CH3:1][O:2][c:3]1[cH:4][cH:5][c:6]([NH:7][C:8](=[S:9])[N:10]2[CH2:11][CH2:12][CH:13]([OH:14])[CH2:15]2)[cH:16][n:17]1 |mech:v1;lp:7>10|",
+            "resulting_state": [
+              "COc1ccc(NC(=S)N2CCC(O)C2)cn1"
+            ],
+            "template_alignment": null,
+            "template_alignment_reason": null
+          }
+        ],
+        "classification": "intermediate_step",
+        "intermediates": []
+      },
+      "thread": {
+        "message_count": 6,
+        "mode": "delta",
+        "prompt_chars": 40768,
+        "step": 2,
+        "thread_chars": 30767
+      },
+      "tool_calling_used": true,
+      "validated_intermediates": [
+        {
+          "canonical": "COc1ccc(NC(=S)N2CCC(O)C2)cn1",
+          "chemistry_backend": {
+            "backend_requested": "auto",
+            "backend_used": "rdkit_cli",
+            "fallback_reason": null,
+            "fallback_used": false,
+            "mode": "smiles",
+            "parity_mode": false,
+            "rdkit_cli_available": true,
+            "rdkit_cli_command": "rdkit-agent",
+            "rdkit_cli_error_code": "state_progress_unchanged_starting_materials",
+            "rdkit_cli_failed_check_names": [
+              "state_progress"
+            ],
+            "rdkit_cli_overall_pass": false,
+            "rdkit_cli_resolution_reason": null,
+            "rdkit_cli_resolution_rejected": false,
+            "rdkit_cli_resolution_source": "npx_no_install",
+            "rdkit_cli_resolution_warning": null,
+            "rdkit_cli_timeout_seconds": 5.0
+          },
+          "cleaned": "COc1ccc(NC(=S)N2CCC(O)C2)cn1",
+          "note": "No external shuttle is present, so the transfer is drawn as a formal 1,3-shift. An amine-mediated relay would give the same product.",
+          "raw": "COc1ccc(NC(=S)N2CCC(O)C2)cn1",
+          "raw_cleaned": "COc1ccc(NC(=S)N2CCC(O)C2)cn1",
+          "rdkit_cli_mode_mismatch": {
+            "expected": "smiles",
+            "failed_checks": [
+              "state_progress"
+            ],
+            "got": "state_progress"
+          },
+          "recovered": "COc1ccc(NC(=S)NCCC(C)O)cn1",
+          "recovery_applied": "common_fixes",
+          "source": "model_json",
+          "type": "neutral_product",
+          "validated": true,
+          "validated_from": "COc1ccc(NC(=S)N2CCC(O)C2)cn1"
+        }
+      ],
+      "validation_status": "validated"
+    },
+    "retry_index": 0,
+    "token_usage": null,
+    "tool_name": "propose_mechanism_step",
+    "validation": null
+  },
+  "trace_id": "806e5b67df1748f5a1b201467771eec8"
+}
