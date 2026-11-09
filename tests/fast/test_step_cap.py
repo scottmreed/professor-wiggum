@@ -14,10 +14,14 @@ from mechanistic_agent.core.types import DEFAULT_MAX_STEPS, RunConfig
 def test_default_step_cap_is_14_everywhere() -> None:
     assert DEFAULT_MAX_STEPS == 14
     assert RunConfig(model="gpt-5").max_steps == 14
-    assert CreateRunRequest(starting_materials=["CCO"], products=["CC=O"]).max_steps == 14
-    for command in (main.run, main.eval_cmd):
-        default = inspect.signature(command).parameters["max_steps"].default
-        assert getattr(default, "default", default) == 14, command.__name__
+    # The API and `main.py run` leave the cap unset so the coordinator resolves it:
+    # 14 for an organic run, CATALYTIC_MAX_STEPS for a transition-metal catalysed one.
+    assert CreateRunRequest(starting_materials=["CCO"], products=["CC=O"]).max_steps is None
+    assert RunCoordinator._resolve_max_steps({}, ["CCO"]) == (14, "default")
+    run_default = inspect.signature(main.run).parameters["max_steps"].default
+    assert getattr(run_default, "default", run_default) is None
+    eval_default = inspect.signature(main.eval_cmd).parameters["max_steps"].default
+    assert getattr(eval_default, "default", eval_default) == 14
 
 
 def test_stored_run_without_max_steps_resolves_to_14(tmp_path) -> None:
@@ -78,7 +82,10 @@ def test_run_that_uses_every_step_emits_step_cap_reached_and_warns(tmp_path, cap
     store, run_id = _run_to_cap(tmp_path, cap=14, reach=14)
     events = store.list_events(run_id)
     cap_events = [e["payload"] for e in events if e["event_type"] == "step_cap_reached"]
-    assert cap_events == [{"cap": 14, "steps": 14, "run_id": run_id, "case_id": "flower-test-002482"}]
+    assert cap_events == [{
+        "cap": 14, "steps": 14, "run_id": run_id, "case_id": "flower-test-002482",
+        "cap_source": "explicit", "catalysis_step_cap_reached": False,
+    }]
     failed = [e["payload"] for e in events if e["event_type"] == "run_failed"][-1]
     assert failed["reason"] == "completion_not_reached_within_limits"
     assert failed["step_cap_reached"] is True

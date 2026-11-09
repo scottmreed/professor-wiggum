@@ -15,7 +15,12 @@ import typer
 
 from mechanistic_agent import OPTIONAL_LLM_TOOL_NAMES, ReactionInputs
 from mechanistic_agent.core import RegistrySet, RunCoordinator, RunStore, select_step_models
-from mechanistic_agent.core.types import DEFAULT_MAX_RUNTIME_SECONDS, DEFAULT_MAX_STEPS, PRIMARY_HARNESS
+from mechanistic_agent.core.types import (
+    CATALYTIC_MAX_STEPS,
+    DEFAULT_MAX_RUNTIME_SECONDS,
+    DEFAULT_MAX_STEPS,
+    PRIMARY_HARNESS,
+)
 from mechanistic_agent.core.overnight_ralph import OvernightRalphOrchestrator, load_overnight_program
 from mechanistic_agent.curriculum import (
     OPUS_MODEL,
@@ -1731,7 +1736,14 @@ def run(
         "--model",
         help="Exact model identifier used for all LLM-backed subagents",
     ),
-    max_steps: int = typer.Option(DEFAULT_MAX_STEPS, "--max-steps", help="Maximum mechanism loop steps"),
+    max_steps: Optional[int] = typer.Option(
+        None,
+        "--max-steps",
+        help=(
+            f"Maximum mechanism loop steps (default {DEFAULT_MAX_STEPS}, or "
+            f"{CATALYTIC_MAX_STEPS} when the starting materials include a transition-metal catalyst)"
+        ),
+    ),
     max_runtime: float = typer.Option(DEFAULT_MAX_RUNTIME_SECONDS, "--max-runtime", help="Maximum runtime in seconds"),
     retry_same_candidate_max: Optional[int] = typer.Option(
         None,
@@ -1912,7 +1924,7 @@ def run(
             "functional_groups_enabled": reaction.functional_groups_enabled,
             "intermediate_prediction_enabled": reaction.intermediate_prediction_enabled,
             "model_plan_notes": model_plan.notes,
-            "max_steps": max_steps,
+            **({"max_steps": int(max_steps)} if isinstance(max_steps, int) else {}),
             "max_runtime_seconds": max_runtime,
             **(
                 {"retry_same_candidate_max": int(retry_same_candidate_max)}

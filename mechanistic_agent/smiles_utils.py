@@ -175,6 +175,21 @@ def _tolerated_extra(signature: str, reference_parents: set[str]) -> bool:
     return neutral_parent_signature(signature) in reference_parents
 
 
+def _catalysis_tolerated(item: str, starting_materials: List[str]) -> bool:
+    """A catalyst form, released phosphine/CO or coupling by-product (core/catalysis.py).
+
+    Only when the starting pool holds a d-block species, so organic runs are unchanged.
+    """
+    if not starting_materials:
+        return False
+    try:
+        from mechanistic_agent.core.catalysis import catalysis_tolerated
+
+        return catalysis_tolerated(item, starting_materials) is not None
+    except Exception:  # noqa: BLE001 - completion bookkeeping must not raise
+        return False
+
+
 def assess_target_product_state(
     *,
     current_state: List[str],
@@ -211,6 +226,11 @@ def assess_target_product_state(
         productive_targets = [item for item in target_signatures if item not in current_signatures]
     if not productive_targets:
         productive_targets = list(target_signatures)
+    if starting_materials:
+        # A catalyst form, released ligand or coupling by-product listed as a product is
+        # not an organic target (core/catalysis.py); the audit grades regeneration.
+        organic = [item for item in productive_targets if not _catalysis_tolerated(item, starting_materials)]
+        productive_targets = organic or productive_targets
 
     primary_targets: List[str] = []
     if productive_targets:
@@ -254,7 +274,9 @@ def assess_target_product_state(
     tolerated_species = [
         item
         for item in unexpected_species
-        if item in conjugate_stand_ins or _tolerated_extra(item, reference_parents)
+        if item in conjugate_stand_ins
+        or _tolerated_extra(item, reference_parents)
+        or _catalysis_tolerated(item, starting_materials or [])
     ]
     blocking_species = [item for item in unexpected_species if item not in tolerated_species]
 

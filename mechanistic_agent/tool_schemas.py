@@ -503,6 +503,23 @@ _MECHANISM_STEP_CANDIDATE = {
             "type": "string",
             "description": "Optional mechanistic reasoning for this candidate.",
         },
+        "metal_step_kind": {
+            "type": "string",
+            "enum": [
+                "oxidative_addition",
+                "reductive_elimination",
+                "transmetalation",
+                "migratory_insertion",
+                "beta_hydride_elimination",
+                "ligand_association",
+                "ligand_dissociation",
+                "other",
+            ],
+            "description": (
+                "Only for a step that changes bonds at a transition metal: the elementary "
+                "organometallic step it is. Omit for steps that do not involve the metal."
+            ),
+        },
     },
     "required": [
         "rank",

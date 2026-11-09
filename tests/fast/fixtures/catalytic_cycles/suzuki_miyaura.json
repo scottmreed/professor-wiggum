@@ -1,0 +1,63 @@
+{
+  "title": "Suzuki–Miyaura cross-coupling",
+  "species": [
+    {
+      "id": "pd0",
+      "label": "Pd(0)L2",
+      "smiles": "[Pd](<-P(c1ccccc1)(c1ccccc1)c1ccccc1)<-P(c1ccccc1)(c1ccccc1)c1ccccc1",
+      "ox_state": 0
+    },
+    {
+      "id": "oa",
+      "label": "trans-ArPd(Br)L2",
+      "smiles": "[Pd](<-P(c1ccccc1)(c1ccccc1)c1ccccc1)(c1ccccc1)(<-P(c1ccccc1)(c1ccccc1)c1ccccc1)Br",
+      "ox_state": 2
+    },
+    {
+      "id": "tm",
+      "label": "cis-ArPd(Ar′)L2",
+      "smiles": "[Pd](<-P(c1ccccc1)(c1ccccc1)c1ccccc1)(<-P(c1ccccc1)(c1ccccc1)c1ccccc1)(c1ccc(C)cc1)c1ccccc1",
+      "ox_state": 2
+    }
+  ],
+  "steps": [
+    {
+      "from": "pd0",
+      "to": "oa",
+      "kind": "oxidative_addition",
+      "label": "oxidative addition",
+      "enters": [
+        "Ar–Br"
+      ],
+      "leaves": []
+    },
+    {
+      "from": "oa",
+      "to": "tm",
+      "kind": "transmetalation",
+      "label": "transmetalation",
+      "enters": [
+        "Ar′B(OH)2",
+        "base"
+      ],
+      "leaves": [
+        "B(OH)3",
+        "Br−"
+      ]
+    },
+    {
+      "from": "tm",
+      "to": "pd0",
+      "kind": "reductive_elimination",
+      "label": "reductive elimination",
+      "enters": [],
+      "leaves": [
+        "Ar–Ar′"
+      ]
+    }
+  ],
+  "legend": "L = PPh3; Ar = phenyl (from bromobenzene); Ar′ = 4-methylphenyl (from 4-methylphenylboronic acid)",
+  "accessibility": {
+    "alt_text": "Suzuki-Miyaura catalytic cycle: Pd(0)L2, oxidative addition of Ar–Br, transmetalation with Ar′B(OH)2 and base, and reductive elimination of Ar–Ar′."
+  }
+}

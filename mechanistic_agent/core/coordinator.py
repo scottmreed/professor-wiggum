@@ -70,6 +70,7 @@ from .provenance import (
 )
 from .types import (
     DEFAULT_MAX_RUNTIME_SECONDS,
+    CATALYTIC_MAX_STEPS,
     DEFAULT_MAX_STEPS,
     BranchCandidate,
     BranchPoint,
@@ -213,6 +214,7 @@ class RunCoordinator:
             ph=payload.get("ph"),
             example_id=str(payload.get("example_id") or "").strip() or None,
         )
+        max_steps, max_steps_source = self._resolve_max_steps(config, run_input.starting_materials)
         run_config = RunConfig(
             model=str(config.get("model") or get_default_model()),
             model_name=str(config.get("model_name") or config.get("model") or get_default_model()),
@@ -230,7 +232,8 @@ class RunCoordinator:
                 config.get("intermediate_prediction_enabled", True),
                 True,
             ),
-            max_steps=self._coerce_int(config.get("max_steps", DEFAULT_MAX_STEPS), DEFAULT_MAX_STEPS),
+            max_steps=max_steps,
+            max_steps_source=max_steps_source,
             hide_products=hide_products,
             max_runtime_seconds=self._coerce_float(config.get("max_runtime_seconds", DEFAULT_MAX_RUNTIME_SECONDS), DEFAULT_MAX_RUNTIME_SECONDS),
             api_keys=dict(config.get("api_keys") or {}),
@@ -372,6 +375,11 @@ class RunCoordinator:
             ),
             balance_mode=(
                 self._coerce_balance_mode(config.get("balance_mode"))
+            ),
+            metal_center_policy=self._coerce_literal(
+                config.get("metal_center_policy"),
+                {"off", "soft", "strict"},
+                "soft",
             ),
             runtime_trace_enabled=self._coerce_bool(
                 config.get("runtime_trace_enabled", False),
@@ -1660,6 +1668,7 @@ class RunCoordinator:
             "proceed_on_validation_failure",
             "proceed_only_on_arrow_push_failure",
             "balance_mode",
+            "metal_center_policy",
             "candidate_rescue_enabled",
             "retry_same_candidate_max",
             "max_reproposals_per_step",
@@ -1704,6 +1713,8 @@ class RunCoordinator:
             current = getattr(state.run_config, key, None)
             if key == "balance_mode":
                 coerced: Any = self._coerce_balance_mode(value)
+            elif key == "metal_center_policy":
+                coerced = self._coerce_literal(value, {"off", "soft", "strict"}, "soft")
             elif isinstance(current, bool):
                 coerced = self._coerce_bool(value, current)
             elif isinstance(current, int):
@@ -3227,6 +3238,22 @@ class RunCoordinator:
             step_name="mechanism_synthesis",
         )
 
+    @classmethod
+    def _resolve_max_steps(cls, config: Dict[str, Any], starting_materials: List[str]) -> Tuple[int, str]:
+        """Explicit ``max_steps`` wins; otherwise CATALYTIC_MAX_STEPS for a run whose starting
+        pool holds a transition-metal catalyst, else DEFAULT_MAX_STEPS."""
+        explicit = config.get("max_steps")
+        if explicit is not None:
+            return cls._coerce_int(explicit, DEFAULT_MAX_STEPS), "explicit"
+        try:
+            from .catalysis import is_catalytic_run
+
+            if is_catalytic_run(starting_materials or []):
+                return CATALYTIC_MAX_STEPS, "catalytic"
+        except Exception:  # noqa: BLE001 - fall back to the default cap
+            pass
+        return DEFAULT_MAX_STEPS, "default"
+
     @staticmethod
     def _coerce_balance_mode(value: Any) -> str:
         """``strict`` (default), ``deferred`` (any atom-balance-only failure may be flagged) or
@@ -3712,6 +3739,35 @@ class RunCoordinator:
             "smirks_state_agreement": output.get("smirks_state_agreement"),
             "projection_error": projection_error,
         }
+        metal_center = next(
+            (
+                c.get("details")
+                for c in (checks or [])
+                if isinstance(c, dict) and c.get("name") == "metal_center"
+            ),
+            None,
+        )
+        payload["metal_center"] = metal_center
+        if isinstance(metal_center, dict):
+            try:
+                self.store.append_event(
+                    state.run_id,
+                    "metal_center_check",
+                    {
+                        "step_index": state.step_index + 1,
+                        "retry_index": retry_index,
+                        "candidate_id": candidate.get("candidate_id"),
+                        "candidate_rank": candidate.get("rank"),
+                        "passed": not any(
+                            isinstance(c, dict) and c.get("name") == "metal_center" and c.get("passed") is False
+                            for c in (checks or [])
+                        ),
+                        **metal_center,
+                    },
+                    step_name="mechanism_synthesis",
+                )
+            except Exception:  # pragma: no cover - defensive
+                pass
         payload["proton_transfer"] = self._proton_transfer_info(
             state,
             payload["current_state"],
@@ -3880,6 +3936,7 @@ class RunCoordinator:
             mechanism_result.attempt = state.step_index + 1
             mechanism_result.retry_index = retry_index
             self._carry_dropped_spectators(state, candidate, mechanism_result, retry_index=retry_index)
+            self._attach_metal_step_kind(candidate, mechanism_result)
             last_mechanism_output = dict(mechanism_result.output or {})
             try:
                 mechanism_result.validation = validate_mechanism_step_output(
@@ -4338,6 +4395,13 @@ class RunCoordinator:
             if note and note not in notes:
                 notes.append(note)
         return notes[:limit]
+
+    @staticmethod
+    def _attach_metal_step_kind(candidate: Dict[str, Any], mechanism_result: StepResult) -> None:
+        """Copy the proposal's optional ``metal_step_kind`` onto the step output for validation."""
+        kind = str((candidate or {}).get("metal_step_kind") or "").strip().lower()
+        if kind and isinstance(mechanism_result.output, dict):
+            mechanism_result.output["metal_step_kind"] = kind
 
     def _carry_dropped_spectators(
         self,
@@ -7081,7 +7145,14 @@ class RunCoordinator:
         self.store.append_event(
             state.run_id,
             "step_cap_reached",
-            {"cap": cap, "steps": steps, "run_id": state.run_id, "case_id": case_id},
+            {
+                "cap": cap,
+                "steps": steps,
+                "run_id": state.run_id,
+                "case_id": case_id,
+                "cap_source": state.run_config.max_steps_source,
+                "catalysis_step_cap_reached": state.run_config.max_steps_source == "catalytic",
+            },
         )
         line = f"WARNING step cap reached: run={state.run_id} case={case_id or '-'} cap={cap} steps={steps}"
         # Printed (not logged) so it shows in eval/bridge logs whatever the

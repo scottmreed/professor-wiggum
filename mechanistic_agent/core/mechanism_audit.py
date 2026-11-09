@@ -461,7 +461,13 @@ def _audit(
         findings.append({"type": "excess_reagent", "species": excess_reagent["species"],
                          "count": excess_reagent["count"], "net_delta": dict(net_delta)})
 
-    if not balanced:
+    # A declared transition-metal catalyst must come back by the end of the path
+    # (core/catalysis.py); one that does not leaves the grade approximate.
+    regeneration = _catalyst_regeneration(starting, ordered, final_state)
+    if regeneration.get("unregenerated"):
+        findings.append({"type": "unregenerated_catalyst", "species": list(regeneration["unregenerated"])})
+
+    if not balanced or regeneration.get("unregenerated"):
         grade = "approximate"
     elif flags or added_left or added_right or proton_reconciled or excess_reagent or excess_steps or dropped_species:
         grade = "reconciled"
@@ -488,7 +494,22 @@ def _audit(
         "flags": flags,
         "unresolved_steps": [f["step_index"] for f in flags if f["resolution"] not in RESOLVED],
         "findings": findings,
+        "catalyst_regeneration": regeneration,
     }
+
+
+def _catalyst_regeneration(
+    starting: Sequence[str],
+    ordered: Sequence[Mapping[str, Any]],
+    final_state: Sequence[str],
+) -> Dict[str, Any]:
+    try:
+        from .catalysis import catalyst_regeneration
+
+        states = [list(step.get("resulting_state") or []) for step in ordered[:-1]] + [list(final_state)]
+        return catalyst_regeneration(starting, states)
+    except Exception as exc:  # noqa: BLE001 - bookkeeping must never break the audit
+        return {"applies": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def _efficiency_findings(
