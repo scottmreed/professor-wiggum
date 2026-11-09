@@ -188,6 +188,8 @@ def build_observatory(
                 entry["reaction_focus"] = payload.get("reaction_focus")
                 entry["bond_electron_view"] = payload.get("bond_electron_view")
                 entry["smirks_state_agreement"] = payload.get("smirks_state_agreement")
+                if payload.get("metal_center") is not None:
+                    entry["metal_center"] = payload.get("metal_center")
                 if payload.get("accepted"):
                     entry["status"] = "validated"
                     entry["failed_checks"] = []
@@ -249,6 +251,7 @@ def build_observatory(
                 "contains_target_product": bool(payload.get("contains_target_product")),
                 "validation_passed": passed,
                 "balance_flag": payload.get("balance_flag"),
+                "metal_center": entry.get("metal_center"),
                 "proposal_provenance": latest_proposal_provenance.get(step_number),
                 "identity": (
                     {
@@ -311,10 +314,48 @@ def build_observatory(
         "active_step": active_step,
         "atom_lineage": _build_atom_lineage(accepted_path, states),
         "mechanism_audit": mechanism_audit,
+        "catalytic_cycle": _catalytic_cycle(accepted_path, starting, run_id=run_id, ordered=ordered),
         "provenance": build_run_provenance(ordered),
         "event_count": len(ordered),
         "last_seq": last_seq,
     }
+
+
+def _catalytic_cycle(
+    accepted_path: List[Dict[str, Any]],
+    starting: List[str],
+    *,
+    run_id: Optional[str],
+    ordered: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """``catalytic_cycle_projection.v1`` of the accepted path, or ``None`` without a catalyst.
+
+    Checked with the shared ``validate_catalytic_cycle``; ``renderable`` is true only for a
+    closed cycle that validates, so ChemIllusion renders nothing it would reject.
+    """
+    try:
+        from .catalysis import project_catalytic_cycle
+        from organometallic_chem.catalytic_cycle import validate_catalytic_cycle
+
+        harness = next(
+            (
+                (e.get("payload") or {}).get("harness")
+                for e in ordered
+                if e.get("event_type") == "harness_run_config_defaults_applied"
+            ),
+            None,
+        )
+        projection = project_catalytic_cycle(
+            accepted_path, starting, provenance={"run_id": run_id, "harness": harness}
+        )
+        if projection is None:
+            return None
+        errors = validate_catalytic_cycle(projection["cycle"]) if projection["closed"] else ["cycle is not closed"]
+        projection["validation_errors"] = errors
+        projection["renderable"] = projection["closed"] and not errors
+        return projection
+    except Exception as exc:  # noqa: BLE001 - a projection must never break the observatory
+        return {"schema": "catalytic_cycle_projection.v1", "error": f"{type(exc).__name__}: {exc}", "renderable": False}
 
 
 ATOM_LINEAGE_SCHEMA = "atom_lineage.v1"

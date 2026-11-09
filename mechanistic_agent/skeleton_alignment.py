@@ -82,6 +82,43 @@ def _fragment_key(mol: Any, atom_indices: Sequence[int]) -> Optional[str]:
     return f"{Chem.MolToSmiles(graph, canonical=True)}|{charge - n_h}"
 
 
+def _without_metal_l_donor_bonds(text: str, mol: Any) -> Any:
+    """Cut neutral 2-electron donor (L) bonds to a d-block metal before keying.
+
+    Ligand association/dissociation (Pd(PPh3)4 -> Pd(PPh3)3 + PPh3) then leaves the
+    skeleton state unchanged, as a proton shuttle does, so a prediction that draws
+    ligand loss implicitly matches a FlowER reference that draws every step. X bonds
+    (aryl, halide, hydride, alkyl) are kept: oxidative addition, transmetalation and
+    reductive elimination still change the skeleton. Species without a d-block metal,
+    and ambiguous metal drawings, are returned unchanged.
+    """
+    try:
+        from organometallic_chem.organometallic_smiles import is_d_block
+
+        if not any(is_d_block(atom.GetAtomicNum()) for atom in mol.GetAtoms()):
+            return mol
+        from organometallic_chem.notation import to_house_convention
+
+        house = to_house_convention(text)
+        if not house.ok:
+            return mol
+        with redirect_stderr(StringIO()):
+            converted = Chem.MolFromSmiles(house.smiles, sanitize=False)
+        if converted is None:
+            return mol
+        rw = Chem.RWMol(converted)
+        for bond in list(converted.GetBonds()):
+            if bond.GetBondType() == Chem.BondType.DATIVE and (
+                is_d_block(bond.GetBeginAtom().GetAtomicNum()) or is_d_block(bond.GetEndAtom().GetAtomicNum())
+            ):
+                rw.RemoveBond(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
+        out = rw.GetMol()
+        out.UpdatePropertyCache(strict=False)
+        return out
+    except Exception:  # noqa: BLE001 - keying must never fail on a metal species
+        return mol
+
+
 def skeleton_species_keys(smiles: str) -> List[str]:
     """Skeleton keys of one species string (one per fragment with >= 2 heavy atoms)."""
     text = str(smiles or "").strip()
@@ -96,6 +133,7 @@ def skeleton_species_keys(smiles: str) -> List[str]:
         # Unparseable placeholder: compare as text (never matches a real species).
         keys = [f"unparsed:{text}"]
     else:
+        mol = _without_metal_l_donor_bonds(text, mol)
         for atom_indices in Chem.GetMolFrags(mol):
             key = _fragment_key(mol, atom_indices)
             if key is not None:

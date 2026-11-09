@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from skills.mechanistic.atom_balance_validation.validator import validate_atom_balance
 from skills.mechanistic.bond_electron_validation.validator import validate_bond_electron
+from skills.mechanistic.metal_center_validation.validator import validate_metal_center
 from skills.mechanistic.state_progress_validation.validator import validate_state_progress
 
 from .chemistry_backend import execute_chemistry_check
@@ -288,4 +289,33 @@ def validate_mechanism_step_output(
     result = _override_atom_balance_check(result, payload=payload, active=active)
     _attach_backend_metadata(result, backend_meta)
     _annotate_soft_backend_warnings(result)
-    return _reconcile_excess_reagent(result, payload=payload, reagent_pool=reagent_pool)
+    result = _reconcile_excess_reagent(result, payload=payload, reagent_pool=reagent_pool)
+    return _append_metal_center_check(result, payload=payload, run_config=run_config)
+
+
+def _append_metal_center_check(
+    result: StepValidationResult,
+    *,
+    payload: Dict[str, Any],
+    run_config: Any,
+) -> StepValidationResult:
+    """Add the ``metal_center`` check when the step changes a d-block metal species.
+
+    Steps without a metal change get no check, so their validation is unchanged.
+    A bookkeeping error never breaks validation: an exception adds nothing.
+    """
+    policy = str(getattr(run_config, "metal_center_policy", "soft") or "soft")
+    if policy == "off":
+        return result
+    try:
+        check = validate_metal_center(
+            [str(item) for item in payload.get("current_state", [])],
+            [str(item) for item in payload.get("resulting_state", [])],
+            declared_kind=str(payload.get("metal_step_kind") or "").strip().lower() or None,
+            policy=policy,
+        )
+    except Exception:  # noqa: BLE001 - advisory bookkeeping must not break a step
+        return result
+    if check is not None:
+        result.checks.append(check)
+    return result

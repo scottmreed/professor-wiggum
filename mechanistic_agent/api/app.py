@@ -1387,7 +1387,7 @@ def create_app(
         optional_llm_tools: List[str],
         functional_groups_enabled: bool,
         intermediate_prediction_enabled: bool,
-        max_steps: int,
+        max_steps: Optional[int],
         max_runtime_seconds: float,
         retry_same_candidate_max: Optional[int],
         max_reproposals_per_step: int,
@@ -1455,7 +1455,9 @@ def create_app(
                 "functional_groups_enabled": functional_groups_enabled,
                 "intermediate_prediction_enabled": intermediate_prediction_enabled,
                 "model_plan_notes": model_plan.notes,
-                "max_steps": max_steps,
+                # Omitted when None so the coordinator picks DEFAULT_MAX_STEPS, or
+                # CATALYTIC_MAX_STEPS for a transition-metal catalysed run.
+                **({"max_steps": int(max_steps)} if max_steps is not None else {}),
                 "max_runtime_seconds": max_runtime_seconds,
                 # Omitted when None so the harness's retry budget applies
                 # (see RunCoordinator._apply_harness_run_config_defaults).

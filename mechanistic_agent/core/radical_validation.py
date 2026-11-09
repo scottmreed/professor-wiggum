@@ -45,10 +45,28 @@ def _inventory(side):
 # not open-shell organic intermediates.
 _RADICAL_STATE_ELEMENTS = {5, 6, 7, 8, 9, 14, 15, 16, 17, 34, 35, 53}
 
+# d-block metals (groups 3-12, with La and Ac as the group-3 heads).
+_D_BLOCK = frozenset([*range(21, 31), *range(39, 49), 57, *range(72, 81), 89, *range(104, 113)])
+
+
+def _is_metal_bound(atom) -> bool:
+    """Whether ``atom`` is bonded directly to a d-block metal.
+
+    Ligands are usually drawn with ordinary covalent M-L bonds rather than
+    dative ones, e.g. ``[Pd]([P](C)(C)C)``. RDKit then gives the 4-bonded
+    neutral donor P (or 4-bonded N, 3-bonded O) an odd radical-electron count
+    that is a drawing artifact, not an open-shell ligand. A genuine
+    ligand-centred radical on the donor atom is therefore not detected from
+    the state; an explicit fishhook move still selects radical validation.
+    """
+    return any(neighbor.GetAtomicNum() in _D_BLOCK for neighbor in atom.GetNeighbors())
+
 
 def _fragment_is_radical(mol) -> bool:
     return any(
-        atom.GetAtomicNum() in _RADICAL_STATE_ELEMENTS and atom.GetNumRadicalElectrons() % 2 == 1
+        atom.GetAtomicNum() in _RADICAL_STATE_ELEMENTS
+        and atom.GetNumRadicalElectrons() % 2 == 1
+        and not _is_metal_bound(atom)
         for atom in mol.GetAtoms()
     )
 

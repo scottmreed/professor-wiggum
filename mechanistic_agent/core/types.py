@@ -14,6 +14,10 @@ PRIMARY_HARNESS = "threaded_unified"
 # ChemIllusion clamps product runs to the same 14 (MAX_STEPS_LIMIT in its
 # backend/app/schemas/mechanism_submission.py).
 DEFAULT_MAX_STEPS = 14
+# Step cap for a run whose starting pool holds a transition-metal catalyst and that sets
+# no max_steps (core/catalysis.py; PRD_catalysis_handling R4.1). Covers ~95% of FlowER
+# Pd mechanisms (87% fit in 14).
+CATALYTIC_MAX_STEPS = 22
 # Wall-clock limit per run for runs that set none (raised from 1200 s with the 14-step cap so a
 # full-length run is not cut off by time first; ChemIllusion sends no runtime and inherits it).
 DEFAULT_MAX_RUNTIME_SECONDS = 1800.0
@@ -827,6 +831,9 @@ class RunConfig:
     intermediate_prediction_enabled: bool = True
     # Step cap (DEFAULT_MAX_STEPS); a run that uses every step emits step_cap_reached.
     max_steps: int = DEFAULT_MAX_STEPS
+    # Where max_steps came from: "explicit" (run config), "catalytic" (CATALYTIC_MAX_STEPS
+    # for an unset cap on a catalytic run) or "default" (DEFAULT_MAX_STEPS).
+    max_steps_source: str = "default"
     # No-product mode: target products are withheld from every LLM call and the run ends when
     # the model declares the mechanism complete (products stay in input_payload for scoring).
     hide_products: bool = False
@@ -882,6 +889,11 @@ class RunConfig:
     # "proton_deferred": only a residual of whole protons (H and charge together) may be
     # flagged; any heavy-atom or other residual is rejected as under "strict".
     balance_mode: str = "strict"
+    # Metal-centre bookkeeping (skills/mechanistic/metal_center_validation): "soft"
+    # fails only impossible metal states, "strict" also fails a declared
+    # metal_step_kind whose OS/electron deltas disagree, "off" skips the check.
+    # It runs only on steps that change a d-block metal species.
+    metal_center_policy: str = "soft"
     runtime_trace_enabled: bool = False
     runtime_trace_label: Optional[str] = None
     # Per-run override of the harness decision_policy.example_reaction_type_bypass

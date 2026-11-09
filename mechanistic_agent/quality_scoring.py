@@ -503,6 +503,18 @@ def _closure(steps: Sequence[QualityStep], starting_materials: Sequence[str], pr
     return {"grade": audit.get("grade"), "balanced": audit.get("balanced"), "proton_reconciled": audit.get("proton_reconciled")}
 
 
+def _organic_targets(targets: List[str], starting_materials: Sequence[str]) -> List[str]:
+    """``targets`` without catalyst bookkeeping species (core/catalysis.py); unchanged when the
+    pool holds no d-block species or when nothing else would remain."""
+    try:
+        from mechanistic_agent.core.catalysis import catalysis_tolerated
+
+        kept = [t for t in targets if catalysis_tolerated(t, starting_materials) is None]
+    except Exception:  # noqa: BLE001
+        return targets
+    return kept or targets
+
+
 def _targets_reached(
     steps: Sequence[QualityStep],
     products: Sequence[str],
@@ -521,6 +533,9 @@ def _targets_reached(
     start = set(_canon_list(starting_materials))
     start_parents = {_neutral_parent(s) for s in start}
     targets = [t for t in _canon_list(products) if t not in start]
+    # Catalyst forms, released ligands and coupling by-products listed among the products
+    # are catalyst bookkeeping (the audit grades regeneration), not organic targets.
+    targets = _organic_targets(targets, starting_materials)
     product_targets = [t for t in targets if _neutral_parent(t) not in start_parents] or targets
     main = max(product_targets, key=lambda t: _mol(t).GetNumHeavyAtoms(), default=None)
     final_parents = {_neutral_parent(s) for s in final}
@@ -660,6 +675,50 @@ def score_mechanism(
             "proton_transfers": pt_steps,
         },
         "steps": per_step,
+        # Diagnostic only (PRD_catalysis_handling R6.3): never part of points.
+        "metal_center": metal_center_diagnostic(path, starting_materials),
+    }
+
+
+def metal_center_diagnostic(path: Sequence[QualityStep], starting_materials: Sequence[str]) -> Optional[Dict[str, Any]]:
+    """Metal bookkeeping over the accepted path, or ``None`` when no metal step occurs.
+
+    ``consistent_share``: metal-changing steps whose OS/electron deltas match one
+    elementary step kind (abstentions excluded from the denominator).
+    ``catalyst_regenerated``: from ``core/catalysis.catalyst_regeneration``.
+    """
+    try:
+        from mechanistic_agent.core.catalysis import catalyst_regeneration, identify_catalysts
+        from skills.mechanistic.metal_center_validation.validator import validate_metal_center
+    except Exception:  # noqa: BLE001
+        return None
+    if not identify_catalysts(starting_materials):
+        return None
+    checked = consistent = abstained = errors = 0
+    for step in path:
+        try:
+            check = validate_metal_center(list(step.current_state), list(step.resulting_state))
+        except Exception:  # noqa: BLE001
+            continue
+        if check is None:
+            continue
+        checked += 1
+        details = check.details or {}
+        if details.get("abstained"):
+            abstained += 1
+            continue
+        if not check.passed:
+            errors += 1
+        if all(pair.get("consistent_kinds") for pair in details.get("pairs") or []) and not details.get("findings"):
+            consistent += 1
+    regeneration = catalyst_regeneration(starting_materials, [list(s.resulting_state) for s in path])
+    counted = checked - abstained
+    return {
+        "metal_steps": checked,
+        "abstained": abstained,
+        "impossible_state_steps": errors,
+        "consistent_share": round(consistent / counted, 4) if counted else None,
+        "catalyst_regenerated": (not regeneration.get("unregenerated")) if regeneration.get("applies") else None,
     }
 
 
