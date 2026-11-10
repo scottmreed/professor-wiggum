@@ -25,6 +25,10 @@ class CreateRunRequest(BaseModel):
     orchestration_mode: Literal["standard", "ralph"] = "standard"
     starting_materials: List[str] = Field(default_factory=list)
     products: List[str] = Field(default_factory=list)
+    # Catalysts written over the reaction arrow (reactants>catalysts>products). They join
+    # the starting materials; declaring them fixes their role, so the run treats them as
+    # catalysts (regeneration check, 22-step cap for a metal) without asking the model.
+    catalysts: List[str] = Field(default_factory=list)
     example_id: Optional[str] = None
     temperature_celsius: float = 25.0
     ph: Optional[float] = None

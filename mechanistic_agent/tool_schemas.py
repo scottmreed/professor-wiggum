@@ -6,6 +6,7 @@ payload used for deterministic validation.
 """
 from __future__ import annotations
 
+import copy
 from typing import Any, Dict
 
 
@@ -503,23 +504,6 @@ _MECHANISM_STEP_CANDIDATE = {
             "type": "string",
             "description": "Optional mechanistic reasoning for this candidate.",
         },
-        "metal_step_kind": {
-            "type": "string",
-            "enum": [
-                "oxidative_addition",
-                "reductive_elimination",
-                "transmetalation",
-                "migratory_insertion",
-                "beta_hydride_elimination",
-                "ligand_association",
-                "ligand_dissociation",
-                "other",
-            ],
-            "description": (
-                "Only for a step that changes bonds at a transition metal: the elementary "
-                "organometallic step it is. Omit for steps that do not involve the metal."
-            ),
-        },
     },
     "required": [
         "rank",
@@ -528,6 +512,24 @@ _MECHANISM_STEP_CANDIDATE = {
         "reaction_smirks",
         "electron_pushes",
     ],
+}
+
+METAL_STEP_KIND_PROPERTY: Dict[str, Any] = {
+    "type": "string",
+    "enum": [
+        "oxidative_addition",
+        "reductive_elimination",
+        "transmetalation",
+        "migratory_insertion",
+        "beta_hydride_elimination",
+        "ligand_association",
+        "ligand_dissociation",
+        "other",
+    ],
+    "description": (
+        "Only for a step that makes or breaks a bond at the transition metal: the elementary "
+        "organometallic step it is. Omit for steps that leave the metal untouched."
+    ),
 }
 
 MECHANISM_STEP_PROPOSAL_TOOL: Dict[str, Any] = {
@@ -821,11 +823,40 @@ def _section_schema(source_tool: Dict[str, Any], description: str) -> Dict[str, 
     return params
 
 
-def build_unified_preanalysis_tool(*, products_hidden: bool = False) -> Dict[str, Any]:
+METAL_ROLES_PROPERTY: Dict[str, Any] = {
+    "type": "array",
+    "description": (
+        "Only for the listed transition-metal species whose role is unclear: the role each "
+        "plays in this reaction."
+    ),
+    "items": {
+        "type": "object",
+        "properties": {
+            "smiles": {"type": "string", "description": "The species, exactly as listed."},
+            "role": {
+                "type": "string",
+                "enum": ["catalyst", "precatalyst", "stoichiometric_reagent", "lewis_acid", "spectator"],
+                "description": "catalyst/precatalyst: regenerated (or activated then regenerated); "
+                "stoichiometric_reagent: consumed; lewis_acid: activates without being consumed "
+                "or forming organometallic bonds; spectator: takes no part.",
+            },
+            "justification": {"type": "string", "description": "10 words or fewer."},
+        },
+        "required": ["smiles", "role"],
+    },
+}
+
+
+def build_unified_preanalysis_tool(
+    *, products_hidden: bool = False, ask_metal_roles: bool = False
+) -> Dict[str, Any]:
     """Tool for the single pre-analysis call.
 
     With hidden products there is no reaction to balance or map, so only the
-    conditions and reaction-type sections are asked for.
+    conditions and reaction-type sections are asked for. ``ask_metal_roles`` adds the
+    optional ``metal_roles`` answer, only when a transition-metal species has a role the
+    runtime cannot infer (``core/catalysis.unclear_metal_species``); otherwise the tool is
+    unchanged.
     """
     sections = ["conditions", "reaction_type"] if products_hidden else list(UNIFIED_PREANALYSIS_SECTIONS)
     properties: Dict[str, Any] = {
@@ -837,6 +868,8 @@ def build_unified_preanalysis_tool(*, products_hidden: bool = False) -> Dict[str
     for name in sections:
         spec = UNIFIED_PREANALYSIS_SECTIONS[name]
         properties[name] = _section_schema(spec["tool"], spec["description"])
+    if ask_metal_roles:
+        properties["metal_roles"] = METAL_ROLES_PROPERTY
     return {
         "type": "function",
         "function": {
@@ -855,4 +888,25 @@ def build_unified_preanalysis_tool(*, products_hidden: bool = False) -> Dict[str
     }
 
 
-__all__ += ["UNIFIED_PREANALYSIS_TOOL_NAME", "UNIFIED_PREANALYSIS_SECTIONS", "build_unified_preanalysis_tool"]
+__all__ += [
+    "METAL_ROLES_PROPERTY",
+    "UNIFIED_PREANALYSIS_TOOL_NAME",
+    "UNIFIED_PREANALYSIS_SECTIONS",
+    "build_unified_preanalysis_tool",
+]
+
+
+def build_mechanism_step_proposal_tool(*, include_metal_step_kind: bool = False) -> Dict[str, Any]:
+    """``MECHANISM_STEP_PROPOSAL_TOOL``, plus each candidate's optional ``metal_step_kind``
+    when the current state holds a transition metal. Organic states get the base tool,
+    unchanged."""
+    if not include_metal_step_kind:
+        return MECHANISM_STEP_PROPOSAL_TOOL
+    tool = copy.deepcopy(MECHANISM_STEP_PROPOSAL_TOOL)
+    params = tool["function"]["parameters"]
+    candidates = params["properties"]["candidates"]["items"]
+    candidates["properties"]["metal_step_kind"] = copy.deepcopy(METAL_STEP_KIND_PROPERTY)
+    return tool
+
+
+__all__ += ["METAL_STEP_KIND_PROPERTY", "build_mechanism_step_proposal_tool"]

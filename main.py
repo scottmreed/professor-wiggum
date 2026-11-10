@@ -1727,6 +1727,14 @@ def run(
     products: Optional[str] = typer.Option(
         None, "--products", help="Comma-separated SMILES for products"
     ),
+    catalysts: Optional[str] = typer.Option(
+        None,
+        "--catalysts",
+        help=(
+            "Comma-separated SMILES written over the reaction arrow. They join the starting "
+            "materials as declared catalysts (no model call needed to infer their role)."
+        ),
+    ),
     temperature: float = typer.Option(25.0, "--temperature", help="Reaction temperature in Celsius"),
     ph: Optional[float] = typer.Option(None, "--ph", help="Observed reaction pH (optional)"),
     mode: str = typer.Option("unverified", "--mode", help="Run mode: verified or unverified"),
@@ -1904,13 +1912,18 @@ def run(
     internal_reasoning = to_internal_reasoning_level(thinking_level)
 
     hashes = registry.bundle_hashes(model_name=model_plan.model_name)
+    declared_catalysts = _parse_materials(catalysts, []) if catalysts else []
+    from mechanistic_agent.core.db import merge_declared_catalysts
+
+    run_starting = merge_declared_catalysts(list(reaction.starting_materials), declared_catalysts)
     run_id = store.create_run(
         mode=mode,
         input_payload={
-            "starting_materials": reaction.starting_materials,
+            "starting_materials": run_starting,
             "products": reaction.products,
             "temperature_celsius": reaction.temperature_celsius,
             "ph": reaction.ph,
+            **({"catalysts": declared_catalysts} if declared_catalysts else {}),
         },
         config={
             "model": model_plan.step_models.get("mechanism_synthesis", reaction.model),

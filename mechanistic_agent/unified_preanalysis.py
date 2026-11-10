@@ -71,6 +71,7 @@ def build_user_prompt(
     context: Dict[str, Any],
     user_ph: Optional[float] = None,
     temperature: Optional[float] = None,
+    unclear_metals: Optional[List[str]] = None,
 ) -> str:
     sections = sections_for(products_hidden)
     lines: List[str] = ["Pre-analysis for a mechanism prediction.", f"Starting materials: {starting_materials}"]
@@ -118,6 +119,12 @@ def build_user_prompt(
         "reaction_type: one exact label and its type id from the taxonomy below, or "
         "'no_match' (type id null) when none fits. Add up to 3 alternatives in top_candidates."
     )
+    if unclear_metals:
+        lines.append(
+            "metal_roles: the role of each of these transition-metal species is not clear from the "
+            f"reaction as written: {list(unclear_metals)}. For each, give catalyst, precatalyst, "
+            "stoichiometric_reagent, lewis_acid or spectator."
+        )
     lines.append("")
     lines.append("Allowed taxonomy labels (exact text):")
     lines.extend(_taxonomy_lines())
@@ -142,12 +149,13 @@ def call_model(
     messages: List[Dict[str, str]],
     *,
     products_hidden: bool,
+    ask_metal_roles: bool = False,
 ) -> Dict[str, Any]:
     """One forced tool call. Returns answer, usage, model and any error."""
     from mechanistic_agent.tools import _apply_output_token_cap, _apply_reasoning_kwargs
 
     model = _resolve_model()
-    tool = build_unified_preanalysis_tool(products_hidden=products_hidden)
+    tool = build_unified_preanalysis_tool(products_hidden=products_hidden, ask_metal_roles=ask_metal_roles)
     result: Dict[str, Any] = {"model_used": model, "answer": None, "usage": None, "error": None}
     try:
         llm_kwargs: Dict[str, Any] = {"model": model}

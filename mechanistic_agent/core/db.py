@@ -26,6 +26,18 @@ ADDITIVE_MIGRATIONS = (
 )
 
 
+def merge_declared_catalysts(starting: List[str], catalysts: List[str]) -> List[str]:
+    """``starting`` plus each declared catalyst not already present (compared canonically)."""
+    have = set(strip_atom_mapping_list([str(s) for s in starting]))
+    merged = list(starting)
+    for item in catalysts:
+        canonical = strip_atom_mapping_list([str(item)])[0]
+        if canonical not in have:
+            merged.append(item)
+            have.add(canonical)
+    return merged
+
+
 def _normalize_run_input_payload(input_payload: Dict[str, Any]) -> Dict[str, Any]:
     """Canonicalize run inputs once at persistence time for every caller."""
 
@@ -42,6 +54,10 @@ def _normalize_run_input_payload(input_payload: Dict[str, Any]) -> Dict[str, Any
 
     payload["starting_materials"] = starting_canonical
     payload["products"] = products_canonical
+    # Declared catalysts are canonicalized the same way, so they match their copy in
+    # starting_materials.
+    if isinstance(payload.get("catalysts"), list):
+        payload["catalysts"] = strip_atom_mapping_list([str(item) for item in payload["catalysts"]])
 
     if starting_canonical != starting_original or products_canonical != products_original:
         boundary = dict(payload.get("input_boundary") or {})

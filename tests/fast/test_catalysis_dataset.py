@@ -72,3 +72,18 @@ def test_excess_reagent_copy_is_not_an_organocatalyst():
         ]},
     }
     assert organocatalyst(case) is None
+
+
+def test_catalysis_holdout_builder_reads_only_the_test_split(tmp_path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "build_catalysis_holdout", Path(__file__).resolve().parents[2] / "scripts" / "build_catalysis_holdout.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with pytest.raises(SystemExit):
+        module.build(input_path=tmp_path / "train.txt", index_path=tmp_path / "i.jsonl",
+                     cache_path=tmp_path / "c.sqlite", out_dir=tmp_path / "out", per_family_band=1, max_steps=22)
+    assert module.SUITE == "catalysis_holdout"
+    assert [b[0] for b in module.STEP_BANDS] == ["3-4", "5-8", "9-22"]

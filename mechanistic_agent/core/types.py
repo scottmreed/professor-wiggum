@@ -1002,6 +1002,10 @@ class RunInput:
     temperature_celsius: float = 25.0
     ph: Optional[float] = None
     example_id: Optional[str] = None
+    # Species declared as catalysts: written over the reaction arrow
+    # (``CreateRunRequest.catalysts``) or confirmed by the pre-analysis call. They are also
+    # in ``starting_materials``; this list only fixes their role (core/catalysis.py).
+    catalysts: List[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

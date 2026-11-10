@@ -318,6 +318,7 @@ def audit_mechanism(
     steps: Sequence[Mapping[str, Any]],
     final_state: Optional[Sequence[str]] = None,
     reagent_pool: Any = None,
+    declared_catalysts: Sequence[str] = (),
 ) -> Dict[str, Any]:
     """``final_state`` defaults to the last step's resulting state (or ``starting``).
     ``reagent_pool`` (SMILES -> source) defaults to the starting materials."""
@@ -326,7 +327,7 @@ def audit_mechanism(
     if reagent_pool is None:
         reagent_pool = {smiles: "starting_material" for smiles in starting}
     try:
-        return _audit(starting, targets, steps, final_state, reagent_pool)
+        return _audit(starting, targets, steps, final_state, reagent_pool, declared_catalysts)
     except _InvalidSpecies as exc:
         return {"schema": AUDIT_SCHEMA, "grade": "invalid_species", "invalid_species": [str(exc)], "balanced": False}
 
@@ -337,6 +338,7 @@ def _audit(
     steps: Sequence[Mapping[str, Any]],
     final_state_override: Optional[Sequence[str]],
     reagent_pool: Any,
+    declared_catalysts: Sequence[str] = (),
 ) -> Dict[str, Any]:
     ordered = sorted(steps, key=lambda s: int(s.get("step_index") or 0))
     if final_state_override is not None:
@@ -463,7 +465,7 @@ def _audit(
 
     # A declared transition-metal catalyst must come back by the end of the path
     # (core/catalysis.py); one that does not leaves the grade approximate.
-    regeneration = _catalyst_regeneration(starting, ordered, final_state)
+    regeneration = _catalyst_regeneration(starting, ordered, final_state, declared_catalysts)
     if regeneration.get("unregenerated"):
         findings.append({"type": "unregenerated_catalyst", "species": list(regeneration["unregenerated"])})
 
@@ -502,12 +504,13 @@ def _catalyst_regeneration(
     starting: Sequence[str],
     ordered: Sequence[Mapping[str, Any]],
     final_state: Sequence[str],
+    declared: Sequence[str] = (),
 ) -> Dict[str, Any]:
     try:
         from .catalysis import catalyst_regeneration
 
         states = [list(step.get("resulting_state") or []) for step in ordered[:-1]] + [list(final_state)]
-        return catalyst_regeneration(starting, states)
+        return catalyst_regeneration(starting, states, declared)
     except Exception as exc:  # noqa: BLE001 - bookkeeping must never break the audit
         return {"applies": False, "error": f"{type(exc).__name__}: {exc}"}
 

@@ -365,8 +365,8 @@ Done in this repo. Fast suite green except the six eval-tier data tests that als
 | R1.1/R1.3 shared package | done, **local only** (see below) | `organometallic_chem/` (v1.0.0, conventions v1), 79 moved ChemIllusion tests pass |
 | R1.4 dependency | done | `pyproject.toml` package list, `Dockerfile.runtime` |
 | R1b notation bridge | done | `organometallic_chem/notation.py`; 10k-species round-trip measured, 400-species fixture test |
-| P2 metal-centre validator | done (`soft` default) | `skills/mechanistic/metal_center_validation/`, `validators._append_metal_center_check`, `metal_center_check` event, `metal_step_kind` in `MECHANISM_STEP_PROPOSAL_TOOL` |
-| R3.1 catalyst identification | done, deterministic only | `core/catalysis.identify_catalysts` (LLM `conditions.catalysts` field not added: prompt change, evidence-gated) |
+| P2 metal-centre validator | done (`soft` default) | `skills/mechanistic/metal_center_validation/`, `validators._append_metal_center_check`, `metal_center_check` event; `metal_step_kind` is requested (schema field plus one prompt line) only when the state holds a metal |
+| R3.1 catalyst identification | done | inferred when clear (declared over the arrow, or a Pd-class metal); the pre-analysis asks `metal_roles` only for d-block species whose role is unclear (decision 2026-11-10). Code-built prompt line and schema, no `SKILL.md` change |
 | R3.3 regeneration | done | `mechanism_audit.catalyst_regeneration`, `unregenerated_catalyst` grades `approximate` |
 | R3.4 completion tolerance | done | `smiles_utils._catalysis_tolerated` |
 | R3.5 cycle projection | done | `/observatory` `catalytic_cycle` |
@@ -375,7 +375,8 @@ Done in this repo. Fast suite green except the six eval-tier data tests that als
 | R4.4 ChemIllusion clamp | done in ChemIllusion branch `feat/catalysis-runs` | 22 for catalytic runs (14 otherwise); catalysts now sent to Wiggum; predicted-cycle panel. Cost/runtime check deferred to benchmarking |
 | R5.1 dev set | done | 34 transition-metal cases, `training_data/catalysis_development/` |
 | R5.2 organocatalysis slice | builder done, **slice empty** | FlowER has no covalent organocatalysis in 60k scanned mechanisms (DMAP and amines are spectators); needs another source |
-| R5.3 `catalysis` tier + holdout slice | **not done** | needs a tier-file decision (the append-only `eval_tiers.json` tests already fail on `main`) and the official holdout tooling |
+| R5.3 `catalysis` tier | **not doing** (decision 2026-11-10) | no leaderboard tier |
+| R5.3 holdout slice | done, reserve only | `scripts/build_catalysis_holdout.py` → `holdout_dir()/catalysis/`; not referenced by any tier or board |
 | R5.4 textbook gold set | **not done** | Chapter 23 package not found in the ChemIllusion checkout; needs expert review |
 | R5.5 taxonomy + few-shots | **not done** | prompt and few-shot change; evidence-gated |
 | R6.1 product targets | done | `quality_scoring._organic_targets`, completion targets |
