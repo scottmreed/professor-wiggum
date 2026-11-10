@@ -52,7 +52,7 @@ from .tool_schemas import (
     ASSESS_CONDITIONS_TOOL,
     ATOM_MAPPING_TOOL,
     INTERMEDIATES_TOOL,
-    MECHANISM_STEP_PROPOSAL_TOOL,
+    build_mechanism_step_proposal_tool,
     MISSING_REAGENTS_TOOL,
     REACTION_TYPE_SELECTION_TOOL,
     build_tool_choice,
@@ -5539,6 +5539,21 @@ class ReactionTypeSelectionPayload(BaseModel):
         return score
 
 
+def _d_block_metals_in(species: Optional[List[str]]) -> List[str]:
+    """Sorted d-block element symbols present in ``species`` (empty for organic states)."""
+    try:
+        from mechanistic_agent.core.catalysis import metals_in
+
+        found: set = set()
+        for item in species or []:
+            for fragment in str(item or "").split("."):
+                if "[" in fragment:
+                    found.update(metals_in(fragment))
+        return sorted(found)
+    except Exception:  # noqa: BLE001 - a missing hint must never break a proposal
+        return []
+
+
 def propose_intermediates(
     starting_materials: List[str],
     products: List[str],
@@ -6044,6 +6059,19 @@ def propose_intermediates(
         if preamble:
             human_prompt = f"{preamble}\n\n{human_prompt}"
 
+    # Ask for metal_step_kind only when the state holds a transition metal; organic
+    # states keep the base tool and prompt (PRD_catalysis_handling, metal_step_kind).
+    state_metals = _d_block_metals_in(current_state)
+    proposal_tool = build_mechanism_step_proposal_tool(include_metal_step_kind=bool(state_metals))
+    if state_metals:
+        human_prompt += (
+            f"\n\nMETAL STEPS: the current state contains {', '.join(state_metals)}. For a candidate that "
+            "makes or breaks a bond at the metal, set metal_step_kind to the elementary step "
+            "(oxidative_addition, reductive_elimination, transmetalation, migratory_insertion, "
+            "beta_hydride_elimination, ligand_association, ligand_dissociation, or other). Omit it for "
+            "steps that leave the metal untouched. Oxidation states and electron counts are checked."
+        )
+
     if compaction_notes:
         logger.warning(
             "propose_intermediates prompt compaction applied for model %s: %s",
@@ -6087,7 +6115,7 @@ def propose_intermediates(
         if _use_forced_tools:
             response = llm.invoke(
                 messages,
-                tools=[MECHANISM_STEP_PROPOSAL_TOOL],
+                tools=[proposal_tool],
                 tool_choice=build_tool_choice("mechanism_step_proposal_result"),
             )
         else:
@@ -6114,7 +6142,7 @@ def propose_intermediates(
                     )
                     response = fallback_llm.invoke(
                         messages,
-                        tools=[MECHANISM_STEP_PROPOSAL_TOOL],
+                        tools=[proposal_tool],
                         tool_choice=build_tool_choice("mechanism_step_proposal_result"),
                     )
                     model_used = fallback_model

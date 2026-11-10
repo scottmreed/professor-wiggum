@@ -76,6 +76,8 @@ def build_observatory(
     current_state_id = INITIAL_STATE_ID
     completed = False
     mechanism_audit: Optional[Dict[str, Any]] = None
+    # Catalysts written over the arrow, plus any the pre-analysis call confirmed.
+    declared_catalysts: List[str] = _species(run_input.get("catalysts"))
     last_seq = 0
 
     def _ensure_candidate(cid: str, *, step_index: int, rank: Any = None, smiles: Any = None, resulting: Any = None) -> Dict[str, Any]:
@@ -292,6 +294,8 @@ def build_observatory(
             completed = True
         elif kind == "mechanism_audit":
             mechanism_audit = dict(payload)
+        elif kind == "metal_roles_resolved":
+            declared_catalysts.extend(str(s) for s in payload.get("resolved_catalysts") or [])
 
     active_step: Optional[Dict[str, Any]] = None
     if open_steps:
@@ -314,7 +318,9 @@ def build_observatory(
         "active_step": active_step,
         "atom_lineage": _build_atom_lineage(accepted_path, states),
         "mechanism_audit": mechanism_audit,
-        "catalytic_cycle": _catalytic_cycle(accepted_path, starting, run_id=run_id, ordered=ordered),
+        "catalytic_cycle": _catalytic_cycle(
+            accepted_path, starting, run_id=run_id, ordered=ordered, declared=declared_catalysts
+        ),
         "provenance": build_run_provenance(ordered),
         "event_count": len(ordered),
         "last_seq": last_seq,
@@ -327,6 +333,7 @@ def _catalytic_cycle(
     *,
     run_id: Optional[str],
     ordered: List[Dict[str, Any]],
+    declared: Optional[List[str]] = None,
 ) -> Optional[Dict[str, Any]]:
     """``catalytic_cycle_projection.v1`` of the accepted path, or ``None`` without a catalyst.
 
@@ -346,7 +353,7 @@ def _catalytic_cycle(
             None,
         )
         projection = project_catalytic_cycle(
-            accepted_path, starting, provenance={"run_id": run_id, "harness": harness}
+            accepted_path, starting, provenance={"run_id": run_id, "harness": harness}, declared=declared or []
         )
         if projection is None:
             return None

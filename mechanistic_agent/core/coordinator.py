@@ -213,8 +213,15 @@ class RunCoordinator:
             temperature_celsius=float(payload.get("temperature_celsius", 25.0)),
             ph=payload.get("ph"),
             example_id=str(payload.get("example_id") or "").strip() or None,
+            catalysts=[
+                str(s)
+                for s in list(payload.get("catalysts") or []) + list(config.get("resolved_catalysts") or [])
+                if str(s or "").strip()
+            ],
         )
-        max_steps, max_steps_source = self._resolve_max_steps(config, run_input.starting_materials)
+        max_steps, max_steps_source = self._resolve_max_steps(
+            config, run_input.starting_materials, run_input.catalysts
+        )
         run_config = RunConfig(
             model=str(config.get("model") or get_default_model()),
             model_name=str(config.get("model_name") or config.get("model") or get_default_model()),
@@ -1973,6 +1980,14 @@ class RunCoordinator:
         for key in ("balance_analysis", "functional_groups", "ph_recommendation"):
             if context.get(key) is None:
                 context[key] = self._latest_output_by_step_name(state.run_id, key)
+        # Ask about a metal's role only when it cannot be inferred: a catalyst written over the
+        # arrow or a Pd/Pt/Ni/... species is not asked about (core/catalysis.py).
+        from .catalysis import unclear_metal_species
+
+        try:
+            unclear_metals = unclear_metal_species(run_input.starting_materials, run_input.catalysts)
+        except Exception:  # noqa: BLE001 - never block pre-analysis on a role heuristic
+            unclear_metals = []
         user_prompt = up.build_user_prompt(
             starting_materials=list(run_input.starting_materials),
             products=list(run_input.products),
@@ -1980,12 +1995,13 @@ class RunCoordinator:
             context=context,
             user_ph=run_input.ph,
             temperature=run_input.temperature_celsius,
+            unclear_metals=unclear_metals,
         )
         system = {"role": "system", "content": up.build_system_prompt()}
         first_user = {"role": "user", "content": user_prompt}
 
         usage_total: Dict[str, int] = {}
-        call = up.call_model([system, first_user], products_hidden=hidden)
+        call = up.call_model([system, first_user], products_hidden=hidden, ask_metal_roles=bool(unclear_metals))
         if isinstance(call.get("usage"), dict):
             update_usage_totals(usage_total, call["usage"])
         answer: Dict[str, Any] = dict(call.get("answer") or {})
@@ -2006,7 +2022,7 @@ class RunCoordinator:
                     {"role": "assistant", "content": up.assistant_turn_text(answer)},
                     {"role": "user", "content": up.repair_prompt(failures)},
                 ]
-            repair = up.call_model(repair_messages, products_hidden=hidden)
+            repair = up.call_model(repair_messages, products_hidden=hidden, ask_metal_roles=bool(unclear_metals))
             if isinstance(repair.get("usage"), dict):
                 update_usage_totals(usage_total, repair["usage"])
             repaired_answer = repair.get("answer")
@@ -2022,6 +2038,8 @@ class RunCoordinator:
                 checks = check_sections({k: v.output for k, v in derived.items()}, sections, answer)
                 failures = failed_sections(checks)
         all_passed = not failures and bool(answer)
+        if unclear_metals:
+            self._apply_metal_roles(state, unclear_metals, answer.get("metal_roles"))
 
         for section in sections:
             result = derived.get(section)
@@ -2089,6 +2107,58 @@ class RunCoordinator:
                 derived["missing_reagents"],
             )
         return result
+
+    def _apply_metal_roles(self, state: RunState, unclear: List[str], roles: Any) -> List[str]:
+        """Adopt the pre-analysis answer for metal species whose role was unclear.
+
+        A species answered ``catalyst`` or ``precatalyst`` becomes a declared catalyst: it is
+        added to ``run_input.catalysts`` and stored in the run config as
+        ``resolved_catalysts`` (so a resume keeps it), the audit checks its regeneration, and
+        an unset step cap rises to ``CATALYTIC_MAX_STEPS``. Emits ``metal_roles_resolved``.
+        """
+        from .catalysis import species_key
+
+        by_key = {species_key(s): s for s in unclear}
+        answered: List[Dict[str, Any]] = []
+        resolved: List[str] = []
+        for item in roles if isinstance(roles, list) else []:
+            if not isinstance(item, dict):
+                continue
+            key = species_key(str(item.get("smiles") or ""))
+            role = str(item.get("role") or "").strip().lower()
+            if key not in by_key or not role:
+                continue
+            answered.append({"smiles": by_key[key], "role": role, "justification": item.get("justification")})
+            if role in {"catalyst", "precatalyst"} and by_key[key] not in resolved:
+                resolved.append(by_key[key])
+        if resolved:
+            for smiles in resolved:
+                if smiles not in state.run_input.catalysts:
+                    state.run_input.catalysts.append(smiles)
+            try:
+                row = self.store.get_run_row(state.run_id) or {}
+                config = dict(row.get("config") or {})
+                config["resolved_catalysts"] = sorted(set(config.get("resolved_catalysts") or []) | set(resolved))
+                self.store.update_run_config(state.run_id, config)
+            except Exception:  # noqa: BLE001 - the in-memory state still carries the role
+                pass
+            if state.run_config.max_steps_source == "default":
+                state.run_config.max_steps = CATALYTIC_MAX_STEPS
+                state.run_config.max_steps_source = "catalytic"
+        self.store.append_event(
+            state.run_id,
+            "metal_roles_resolved",
+            {
+                "asked": list(unclear),
+                "answered": answered,
+                "unanswered": [s for k, s in by_key.items() if s not in {a["smiles"] for a in answered}],
+                "resolved_catalysts": resolved,
+                "max_steps": state.run_config.max_steps,
+                "max_steps_source": state.run_config.max_steps_source,
+            },
+            step_name="unified_preanalysis",
+        )
+        return resolved
 
     def _select_reaction_type_result(
         self,
@@ -3239,7 +3309,12 @@ class RunCoordinator:
         )
 
     @classmethod
-    def _resolve_max_steps(cls, config: Dict[str, Any], starting_materials: List[str]) -> Tuple[int, str]:
+    def _resolve_max_steps(
+        cls,
+        config: Dict[str, Any],
+        starting_materials: List[str],
+        declared_catalysts: Optional[List[str]] = None,
+    ) -> Tuple[int, str]:
         """Explicit ``max_steps`` wins; otherwise CATALYTIC_MAX_STEPS for a run whose starting
         pool holds a transition-metal catalyst, else DEFAULT_MAX_STEPS."""
         explicit = config.get("max_steps")
@@ -3248,7 +3323,7 @@ class RunCoordinator:
         try:
             from .catalysis import is_catalytic_run
 
-            if is_catalytic_run(starting_materials or []):
+            if is_catalytic_run(starting_materials or [], declared_catalysts or []):
                 return CATALYTIC_MAX_STEPS, "catalytic"
         except Exception:  # noqa: BLE001 - fall back to the default cap
             pass
@@ -6729,6 +6804,7 @@ class RunCoordinator:
             steps=path_steps,
             final_state=final_state,
             reagent_pool=self._balance_reagent_pool(state),
+            declared_catalysts=list(state.run_input.catalysts or []),
         )
         self.store.append_event(
             state.run_id,

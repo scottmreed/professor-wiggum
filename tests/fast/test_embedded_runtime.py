@@ -144,3 +144,22 @@ def test_no_product_run_needs_hide_products_and_never_shows_products(tmp_path: P
     scored_row = rt.store.get_run_row(scored)
     assert scored_row["input_payload"]["products"] == ["CCCl", "[Br-]"]
     assert rt.coordinator._build_state(scored_row).run_input.products == []
+
+
+def test_catalysts_over_the_arrow_join_the_pool_with_their_role(tmp_path: Path) -> None:
+    """``catalysts`` (written over the reaction arrow) join the starting materials and are
+    declared catalysts: a declared Cu raises an unset cap to 22 without asking the model."""
+    rt = _runtime(tmp_path, [])
+    run_id = rt.create_run({"mode": "unverified", "starting_materials": ["C#Cc1ccccc1", "Ic1ccccc1"],
+                            "catalysts": ["I[Cu]"], "products": ["C(#Cc1ccccc1)c1ccccc1"], "model": "gpt-4o"})
+    row = rt.store.get_run_row(run_id)
+    cu = row["input_payload"]["catalysts"]
+    assert len(cu) == 1 and cu[0] in row["input_payload"]["starting_materials"]  # canonical form, both lists
+    assert len(row["input_payload"]["starting_materials"]) == 3
+    state = rt.coordinator._build_state(row)
+    assert state.run_input.catalysts == cu
+    assert (state.run_config.max_steps, state.run_config.max_steps_source) == (22, "catalytic")
+    plain = rt.create_run({"mode": "unverified", "starting_materials": ["C#Cc1ccccc1", "Ic1ccccc1", "I[Cu]"],
+                           "products": ["C(#Cc1ccccc1)c1ccccc1"], "model": "gpt-4o"})
+    plain_state = rt.coordinator._build_state(rt.store.get_run_row(plain))
+    assert plain_state.run_config.max_steps == 14 and "catalysts" not in rt.store.get_run_row(plain)["input_payload"]

@@ -1379,6 +1379,7 @@ def create_app(
         starting_materials: List[str],
         products: List[str],
         example_id: str | None,
+        catalysts: Optional[List[str]] = None,
         temperature_celsius: float,
         ph: float | None,
         model_name: str,
@@ -1430,6 +1431,10 @@ def create_app(
         if str(harness_name or "default").strip() == "adaptive_default" and resolved_adaptive_mode == "off":
             resolved_adaptive_mode = "conservative"
         hashes = registry.bundle_hashes(model_name=selected_primary_model)
+        declared_catalysts = [str(s).strip() for s in (catalysts or []) if str(s or "").strip()]
+        from mechanistic_agent.core.db import merge_declared_catalysts
+
+        starting_materials = merge_declared_catalysts(list(starting_materials), declared_catalysts)
         run_id = store.create_run(
             mode=mode,
             input_payload={
@@ -1438,6 +1443,7 @@ def create_app(
                 "example_id": example_id,
                 "temperature_celsius": temperature_celsius,
                 "ph": ph,
+                **({"catalysts": declared_catalysts} if declared_catalysts else {}),
             },
             prompt_bundle_hash=hashes.get("prompt_bundle_hash", ""),
             skill_bundle_hash=hashes.get("skill_bundle_hash", ""),
@@ -1808,6 +1814,7 @@ def create_app(
             mode=payload.mode,
             starting_materials=payload.starting_materials,
             products=payload.products,
+            catalysts=payload.catalysts,
             example_id=payload.example_id,
             temperature_celsius=payload.temperature_celsius,
             ph=payload.ph,
