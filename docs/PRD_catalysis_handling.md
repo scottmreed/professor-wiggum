@@ -372,7 +372,7 @@ Done in this repo. Fast suite green except the six eval-tier data tests that als
 | R3.5 cycle projection | done | `/observatory` `catalytic_cycle` |
 | R4.1/R4.2 catalytic cap | done | `CATALYTIC_MAX_STEPS = 22`, `_resolve_max_steps`, `step_cap_reached.cap_source` |
 | R4.3 coarse-graining prompt | **not done** | prompt change; needs approved evidence traces |
-| R4.4 ChemIllusion clamp | **not done** | ChemIllusion repo; needs the cost/runtime check |
+| R4.4 ChemIllusion clamp | done in ChemIllusion branch `feat/catalysis-runs` | 22 for catalytic runs (14 otherwise); catalysts now sent to Wiggum; predicted-cycle panel. Cost/runtime check deferred to benchmarking |
 | R5.1 dev set | done | 34 transition-metal cases, `training_data/catalysis_development/` |
 | R5.2 organocatalysis slice | builder done, **slice empty** | FlowER has no covalent organocatalysis in 60k scanned mechanisms (DMAP and amines are spectators); needs another source |
 | R5.3 `catalysis` tier + holdout slice | **not done** | needs a tier-file decision (the append-only `eval_tiers.json` tests already fail on `main`) and the official holdout tooling |
@@ -381,7 +381,7 @@ Done in this repo. Fast suite green except the six eval-tier data tests that als
 | R6.1 product targets | done | `quality_scoring._organic_targets`, completion targets |
 | R6.2 ligand-agnostic reference | done | `skeleton_alignment._without_metal_l_donor_bonds` |
 | R6.3 diagnostic | done (record field) | `quality["metal_center"]`; radar SVG not changed |
-| R6.4 leaderboard column | **not done** | follows R5.3 |
+| R6.4 leaderboard column | **not done** | follows R5.3; radar unchanged by decision (2026-11-08) |
 | R1.2 ChemIllusion shims | **not done** | waits on open question 1 |
 
 **Findings that changed the plan**
