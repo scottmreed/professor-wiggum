@@ -116,7 +116,7 @@ def test_question_is_one_choice_over_taxonomy_plus_no_match() -> None:
     validate_question(question)
     assert question.key == QUESTION_ID and question.type == "choice"
     labels = question.option_labels
-    assert len(labels) == len(catalog["templates"]) + 1 == 87
+    assert len(labels) == len(catalog["templates"]) + 1 == 93
     assert labels[-1] == NO_MATCH
     assert set(labels[:-1]) == set(catalog["by_id"])
 
@@ -144,7 +144,7 @@ def test_jev_selection_preserves_output_contract_and_top_n() -> None:
     trace = out["decision_trace"][0]
     assert trace["decision_engine"] == "jev" and trace["question_id"] == QUESTION_ID
     assert trace["fallback_triggered"] is False
-    assert len(trace["probabilities"]) == 87
+    assert len(trace["probabilities"]) == 93
     assert out["_decision_cost"]["total_cost"] == 0.000168
 
 
@@ -535,7 +535,7 @@ def test_calibration_labeled_set_and_dry_run(tmp_path: Path, capsys: pytest.Capt
     payload = json.loads(out)
     assert payload["label"] == "rt_001"
     assert payload["request"]["model"] == JEV
-    assert len(payload["request"]["questions"][QUESTION_ID]["criteria"]) == 87
+    assert len(payload["request"]["questions"][QUESTION_ID]["criteria"]) == 93
 
 
 def test_calibration_evaluate_records() -> None:
