@@ -1,7 +1,7 @@
 {
   "meta": {
     "generated_at": "2026-03-14T23:02:35.292151+00:00",
-    "count": 86,
+    "count": 92,
     "mapping_count": 72,
     "description": "Expanded draft rewrite of generic reaction templates using R-group abstractions and curated row-based example assignments.",
     "notes": [
@@ -9,7 +9,8 @@
       "Example assignments were re-curated to better match the CSV transformations.",
       "Only rows with reasonably confident parent-reaction assignments are mapped in this draft.",
       "2026-09-16: added rt_081-rt_085 (SOCl2 acid chloride formation, direct amide condensation, Boc protection, sulfonamide formation, chloroformate acylation) \u2014 hard/medium-tier FlowER classes previously absent.",
-      "2026-09-16: added rt_086 (Menshutkin amine quaternization) \u2014 four of eight easy practice cases."
+      "2026-09-16: added rt_086 (Menshutkin amine quaternization) \u2014 four of eight easy practice cases.",
+      "2026-11-16: added rt_087-rt_092 (radical chain halogenation, radical addition polymerization, thermal 6\u03c0 electrocyclic closure, thermal 4\u03c0 electrocyclic ring opening, phosphoryl transfer, acid-catalyzed hemiacetal formation) \u2014 classes ChemIllusion's 3D mechanism animation now verifies (radical fishhooks, electrocyclic template, P-centre inversion, racemic hemiacetal) and the OER textbook teaches. No example mappings yet; benchmark before relying on them."
     ]
   },
   "templates": [
@@ -4802,6 +4803,351 @@
             }
           ],
           "note": "Concerted SN2 quaternization."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_087",
+      "label_exact": "Radical chain halogenation of an alkane",
+      "slug": "radical_chain_halogenation_of_an_alkane",
+      "canonical_group": "radical_substitution",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "R-H",
+        "X2 (Cl2 or Br2)",
+        "light or heat"
+      ],
+      "resulting_state_generic": [
+        "R-X",
+        "H-X"
+      ],
+      "generic_notes": "Light or heat splits X2 into two halogen radicals; the chain then propagates by H-atom abstraction and halogen-atom transfer, regenerating X\u2022. Every arrow is a one-electron fishhook.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "X-X>>X\u2022.X\u2022 |dbe:X-X:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X-X",
+              "end_atom": "X",
+              "electrons": 1,
+              "description": "One electron of the X\u2013X bond goes to each halogen (homolysis)."
+            },
+            {
+              "start_atom": "X-X",
+              "end_atom": "X'",
+              "electrons": 1,
+              "description": "The other electron goes to the second halogen."
+            }
+          ],
+          "note": "Initiation: homolysis gives two halogen radicals."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "X\u2022.R-H>>H-X.R\u2022 |dbe:C-H:-2;H-X:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "X:rad",
+              "end_atom": "H",
+              "electrons": 1,
+              "description": "The halogen radical's electron pairs with one from the C\u2013H bond."
+            },
+            {
+              "start_atom": "C-H",
+              "end_atom": "X",
+              "electrons": 1,
+              "description": "One C\u2013H electron forms the new H\u2013X bond."
+            },
+            {
+              "start_atom": "C-H",
+              "end_atom": "C",
+              "electrons": 1,
+              "description": "The other C\u2013H electron stays on carbon: an alkyl radical."
+            }
+          ],
+          "note": "Propagation 1: H-atom abstraction, collinear X\u00b7\u00b7\u00b7H\u00b7\u00b7\u00b7C."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "R\u2022.X-X>>R-X.X\u2022 |dbe:X-X:-2;C-X:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "C:rad",
+              "end_atom": "X",
+              "electrons": 1,
+              "description": "The alkyl radical's electron pairs with one from X\u2013X."
+            },
+            {
+              "start_atom": "X-X",
+              "end_atom": "C",
+              "electrons": 1,
+              "description": "One X\u2013X electron forms the C\u2013X bond."
+            },
+            {
+              "start_atom": "X-X",
+              "end_atom": "X'",
+              "electrons": 1,
+              "description": "The other stays on the departing halogen, regenerating X\u2022."
+            }
+          ],
+          "note": "Propagation 2: halogen-atom transfer regenerates the chain carrier. Termination (two radicals combining) ends a chain."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_088",
+      "label_exact": "Radical addition polymerization of a vinyl monomer",
+      "slug": "radical_addition_polymerization_of_a_vinyl_monomer",
+      "canonical_group": "radical_addition",
+      "suitable_step_count": 2,
+      "current_state_generic": [
+        "initiator radical R\u2022",
+        "CH2=CH-Y"
+      ],
+      "resulting_state_generic": [
+        "R-CH2-CHY\u2022 (growing chain)"
+      ],
+      "generic_notes": "An initiator radical (from AIBN or a peroxide) adds to the less substituted alkene carbon; the new carbon radical adds to the next monomer the same way.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "R\u2022.CH2=CHY>>R-CH2-CHY\u2022 |dbe:C=C:-2;C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "R:rad",
+              "end_atom": "CH2",
+              "electrons": 1,
+              "description": "The radical's electron pairs with one \u03c0 electron."
+            },
+            {
+              "start_atom": "C=C",
+              "end_atom": "R",
+              "electrons": 1,
+              "description": "One \u03c0 electron forms the new C\u2013C bond."
+            },
+            {
+              "start_atom": "C=C",
+              "end_atom": "CHY",
+              "electrons": 1,
+              "description": "The other \u03c0 electron stays on the substituted carbon."
+            }
+          ],
+          "note": "Initiation: the radical adds face-on to the C=C."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "R-CH2-CHY\u2022.CH2=CHY>>R-CH2-CHY-CH2-CHY\u2022 |dbe:C=C:-2;C-C:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "chain C:rad",
+              "end_atom": "CH2",
+              "electrons": 1,
+              "description": "The chain-end radical adds to the next monomer."
+            },
+            {
+              "start_atom": "C=C",
+              "end_atom": "chain C",
+              "electrons": 1,
+              "description": "One \u03c0 electron forms the new bond."
+            },
+            {
+              "start_atom": "C=C",
+              "end_atom": "CHY",
+              "electrons": 1,
+              "description": "The other becomes the new chain-end radical."
+            }
+          ],
+          "note": "Propagation: the chain grows by one repeat unit and regenerates its radical end."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_089",
+      "label_exact": "Thermal 6\u03c0 electrocyclic ring closure of a hexatriene",
+      "slug": "thermal_6pi_electrocyclic_ring_closure_of_a_hexatriene",
+      "canonical_group": "pericyclic",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "(Z)-1,3,5-hexatriene",
+        "heat"
+      ],
+      "resulting_state_generic": [
+        "1,3-cyclohexadiene"
+      ],
+      "generic_notes": "Six \u03c0 electrons, thermal: disrotatory (Woodward\u2013Hoffmann). A (2E,4Z,6E)-triene gives the cis-5,6-disubstituted ring. One concerted step with three arrows.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "C1=C2-C3=C4-C5=C6>>ring C1-C6 with C2=C3 and C4=C5 |dbe:C1=C2:-2;C3=C4:-2;C5=C6:-2;C2=C3:+2;C4=C5:+2;C1-C6:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "C5=C6",
+              "end_atom": "C6-C1",
+              "electrons": 2,
+              "description": "The terminal \u03c0 pair forms the new C1\u2013C6 \u03c3 bond."
+            },
+            {
+              "start_atom": "C1=C2",
+              "end_atom": "C2-C3",
+              "electrons": 2,
+              "description": "The C1=C2 \u03c0 pair shifts to C2=C3."
+            },
+            {
+              "start_atom": "C3=C4",
+              "end_atom": "C4-C5",
+              "electrons": 2,
+              "description": "The C3=C4 \u03c0 pair shifts to C4=C5."
+            }
+          ],
+          "note": "Concerted; the termini turn disrotatory."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_090",
+      "label_exact": "Thermal 4\u03c0 electrocyclic ring opening of a cyclobutene",
+      "slug": "thermal_4pi_electrocyclic_ring_opening_of_a_cyclobutene",
+      "canonical_group": "pericyclic",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "cyclobutene",
+        "heat"
+      ],
+      "resulting_state_generic": [
+        "1,3-butadiene"
+      ],
+      "generic_notes": "Four \u03c0 electrons, thermal: conrotatory (Woodward\u2013Hoffmann). cis-3,4-Disubstituted cyclobutene opens to the (2E,4Z)-diene; trans gives (2E,4E). The reverse closure is photochemically disrotatory.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "ring C1-C4 with C2=C3>>C1=C2-C3=C4 |dbe:C1-C4:-2;C2=C3:-2;C1=C2:+2;C3=C4:+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "C1-C4",
+              "end_atom": "C1-C2",
+              "electrons": 2,
+              "description": "The breaking \u03c3 bond's pair becomes the C1=C2 \u03c0 bond."
+            },
+            {
+              "start_atom": "C2=C3",
+              "end_atom": "C3-C4",
+              "electrons": 2,
+              "description": "The C2=C3 \u03c0 pair shifts to C3=C4."
+            }
+          ],
+          "note": "Concerted; the termini turn conrotatory."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_091",
+      "label_exact": "Phosphoryl transfer to an alcohol or alkoxide",
+      "slug": "phosphoryl_transfer_to_an_alcohol_or_alkoxide",
+      "canonical_group": "substitution",
+      "suitable_step_count": 1,
+      "current_state_generic": [
+        "R-O- or R-OH",
+        "phosphate ester or anhydride (P-OR')"
+      ],
+      "resulting_state_generic": [
+        "R-O-P",
+        "R'-O-"
+      ],
+      "generic_notes": "In-line substitution at phosphorus: the nucleophile attacks opposite the leaving group through a trigonal-bipyramidal arrangement, inverting the phosphorus (ATP and RNA chemistry).",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "RO-.P-OR'>>RO-P.R'O- |dbe:P-O(R'):-2;P-O(R):+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O:lp",
+              "end_atom": "P",
+              "electrons": 2,
+              "description": "The oxygen lone pair attacks phosphorus opposite the leaving group."
+            },
+            {
+              "start_atom": "P-OR'",
+              "end_atom": "OR'",
+              "electrons": 2,
+              "description": "The P\u2013OR' bond's pair leaves with the leaving group."
+            }
+          ],
+          "note": "Concerted in-line displacement (inversion at P)."
+        }
+      ]
+    },
+    {
+      "type_id": "rt_092",
+      "label_exact": "Acid-catalyzed hemiacetal formation",
+      "slug": "acid_catalyzed_hemiacetal_formation",
+      "canonical_group": "nucleophilic_addition",
+      "suitable_step_count": 3,
+      "current_state_generic": [
+        "aldehyde or ketone",
+        "R-OH",
+        "acid catalyst"
+      ],
+      "resulting_state_generic": [
+        "hemiacetal"
+      ],
+      "generic_notes": "Protonation activates the carbonyl, the alcohol adds, and a second alcohol (or water) removes the proton. A new stereocentre from achiral partners forms racemic.",
+      "generic_mechanism_steps": [
+        {
+          "step_index": 1,
+          "reaction_generic": "C=O.H-A>>C=OH+.A- |dbe:O-H:+2;H-A:-2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "O:lp",
+              "end_atom": "H",
+              "electrons": 2,
+              "description": "The carbonyl oxygen takes a proton from the acid."
+            },
+            {
+              "start_atom": "H-A",
+              "end_atom": "A",
+              "electrons": 2,
+              "description": "The H\u2013A pair stays on the conjugate base."
+            }
+          ],
+          "note": "Activation: an oxocarbenium-like cation."
+        },
+        {
+          "step_index": 2,
+          "reaction_generic": "C=OH+.ROH>>C(OH)(OHR+) |dbe:C=O:-2;C-O:+2;C-O(R):+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ROH:lp",
+              "end_atom": "C",
+              "electrons": 2,
+              "description": "The alcohol oxygen attacks the carbonyl carbon."
+            },
+            {
+              "start_atom": "C=O",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "The \u03c0 pair moves onto the protonated oxygen."
+            }
+          ],
+          "note": "Addition to the activated carbonyl."
+        },
+        {
+          "step_index": 3,
+          "reaction_generic": "C(OH)(OHR+).ROH>>hemiacetal.ROH2+ |dbe:O-H:-2;O-H':+2|",
+          "electron_pushes_generic": [
+            {
+              "start_atom": "ROH:lp",
+              "end_atom": "H",
+              "electrons": 2,
+              "description": "A second alcohol removes the proton."
+            },
+            {
+              "start_atom": "O-H",
+              "end_atom": "O",
+              "electrons": 2,
+              "description": "The O\u2013H pair stays on oxygen."
+            }
+          ],
+          "note": "Deprotonation gives the neutral hemiacetal and regenerates the acid."
         }
       ]
     }
